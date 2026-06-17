@@ -58,7 +58,10 @@ function isCancelled(status) {
   return /batal|cancel|dibatalkan/i.test((status ?? '').toString())
 }
 function weekOfMonth(d) {
-  return Math.min(5, Math.ceil(d.getDate() / 7)) // 1-7,8-14,15-21,22-28,29-31→5
+  // W1=1-7, W2=8-14, W3=15-21, W4=22-akhir bulan.
+  // Tgl 29-31 digabung ke W4 agar tidak ada "minggu semu" 2-3 hari
+  // yang membuat tren drop palsu di akhir bulan.
+  return Math.min(4, Math.ceil(d.getDate() / 7))
 }
 
 // ── Normalisasi (pure: terima array-of-arrays termasuk baris header) ─

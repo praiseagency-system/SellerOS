@@ -38,7 +38,7 @@ export function computeStore(lines) {
 
   // Weekly (vs minggu sebelumnya)
   const wkMap = aggBucket(valid, l => l.w)
-  const weekly = [1, 2, 3, 4, 5].filter(w => wkMap.has(w)).map(w => {
+  const weekly = [1, 2, 3, 4].filter(w => wkMap.has(w)).map(w => {
     const b = wkMap.get(w)
     return { week: w, gmv: b.gmv, units: b.units, orders: b.orderSet.size, aov: b.orderSet.size ? b.gmv / b.orderSet.size : 0 }
   })
