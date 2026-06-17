@@ -30,9 +30,17 @@ export default function StorePerformancePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [warning, setWarning] = useState(null)
+  const [mpFilter, setMpFilter] = useState('all')
   const fileRef = useRef(null)
 
-  const stats = useMemo(() => (store.lines.length ? computeStore(store.lines) : null), [store])
+  // Daftar marketplace yang ada di dataset (untuk filter bila >1 sumber).
+  const mpOptions = useMemo(() => [...new Set(store.lines.map(l => l.m))].sort(), [store])
+  const mp = mpOptions.includes(mpFilter) ? mpFilter : 'all'
+
+  const stats = useMemo(() => {
+    const lines = mp === 'all' ? store.lines : store.lines.filter(l => l.m === mp)
+    return lines.length ? computeStore(lines) : null
+  }, [store, mp])
   const insights = useMemo(() => (stats ? quickInsights(stats) : []), [stats])
 
   async function handleFiles(fileList) {
@@ -127,8 +135,23 @@ export default function StorePerformancePage() {
         </div>
       ) : (
         <>
+          {/* Filter marketplace — hanya muncul bila ada >1 sumber */}
+          {mpOptions.length > 1 && (
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-ink-muted">Marketplace:</span>
+              {['all', ...mpOptions].map(opt => (
+                <button key={opt} onClick={() => setMpFilter(opt)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    mp === opt ? 'bg-blue-600 text-white border-transparent' : 'border-line/15 text-ink-muted hover:text-ink hover:border-line/30'
+                  }`}>
+                  {opt === 'all' ? 'Semua' : opt}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Tabs */}
-          <div className="mt-6 mb-4 flex gap-1.5 border-b border-line/8">
+          <div className={`${mpOptions.length > 1 ? 'mt-4' : 'mt-6'} mb-4 flex gap-1.5 border-b border-line/8`}>
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
