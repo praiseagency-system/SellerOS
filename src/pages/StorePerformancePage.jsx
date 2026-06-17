@@ -414,37 +414,9 @@ function Waktu({ stats }) {
         <KpiCard label="Jam Puncak" value={time.bestHour ? `${String(time.bestHour.hour).padStart(2, '0')}:00` : '—'} sub={time.bestHour ? `${fmtRp(time.bestHour.gmv)} · ${fmtNum(time.bestHour.orders)} pesanan` : ''} />
       </div>
 
-      {/* Top 5 Jam + Top 5 Hari — 2 kolom */}
+      {/* Top 5 Hari + Top 5 Jam — 2 kolom */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Top 5 Jam Terbaik */}
-        <div className="bg-surface border border-line/8 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik</h3>
-          <div className="space-y-3">
-            {top5Hours.map((h, i) => (
-              <div key={h.hour} className="flex items-center gap-3">
-                <span className="text-[11px] font-bold text-ink-faint w-4 text-right">{i + 1}</span>
-                <span className="text-sm font-semibold text-ink-strong w-12">{h.label}</span>
-                <div className="flex-1 bg-fill/8 rounded-full h-5 overflow-hidden">
-                  <div className="h-full rounded-full bg-blue-500 flex items-center justify-end pr-2"
-                    style={{ width: `${(h.orders / maxHourOrders) * 100}%` }}>
-                    <span className="text-[10px] font-bold text-white">{h.pct.toFixed(0)}%</span>
-                  </div>
-                </div>
-                <span className="text-xs text-ink-faint tabular-nums w-18 text-right whitespace-nowrap">{fmtNum(h.orders)} pesanan</span>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-5 gap-1 mt-4 pt-4 border-t border-line/8">
-            {top5Hours.map(h => (
-              <div key={h.hour} className="text-center">
-                <p className="text-[11px] font-bold text-ink-strong">{h.label}</p>
-                <p className="text-[10px] text-blue-400 font-semibold">{h.pct.toFixed(0)}%</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Top 5 Hari Terlaris */}
+        {/* Top 5 Hari Terlaris — kiri */}
         {(() => {
           const top5Days = [...time.byDay]
             .filter(d => d.orders > 0)
@@ -486,7 +458,36 @@ function Waktu({ stats }) {
               </div>
             </div>
           )
-        })()}</div>
+        })()}
+
+        {/* Top 5 Jam Terbaik — kanan */}
+        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik</h3>
+          <div className="space-y-3">
+            {top5Hours.map((h, i) => (
+              <div key={h.hour} className="flex items-center gap-3">
+                <span className="text-[11px] font-bold text-ink-faint w-4 text-right">{i + 1}</span>
+                <span className="text-sm font-semibold text-ink-strong w-12">{h.label}</span>
+                <div className="flex-1 bg-fill/8 rounded-full h-5 overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-500 flex items-center justify-end pr-2"
+                    style={{ width: `${(h.orders / maxHourOrders) * 100}%` }}>
+                    <span className="text-[10px] font-bold text-white">{h.pct.toFixed(0)}%</span>
+                  </div>
+                </div>
+                <span className="text-xs text-ink-faint tabular-nums w-18 text-right whitespace-nowrap">{fmtNum(h.orders)} pesanan</span>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-5 gap-1 mt-4 pt-4 border-t border-line/8">
+            {top5Hours.map(h => (
+              <div key={h.hour} className="text-center">
+                <p className="text-[11px] font-bold text-ink-strong">{h.label}</p>
+                <p className="text-[10px] text-blue-400 font-semibold">{h.pct.toFixed(0)}%</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <div className="bg-surface border border-line/8 rounded-2xl p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">GMV per Jam</h3>
