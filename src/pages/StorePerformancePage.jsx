@@ -169,7 +169,7 @@ export default function StorePerformancePage() {
           {tab === 'produk' && <Produk stats={stats} />}
           {tab === 'kategori' && <Kategori stats={stats} />}
           {tab === 'waktu' && <Waktu stats={stats} />}
-          {tab === 'lokasi' && <Lokasi stats={stats} />}
+          {tab === 'lokasi' && <Lokasi stats={stats} mp={mp} />}
           {tab === 'transaksi' && <Transaksi stats={stats} />}
         </>
       )}
@@ -550,12 +550,14 @@ function Waktu({ stats }) {
   )
 }
 
-function Lokasi({ stats }) {
+function Lokasi({ stats, mp }) {
   const prov = stats.provinces.slice(0, 12)
   const cities = stats.cities.slice(0, 12)
+  // LSF khusus TikTok — sembunyikan estimasi saat filter Shopee.
+  const showLSF = stats.logistics?.hasData && mp !== 'Shopee'
   return (
     <div className="space-y-4">
-      {stats.logistics?.hasData && <LogisticsCard lsf={stats.logistics} />}
+      {showLSF && <LogisticsCard lsf={stats.logistics} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Provinsi Teratas" value={stats.provinces[0]?.name || '—'} sub={stats.provinces[0] ? `${stats.provinces[0].share.toFixed(0)}% GMV` : ''} />
         <KpiCard label="Kota Teratas" value={stats.cities[0]?.name || '—'} sub={stats.cities[0] ? `${stats.cities[0].share.toFixed(0)}% GMV` : ''} />
