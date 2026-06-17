@@ -155,17 +155,66 @@ export function computeStore(lines) {
     hasData: totalVS > 0 || totalVSP > 0,
   }
 
+  // ── Biaya Logistik Blended (LSF TikTok per zona tujuan) ──
+  const logistics = computeLogistics(lines)
+
   return {
     overview, marketplaces, weekly, months,
     products, top20Share, top20Count,
     categories, catGmvTotal,
     time, top5Hours, provinces, cities,
-    payments, dekade, promo,
+    payments, dekade, promo, logistics,
     flags: {
       hasCategory: categories.length > 0,
       hasMultiMarketplace: marketplaces.length > 1,
     },
   }
+}
+
+// ── Biaya Logistik Blended (LSF TikTok) ─────────────────────────────
+// Asumsi toko mengirim dari Jawa, layanan Standard, tier berat ≤1 kg.
+export function provinceToZone(prov) {
+  const p = (prov || '').toLowerCase()
+  if (p.includes('jakarta') || p.includes('dki')) return 'Jawa (Jakarta)'
+  if (['jawa', 'yogyakarta', 'banten'].some(x => p.includes(x))) return 'Jawa (Non-Jakarta)'
+  if (p.includes('bali')) return 'Bali'
+  if (p.includes('nusa tenggara') || p.includes('ntb') || p.includes('ntt')) return 'Nusa Tenggara'
+  if (['sumat', 'aceh', 'riau', 'jambi', 'bengkulu', 'lampung', 'bangka'].some(x => p.includes(x))) return 'Sumatera'
+  if (p.includes('sulawesi') || p.includes('gorontalo')) return 'Sulawesi'
+  if (p.includes('kalimantan')) return 'Kalimantan'
+  if (p.includes('papua') || p.includes('maluku')) return 'Papua & Maluku'
+  return 'Luar Jawa'
+}
+
+// Tarif Standard, tier ≤1kg (IDR, termasuk PPN). Sumber: tabel LSF TikTok Shop.
+export const LSF_BASE_RATE = {
+  'Jawa (Jakarta)': 690, 'Jawa (Non-Jakarta)': 990, 'Bali': 1720,
+  'Nusa Tenggara': 2930, 'Sumatera': 2830, 'Sulawesi': 3940,
+  'Kalimantan': 3440, 'Papua & Maluku': 5060, 'Luar Jawa': 2020,
+}
+
+// Rata-rata tertimbang biaya logistik dari distribusi pengiriman riil.
+// Dedup per Order ID (file 1 baris per SKU) agar tidak over-count.
+export function computeLogistics(lines) {
+  const orderZone = new Map()                 // orderId → zona
+  for (const l of lines) {
+    if (!l.ok) continue
+    if (!orderZone.has(l.o)) orderZone.set(l.o, provinceToZone(l.pr))
+  }
+  const total = orderZone.size
+  if (!total) return { hasData: false, zones: [], blended: 0, dominant: null, uplift: 0, totalOrders: 0 }
+
+  const count = new Map()
+  for (const z of orderZone.values()) count.set(z, (count.get(z) || 0) + 1)
+  const zones = [...count.entries()].map(([zone, orders]) => ({
+    zone, orders, share: (orders / total) * 100,
+    rate: LSF_BASE_RATE[zone] ?? LSF_BASE_RATE['Luar Jawa'],
+  })).sort((a, b) => b.orders - a.orders)
+
+  const blended  = Math.round(zones.reduce((s, z) => s + z.rate * z.orders, 0) / total)
+  const dominant = zones[0]
+  const uplift   = dominant.rate ? ((blended / dominant.rate) - 1) * 100 : 0
+  return { hasData: true, zones, blended, dominant, uplift, totalOrders: total }
 }
 
 // Insight ringkas berbasis aturan (untuk Executive Summary)

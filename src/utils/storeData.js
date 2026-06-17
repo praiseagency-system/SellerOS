@@ -1,6 +1,7 @@
 // Dataset Store Performance — di-scope per workspace. Menyimpan baris ternormalisasi
 // gabungan dari semua file yang di-upload + metadata file.
 import { getCurrentWorkspaceId } from './workspace'
+import { computeLogistics } from './storeAnalytics'
 
 function keyFor(ws) { return `quadrant_store_v1::${ws}` }
 function currentKey() { return keyFor(getCurrentWorkspaceId()) }
@@ -8,6 +9,15 @@ function currentKey() { return keyFor(getCurrentWorkspaceId()) }
 export function getStore() {
   try { return JSON.parse(localStorage.getItem(currentKey()) || '{"files":[],"lines":[]}') }
   catch { return { files: [], lines: [] } }
+}
+
+// Biaya logistik blended dari dataset toko aktif (untuk default Kalkulator).
+// Mengembalikan null bila belum ada data import.
+export function getBlendedLogistics() {
+  const store = getStore()
+  if (!store.lines || !store.lines.length) return null
+  const lsf = computeLogistics(store.lines)
+  return lsf.hasData ? lsf : null
 }
 
 // Tambah hasil ingest; file dengan nama sama menggantikan yang lama. Return store + warning.

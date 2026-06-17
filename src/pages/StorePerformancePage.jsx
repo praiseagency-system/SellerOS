@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
-  Package, Tags, Clock, MapPin, CreditCard,
+  Package, Tags, Clock, MapPin, CreditCard, Truck,
 } from 'lucide-react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -532,6 +532,7 @@ function Lokasi({ stats }) {
   const cities = stats.cities.slice(0, 12)
   return (
     <div className="space-y-4">
+      {stats.logistics?.hasData && <LogisticsCard lsf={stats.logistics} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Provinsi Teratas" value={stats.provinces[0]?.name || '—'} sub={stats.provinces[0] ? `${stats.provinces[0].share.toFixed(0)}% GMV` : ''} />
         <KpiCard label="Kota Teratas" value={stats.cities[0]?.name || '—'} sub={stats.cities[0] ? `${stats.cities[0].share.toFixed(0)}% GMV` : ''} />
@@ -550,6 +551,55 @@ function Lokasi({ stats }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <GeoTable title="Ranking Provinsi" rows={prov} />
         <GeoTable title="Ranking Kota/Kabupaten" rows={cities} />
+      </div>
+    </div>
+  )
+}
+
+function LogisticsCard({ lsf }) {
+  const { blended, dominant, uplift, zones } = lsf
+  return (
+    <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Truck className="w-4 h-4 text-blue-400" />
+        <h3 className="text-sm font-semibold text-ink-strong">Estimasi Biaya Logistik</h3>
+        <span
+          title="Estimasi berbasis tarif Standard ≤1kg dari Jawa. Order berbobot >1kg atau layanan lain bisa berbeda."
+          className="text-[11px] leading-none text-ink-faint border border-line/20 rounded-full w-4 h-4 flex items-center justify-center cursor-help">?</span>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">
+        Zona dominan <span className="font-semibold text-ink">{dominant.zone}</span> · {dominant.share.toFixed(1)}% pesanan · tarif dasar {fmtRp(dominant.rate)}
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+        <div>
+          <p className="text-xs font-semibold tracking-wider text-ink-muted mb-1">BIAYA LOGISTIK BLENDED</p>
+          <p className="text-4xl font-bold text-blue-400">
+            {fmtRp(blended)}<span className="text-base font-medium text-ink-faint">/pesanan</span>
+          </p>
+          <p className="text-xs text-ink-muted mt-2 leading-relaxed">
+            Pengiriman ke luar zona dominan menambah <span className="font-semibold text-amber-400">+{uplift.toFixed(1)}%</span> di atas tarif dasar {fmtRp(dominant.rate)}.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-ink-faint border-b border-line/8">
+                <th className="py-1.5 pr-3 font-medium">Zona</th>
+                <th className="py-1.5 px-3 font-medium text-right">%</th>
+                <th className="py-1.5 pl-3 font-medium text-right">Tarif</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zones.map(z => (
+                <tr key={z.zone} className="border-b border-line/5">
+                  <td className="py-1.5 pr-3 text-ink truncate max-w-[150px]">{z.zone}</td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-blue-400 font-semibold">{z.share.toFixed(1)}%</td>
+                  <td className="py-1.5 pl-3 text-right tabular-nums text-ink-strong">{fmtRp(z.rate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

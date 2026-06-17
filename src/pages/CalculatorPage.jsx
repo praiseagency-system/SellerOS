@@ -8,6 +8,7 @@ import TikTokPicker from '../components/TikTokPicker'
 import { tiktokPlatformRate } from '../utils/tiktokFeeData'
 import { computeCalc } from '../utils/calc'
 import { saveProduct } from '../utils/products'
+import { getBlendedLogistics } from '../utils/storeData'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -19,10 +20,12 @@ function pct(n, digits = 1) {
   return `${n.toFixed(digits)}%`
 }
 
-function NumInput({ label, value, onChange, suffix, hint }) {
+function NumInput({ label, value, onChange, suffix, hint, badge }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-ink-muted mb-1.5">{label}</label>
+      <label className="flex items-center gap-2 text-xs font-medium text-ink-muted mb-1.5">
+        {label}{badge}
+      </label>
       <div className="relative flex items-center">
         {!suffix && (
           <span className="absolute left-3 text-xs text-ink-faint font-medium select-none">Rp</span>
@@ -85,6 +88,11 @@ function ProgramToggle({ label, desc, value, isOn, onToggle, accent = 'orange' }
 export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const init = initialProduct?.state || {}
 
+  // Biaya logistik blended dari data toko (dihitung sekali). Fallback Rp990
+  // (Jawa Non-Jakarta ≤1kg) bila belum ada import.
+  const storeLSF = useMemo(() => getBlendedLogistics(), [])
+  const lsfDefault = storeLSF?.hasData ? String(storeLSF.blended) : '990'
+
   const [platform, setPlatform] = useState(init.platform ?? 'shopee')
   const isTikTok = platform === 'tiktok'
 
@@ -92,7 +100,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const [jual,    setJual]    = useState(init.jual ?? '')
   const [adCost,  setAdCost]  = useState(init.adCost ?? '')
   const [voucher, setVoucher] = useState(init.voucher ?? '')
-  const [ongkir,  setOngkir]  = useState(init.ongkir ?? '')
+  const [ongkir,  setOngkir]  = useState(init.ongkir ?? lsfDefault)
 
   // Shopee — category picker (admin fee)
   const [selectedCat, setSelectedCat] = useState(init.selectedCat ?? null) // { label, fee }
@@ -473,7 +481,15 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
             </h3>
             <NumInput label="Biaya Iklan"     value={adCost}  onChange={setAdCost}  hint="Biaya iklan yang dialokasikan per unit terjual" />
             <NumInput label="Voucher Seller"  value={voucher} onChange={setVoucher} hint="Nominal voucher yang kamu tanggung sendiri" />
-            <NumInput label="Subsidi Ongkir"  value={ongkir}  onChange={setOngkir}  hint="Ongkos kirim yang ditanggung seller" />
+            <NumInput label="Biaya Logistik"  value={ongkir}  onChange={setOngkir}
+              hint="Ongkos kirim yang ditanggung seller"
+              badge={storeLSF?.hasData && (
+                <span
+                  title="Estimasi berbasis tarif Standard ≤1kg dari Jawa. Order berbobot >1kg atau layanan lain bisa berbeda."
+                  className="inline-flex items-center text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-1.5 py-0.5 cursor-help">
+                  auto dari data toko
+                </span>
+              )} />
           </section>
         </div>
 
