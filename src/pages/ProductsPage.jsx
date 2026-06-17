@@ -14,7 +14,7 @@ const STATUS_CLS = {
   yellow: { dot: 'bg-yellow-500', text: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/25' },
   green:  { dot: 'bg-green-500',  text: 'text-green-400',  bg: 'bg-green-500/10',  border: 'border-green-500/25' },
 }
-const PLATFORM_LABEL = { shopee: '🛍️ Shopee', tiktok: '🎵 TikTok' }
+const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 
 // Lampirkan metrik terhitung ke tiap produk
 function withMetrics(p) {
@@ -101,7 +101,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
         </div>
         <Select value={fMarket} onChange={setFMarket} options={[['all', 'Semua Marketplace'], ['shopee', 'Shopee'], ['tiktok', 'TikTok']]} />
         <Select value={fCat} onChange={setFCat} options={[['all', 'Semua Kategori'], ...categories.map(c => [c, c])]} />
-        <Select value={fStatus} onChange={setFStatus} options={[['all', 'Semua Status'], ['sehat', '🟢 Sehat'], ['optimasi', '🟡 Perlu Optimasi'], ['tidak-layak', '🔴 Tidak Layak']]} />
+        <Select value={fStatus} onChange={setFStatus} options={[['all', 'Semua Status'], ['sehat', 'Sehat'], ['optimasi', 'Perlu Optimasi'], ['tidak-layak', 'Tidak Layak']]} />
         <input type="number" value={fMargin} onChange={e => setFMargin(e.target.value)} placeholder="Margin ≥ %"
           className="w-28 bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
         <input type="number" value={fRoas} onChange={e => setFRoas(e.target.value)} placeholder="ROAS ≤ ×"
@@ -241,7 +241,7 @@ function CompareModal({ products, onClose }) {
     ['Profit Bersih',  p => p.calc ? fmt(p.calc.profit) : '—'],
     ['Margin Bersih',  p => p.calc ? `${p.calc.marginNoAd.toFixed(1)}%` : '—'],
     ['ROAS BEP',       p => p.calc?.roasBep != null ? `${p.calc.roasBep.toFixed(1)}×` : '—'],
-    ['Health Score',   p => `${p.status.emoji} ${p.status.label}`],
+    ['Health Score',   p => p.status.label],
   ]
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">

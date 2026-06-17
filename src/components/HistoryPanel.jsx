@@ -2,10 +2,11 @@ import { useRef } from 'react'
 import { X, Trash2, Download, Upload, Clock, FolderOpen } from 'lucide-react'
 import { QUADRANT_CONFIG } from '../utils/quadrantUtils'
 import { deleteSession, exportSession, importSession, saveSession } from '../utils/storage'
+import { PlatformIcon } from './PlatformIcon'
 
 const PLATFORM_STYLE = {
-  shopee: { emoji: '🛍️', color: 'bg-blue-600/15 text-blue-500' },
-  tiktok: { emoji: '🎵', color: 'bg-fill/10 text-ink' },
+  shopee: { color: 'bg-blue-600/15 text-blue-500' },
+  tiktok: { color: 'bg-fill/10 text-ink' },
 }
 
 function SessionCard({ session, onDelete, onExport, onLoad, isLatest }) {
@@ -25,8 +26,9 @@ function SessionCard({ session, onDelete, onExport, onLoad, isLatest }) {
             )}
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${plat.color}`}>
-              {plat.emoji} {session.platform === 'tiktok' ? 'TikTok' : 'Shopee'}
+            <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${plat.color}`}>
+              <PlatformIcon id={session.platform} className="w-3 h-3" />
+              {session.platform === 'tiktok' ? 'TikTok' : 'Shopee'}
             </span>
             <span className="text-xs text-ink-muted flex items-center gap-1">
               <Clock className="w-3 h-3" />{dateStr}

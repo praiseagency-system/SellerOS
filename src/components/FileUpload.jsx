@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react'
 import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowRight, GitCompare, BarChart2, X } from 'lucide-react'
+import { PlatformIcon } from './PlatformIcon'
 
 const PLATFORMS = [
   {
     id: 'shopee',
     label: 'Shopee',
-    emoji: '🛍️',
     color: 'bg-blue-600',
     border: 'border-blue-600',
     ring: 'ring-blue-500',
@@ -17,7 +17,6 @@ const PLATFORMS = [
   {
     id: 'tiktok',
     label: 'TikTok Shop',
-    emoji: '🎵',
     color: 'bg-gray-900',
     border: 'border-gray-900',
     ring: 'ring-gray-400',
@@ -152,7 +151,7 @@ export default function FileUpload({ onUpload, isLoading, error, pendingPrevSess
                       ? `${p.color} text-white ${p.border}`
                       : 'border-line/10 text-ink-muted hover:border-line/20 bg-fill/5'
                   }`}>
-                  <span>{p.emoji}</span>{p.label}
+                  <PlatformIcon id={p.id} />{p.label}
                 </button>
               ))}
             </div>

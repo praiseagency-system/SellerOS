@@ -12,8 +12,8 @@ export const PLATFORM_DEFAULTS = {
 }
 
 export const PLATFORM_LABELS = {
-  shopee: { emoji: '🛍️', name: 'Shopee',      traffic: 'Pengunjung' },
-  tiktok: { emoji: '🎵', name: 'TikTok Shop', traffic: 'Klik Unik'  },
+  shopee: { name: 'Shopee',      traffic: 'Pengunjung' },
+  tiktok: { name: 'TikTok Shop', traffic: 'Klik Unik'  },
 }
 
 

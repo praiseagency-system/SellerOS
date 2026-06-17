@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { TrendingUp, ChevronDown, Truck, Save, X } from 'lucide-react'
+import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle } from 'lucide-react'
+import { PlatformIcon } from '../components/PlatformIcon'
 import CategoryPicker from '../components/CategoryPicker'
 import OngkirPicker from '../components/OngkirPicker'
 import RoasIntelligence from '../components/RoasIntelligence'
@@ -178,8 +179,8 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
       {/* Platform tabs + Simpan Produk */}
       <div className="flex items-center gap-2 mb-6">
         {[
-          { id: 'shopee', emoji: '🛍️', label: 'Shopee',     cls: 'bg-blue-600' },
-          { id: 'tiktok', emoji: '🎵',       label: 'TikTok Shop', cls: 'bg-gray-600' },
+          { id: 'shopee', label: 'Shopee',     cls: 'bg-blue-600' },
+          { id: 'tiktok', label: 'TikTok Shop', cls: 'bg-gray-600' },
         ].map(p => (
           <button key={p.id} onClick={() => switchPlatform(p.id)}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
@@ -187,7 +188,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
                 ? `${p.cls} text-white border-transparent`
                 : 'border-line/10 text-ink-muted hover:border-line/20'
             }`}>
-            <span>{p.emoji}</span>{p.label}
+            <PlatformIcon id={p.id} />{p.label}
           </button>
         ))}
         <button
@@ -357,8 +358,10 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
                         {selectedCat ? selectedCat.label : 'Pilih kategori produk...'}
                       </p>
                       {selectedCat && (
-                        <p className="text-xs text-ink-muted mt-0.5">
-                          {selectedCat.special ? '⚠ Ada ketentuan tambahan' : 'Biaya Administrasi resmi Shopee'}
+                        <p className="text-xs text-ink-muted mt-0.5 flex items-center gap-1">
+                          {selectedCat.special
+                            ? <><AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0" /> Ada ketentuan tambahan</>
+                            : 'Biaya Administrasi resmi Shopee'}
                         </p>
                       )}
                     </div>

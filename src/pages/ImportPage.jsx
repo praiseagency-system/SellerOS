@@ -5,10 +5,11 @@ import {
 } from 'lucide-react'
 import { useQuadrant } from '../contexts/QuadrantContext'
 import { useLang } from '../contexts/LanguageContext'
+import { PlatformIcon } from '../components/PlatformIcon'
 
 const PLATFORMS = [
-  { id: 'shopee', emoji: '🛍️', label: 'Shopee', color: 'bg-blue-600' },
-  { id: 'tiktok', emoji: '🎵', label: 'TikTok', color: 'bg-gray-600' },
+  { id: 'shopee', label: 'Shopee', color: 'bg-blue-600' },
+  { id: 'tiktok', label: 'TikTok', color: 'bg-gray-600' },
 ]
 
 const MONTHS_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
@@ -85,7 +86,7 @@ export default function ImportPage({ onImported }) {
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
                   platform === p.id ? `${p.color} text-white border-transparent` : 'border-line/10 text-ink-muted hover:border-line/20'
                 }`}>
-                <span>{p.emoji}</span>{p.label}
+                <PlatformIcon id={p.id} />{p.label}
               </button>
             ))}
           </div>

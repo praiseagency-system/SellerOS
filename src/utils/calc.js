@@ -87,16 +87,16 @@ export function computeCalc(s) {
 // Status kesehatan produk berbasis Margin Bersih (sebelum iklan).
 // 4 tingkat (dipakai RoasIntelligence); ProductsPage memetakan ke 3 status.
 export function healthScore(margin) {
-  if (margin < 20) return { key: 'tidak-layak', status: 'Tidak Layak Iklan', short: 'Tidak Layak', color: 'red',     emoji: '🔴', note: 'Margin terlalu tipis untuk menanggung biaya iklan.' }
-  if (margin < 30) return { key: 'optimasi',    status: 'Tipis',             short: 'Perlu Optimasi', color: 'orange',  emoji: '🟡', note: 'Bisa diiklankan, tapi ruang profit sempit.' }
-  if (margin < 45) return { key: 'sehat',       status: 'Sehat',             short: 'Sehat',          color: 'green',   emoji: '🟢', note: 'Margin sehat — aman untuk diiklankan.' }
-  return                  { key: 'sehat',       status: 'Sangat Sehat',      short: 'Sehat',          color: 'emerald', emoji: '🟢', note: 'Margin sangat besar — ruang scaling luas.' }
+  if (margin < 20) return { key: 'tidak-layak', status: 'Tidak Layak Iklan', short: 'Tidak Layak', color: 'red',     note: 'Margin terlalu tipis untuk menanggung biaya iklan.' }
+  if (margin < 30) return { key: 'optimasi',    status: 'Tipis',             short: 'Perlu Optimasi', color: 'orange',  note: 'Bisa diiklankan, tapi ruang profit sempit.' }
+  if (margin < 45) return { key: 'sehat',       status: 'Sehat',             short: 'Sehat',          color: 'green',   note: 'Margin sehat — aman untuk diiklankan.' }
+  return                  { key: 'sehat',       status: 'Sangat Sehat',      short: 'Sehat',          color: 'emerald', note: 'Margin sangat besar — ruang scaling luas.' }
 }
 
 // Status 3-tingkat untuk Product List/Dashboard
 export function productStatus(margin) {
-  if (margin == null || isNaN(margin)) return { key: 'tidak-layak', label: 'Tidak Layak', color: 'red', emoji: '🔴' }
-  if (margin < 20) return { key: 'tidak-layak', label: 'Tidak Layak',   color: 'red',    emoji: '🔴' }
-  if (margin < 30) return { key: 'optimasi',    label: 'Perlu Optimasi', color: 'yellow', emoji: '🟡' }
-  return                  { key: 'sehat',        label: 'Sehat',          color: 'green',  emoji: '🟢' }
+  if (margin == null || isNaN(margin)) return { key: 'tidak-layak', label: 'Tidak Layak', color: 'red'    }
+  if (margin < 20) return { key: 'tidak-layak', label: 'Tidak Layak',   color: 'red'    }
+  if (margin < 30) return { key: 'optimasi',    label: 'Perlu Optimasi', color: 'yellow' }
+  return                  { key: 'sehat',        label: 'Sehat',          color: 'green'  }
 }
