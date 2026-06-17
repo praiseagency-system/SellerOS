@@ -414,33 +414,79 @@ function Waktu({ stats }) {
         <KpiCard label="Jam Puncak" value={time.bestHour ? `${String(time.bestHour.hour).padStart(2, '0')}:00` : '—'} sub={time.bestHour ? `${fmtRp(time.bestHour.gmv)} · ${fmtNum(time.bestHour.orders)} pesanan` : ''} />
       </div>
 
-      {/* Top 5 Jam Terbaik */}
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik (Jumlah Pesanan)</h3>
-        <div className="space-y-3">
-          {top5Hours.map((h, i) => (
-            <div key={h.hour} className="flex items-center gap-3">
-              <span className="text-[11px] font-bold text-ink-faint w-5 text-right">{i + 1}</span>
-              <span className="text-sm font-semibold text-ink-strong w-14">{h.label}</span>
-              <div className="flex-1 bg-fill/8 rounded-full h-5 overflow-hidden">
-                <div className="h-full rounded-full bg-blue-500 flex items-center justify-end pr-2 transition-all"
-                  style={{ width: `${(h.orders / maxHourOrders) * 100}%` }}>
-                  <span className="text-[10px] font-bold text-white">{h.pct.toFixed(0)}%</span>
+      {/* Top 5 Jam + Top 5 Hari — 2 kolom */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Top 5 Jam Terbaik */}
+        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik</h3>
+          <div className="space-y-3">
+            {top5Hours.map((h, i) => (
+              <div key={h.hour} className="flex items-center gap-3">
+                <span className="text-[11px] font-bold text-ink-faint w-4 text-right">{i + 1}</span>
+                <span className="text-sm font-semibold text-ink-strong w-12">{h.label}</span>
+                <div className="flex-1 bg-fill/8 rounded-full h-5 overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-500 flex items-center justify-end pr-2"
+                    style={{ width: `${(h.orders / maxHourOrders) * 100}%` }}>
+                    <span className="text-[10px] font-bold text-white">{h.pct.toFixed(0)}%</span>
+                  </div>
                 </div>
+                <span className="text-xs text-ink-faint tabular-nums w-18 text-right whitespace-nowrap">{fmtNum(h.orders)} pesanan</span>
               </div>
-              <span className="text-xs text-ink-faint tabular-nums w-20 text-right">{fmtNum(h.orders)} pesanan</span>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="grid grid-cols-5 gap-1 mt-4 pt-4 border-t border-line/8">
+            {top5Hours.map(h => (
+              <div key={h.hour} className="text-center">
+                <p className="text-[11px] font-bold text-ink-strong">{h.label}</p>
+                <p className="text-[10px] text-blue-400 font-semibold">{h.pct.toFixed(0)}%</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-5 gap-2 mt-4 pt-4 border-t border-line/8">
-          {top5Hours.map(h => (
-            <div key={h.hour} className="text-center">
-              <p className="text-xs font-bold text-ink-strong">{h.label}</p>
-              <p className="text-[11px] text-blue-400 font-semibold">{h.pct.toFixed(0)}%</p>
+
+        {/* Top 5 Hari Terlaris */}
+        {(() => {
+          const top5Days = [...time.byDay]
+            .filter(d => d.orders > 0)
+            .sort((a, b) => b.orders - a.orders)
+            .slice(0, 5)
+          const maxDayOrders = top5Days[0]?.orders || 1
+          const totalDayOrders = time.byDay.reduce((s, d) => s + d.orders, 0)
+          return (
+            <div className="bg-surface border border-line/8 rounded-2xl p-5">
+              <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Hari Terlaris</h3>
+              <div className="space-y-3">
+                {top5Days.map((d, i) => {
+                  const pct = totalDayOrders ? (d.orders / totalDayOrders) * 100 : 0
+                  return (
+                    <div key={d.day} className="flex items-center gap-3">
+                      <span className="text-[11px] font-bold text-ink-faint w-4 text-right">{i + 1}</span>
+                      <span className="text-sm font-semibold text-ink-strong w-12">{d.day}</span>
+                      <div className="flex-1 bg-fill/8 rounded-full h-5 overflow-hidden">
+                        <div className="h-full rounded-full bg-indigo-500 flex items-center justify-end pr-2"
+                          style={{ width: `${(d.orders / maxDayOrders) * 100}%` }}>
+                          <span className="text-[10px] font-bold text-white">{pct.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      <span className="text-xs text-ink-faint tabular-nums w-18 text-right whitespace-nowrap">{fmtNum(d.orders)} pesanan</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="grid grid-cols-5 gap-1 mt-4 pt-4 border-t border-line/8">
+                {top5Days.map(d => {
+                  const pct = totalDayOrders ? (d.orders / totalDayOrders) * 100 : 0
+                  return (
+                    <div key={d.day} className="text-center">
+                      <p className="text-[11px] font-bold text-ink-strong">{d.day}</p>
+                      <p className="text-[10px] text-indigo-400 font-semibold">{pct.toFixed(0)}%</p>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
+          )
+        })()}</div>
 
       <div className="bg-surface border border-line/8 rounded-2xl p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">GMV per Jam</h3>
@@ -559,7 +605,6 @@ function Transaksi({ stats }) {
               <Tooltip
                 formatter={(v, n) => [`${fmtNum(v)} pesanan`, n]}
                 contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, fontSize: 12 }} />
-              <Legend iconType="circle" iconSize={8} />
             </PieChart>
           </ResponsiveContainer>
         </div>
