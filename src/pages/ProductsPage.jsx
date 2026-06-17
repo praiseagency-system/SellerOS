@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Target, HeartPulse,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare,
 } from 'lucide-react'
 import { getProducts, deleteProduct, duplicateProduct } from '../utils/products'
 import { computeCalc, productStatus } from '../utils/calc'
 import CalcBreakdown from '../components/CalcBreakdown'
+import RoasIntelligence from '../components/RoasIntelligence'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -247,51 +248,6 @@ function IconBtn({ children, onClick, title, danger }) {
   )
 }
 
-// ROAS Intelligence versi ringkas — untuk modal detail produk.
-function RoasSimple({ c, status }) {
-  const s = STATUS_CLS[status.color] || STATUS_CLS.green
-  const viable = c.roasBep != null && c.profitNoAd > 0
-  return (
-    <div className="bg-surface border border-line/8 rounded-2xl p-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg bg-blue-600/15 flex items-center justify-center">
-          <Target className="w-4 h-4 text-blue-400" />
-        </div>
-        <h3 className="text-sm font-semibold text-ink-strong">ROAS Intelligence</h3>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3.5">
-          <p className="text-xs text-ink-muted mb-1">Budget Iklan Maksimal</p>
-          <p className="text-xl font-bold text-blue-400 tabular-nums">
-            {viable ? fmt(c.profitNoAd) : '—'}<span className="text-xs font-normal text-ink-faint"> / order</span>
-          </p>
-        </div>
-        <div className="rounded-xl border border-line/10 bg-fill/5 p-3.5">
-          <p className="text-xs text-ink-muted mb-1">ROAS BEP</p>
-          <p className="text-xl font-bold text-ink-strong tabular-nums">{viable ? `${c.roasBep.toFixed(1)}×` : '—'}</p>
-        </div>
-      </div>
-      {!viable && (
-        <div className="rounded-xl border border-red-500/25 bg-red-500/5 p-3 text-xs text-red-300/90">
-          Produk belum profit sebelum iklan — perbaiki harga/HPP/biaya dulu.
-        </div>
-      )}
-      <div className={`rounded-xl border ${s.border} ${s.bg} p-3.5 flex items-center justify-between`}>
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 rounded-lg ${s.bg} flex items-center justify-center`}>
-            <HeartPulse className={`w-4 h-4 ${s.text}`} />
-          </div>
-          <p className="text-xs text-ink-muted">Product Health Score</p>
-        </div>
-        <div className="text-right">
-          <p className={`text-sm font-bold ${s.text}`}>{status.label}</p>
-          <p className="text-[11px] text-ink-faint tabular-nums">Margin {c.marginNoAd.toFixed(1)}%</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function ProductDetailModal({ p, onClose, onOpen }) {
   const c = p.calc
   const isTikTok = p.platform === 'tiktok'
@@ -310,7 +266,7 @@ function ProductDetailModal({ p, onClose, onOpen }) {
         <div className="overflow-auto p-5 space-y-4">
           {c ? (
             <>
-              <RoasSimple c={c} status={p.status} />
+              <RoasIntelligence hargaJual={c.h} profit={c.profitNoAd} margin={c.marginNoAd} roasBep={c.roasBep} showHealth={false} />
               <CalcBreakdown c={c} isTikTok={isTikTok} profitCls={c.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
             </>
           ) : (

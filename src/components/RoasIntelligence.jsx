@@ -49,7 +49,7 @@ function AnimNum({ children }) {
   return <span key={String(children)} className="inline-block roas-pop">{children}</span>
 }
 
-export default function RoasIntelligence({ hargaJual, profit, margin, roasBep }) {
+export default function RoasIntelligence({ hargaJual, profit, margin, roasBep, showHealth = true }) {
   const [active, setActive] = useState('scale')
 
   const viable = roasBep != null && profit > 0
@@ -180,24 +180,26 @@ export default function RoasIntelligence({ hargaJual, profit, margin, roasBep })
       )}
 
       {/* Product Health Score */}
-      <div className={`rounded-xl border ${hsC.border} ${hsC.soft} p-3.5 flex items-center justify-between`}>
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 rounded-lg ${hsC.bg} flex items-center justify-center`}>
-            <HeartPulse className={`w-4 h-4 ${hsC.text}`} />
-          </div>
-          <div>
-            <div className="flex items-center text-xs text-ink-muted">
-              Product Health Score
-              <Tip text="Status kelayakan iklan berdasarkan Margin Bersih produk." />
+      {showHealth && (
+        <div className={`rounded-xl border ${hsC.border} ${hsC.soft} p-3.5 flex items-center justify-between`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-lg ${hsC.bg} flex items-center justify-center`}>
+              <HeartPulse className={`w-4 h-4 ${hsC.text}`} />
             </div>
-            <p className="text-[11px] text-ink-faint mt-0.5">{hs.note}</p>
+            <div>
+              <div className="flex items-center text-xs text-ink-muted">
+                Product Health Score
+                <Tip text="Status kelayakan iklan berdasarkan Margin Bersih produk." />
+              </div>
+              <p className="text-[11px] text-ink-faint mt-0.5">{hs.note}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className={`text-sm font-bold ${hsC.text}`}>{hs.status}</p>
+            <p className="text-[11px] text-ink-faint tabular-nums">Margin {margin.toFixed(1)}%</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className={`text-sm font-bold ${hsC.text}`}>{hs.status}</p>
-          <p className="text-[11px] text-ink-faint tabular-nums">Margin {margin.toFixed(1)}%</p>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
