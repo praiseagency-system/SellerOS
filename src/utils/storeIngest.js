@@ -92,6 +92,9 @@ export function normalizeSheet(aoa, sourceHint) {
     unit: col(headers, 'Harga Setelah Diskon'),
     province: col(headers, 'Provinsi'), city: col(headers, 'Kota/Kabupaten'),
     buyer: col(headers, 'Username (Pembeli)'), category: -1, channel: -1, lineTotal: -1,
+    voucherSeller: col(headers, 'Voucher Ditanggung Penjual'),
+    voucherShopee: col(headers, 'Voucher Ditanggung Shopee'),
+    diskonShopee:  col(headers, 'Diskon dari Shopee'),
   } : {
     orderId: col(headers, 'Order ID'), status: col(headers, 'Order Status'),
     created: col(headers, 'Created Time'), payment: col(headers, 'Payment Method'),
@@ -101,6 +104,7 @@ export function normalizeSheet(aoa, sourceHint) {
     province: col(headers, 'Province'), city: col(headers, 'Regency and City'),
     buyer: col(headers, 'Buyer Username'), category: col(headers, 'Product Category'),
     channel: col(headers, 'Purchase Channel'),
+    voucherSeller: -1, voucherShopee: -1, diskonShopee: -1,
   }
 
   const get = (r, i) => (i >= 0 ? r[i] : '')
@@ -143,6 +147,9 @@ export function normalizeSheet(aoa, sourceHint) {
       pr: toTitleCase((get(r, C.province) ?? '').toString().trim()) || '(Tidak diketahui)',
       ci: toTitleCase((get(r, C.city) ?? '').toString().trim()) || '(Tidak diketahui)',
       b: (get(r, C.buyer) ?? '').toString().trim(),
+      vs:  parseNum(get(r, C.voucherSeller)),
+      vsp: parseNum(get(r, C.voucherShopee)),
+      ds:  parseNum(get(r, C.diskonShopee)),
     })
   }
   return { source, lines, skipped, months: [...months] }

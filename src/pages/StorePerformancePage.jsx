@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
-  Package, Tags, Clock, MapPin,
+  Package, Tags, Clock, MapPin, CreditCard,
 } from 'lucide-react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -67,6 +67,7 @@ export default function StorePerformancePage() {
     ...(stats?.flags.hasCategory ? [{ id: 'kategori', label: 'Kategori', icon: Tags }] : []),
     { id: 'waktu', label: 'Waktu', icon: Clock },
     { id: 'lokasi', label: 'Lokasi', icon: MapPin },
+    { id: 'transaksi', label: 'Transaksi', icon: CreditCard },
   ]
 
   return (
@@ -146,6 +147,7 @@ export default function StorePerformancePage() {
           {tab === 'kategori' && <Kategori stats={stats} />}
           {tab === 'waktu' && <Waktu stats={stats} />}
           {tab === 'lokasi' && <Lokasi stats={stats} />}
+          {tab === 'transaksi' && <Transaksi stats={stats} />}
         </>
       )}
     </div>
@@ -402,13 +404,42 @@ function Kategori({ stats }) {
 }
 
 function Waktu({ stats }) {
-  const { time } = stats
+  const { time, top5Hours } = stats
   const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+  const maxHourOrders = top5Hours[0]?.orders || 1
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Hari Terlaris" value={time.bestDay?.day || '—'} sub={time.bestDay ? `${fmtRp(time.bestDay.gmv)} · ${fmtNum(time.bestDay.orders)} pesanan` : ''} />
         <KpiCard label="Jam Puncak" value={time.bestHour ? `${String(time.bestHour.hour).padStart(2, '0')}:00` : '—'} sub={time.bestHour ? `${fmtRp(time.bestHour.gmv)} · ${fmtNum(time.bestHour.orders)} pesanan` : ''} />
+      </div>
+
+      {/* Top 5 Jam Terbaik */}
+      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik (Jumlah Pesanan)</h3>
+        <div className="space-y-3">
+          {top5Hours.map((h, i) => (
+            <div key={h.hour} className="flex items-center gap-3">
+              <span className="text-[11px] font-bold text-ink-faint w-5 text-right">{i + 1}</span>
+              <span className="text-sm font-semibold text-ink-strong w-14">{h.label}</span>
+              <div className="flex-1 bg-fill/8 rounded-full h-5 overflow-hidden">
+                <div className="h-full rounded-full bg-blue-500 flex items-center justify-end pr-2 transition-all"
+                  style={{ width: `${(h.orders / maxHourOrders) * 100}%` }}>
+                  <span className="text-[10px] font-bold text-white">{h.pct.toFixed(0)}%</span>
+                </div>
+              </div>
+              <span className="text-xs text-ink-faint tabular-nums w-20 text-right">{fmtNum(h.orders)} pesanan</span>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-5 gap-2 mt-4 pt-4 border-t border-line/8">
+          {top5Hours.map(h => (
+            <div key={h.hour} className="text-center">
+              <p className="text-xs font-bold text-ink-strong">{h.label}</p>
+              <p className="text-[11px] text-blue-400 font-semibold">{h.pct.toFixed(0)}%</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="bg-surface border border-line/8 rounded-2xl p-5">
@@ -501,6 +532,171 @@ function GeoTable({ title, rows }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+const PAL = ['#3b82f6', '#f97316', '#22c55e', '#eab308', '#8b5cf6', '#ec4899', '#14b8a6', '#6b7280']
+
+function Transaksi({ stats }) {
+  const { payments, dekade, promo } = stats
+  const totalOrders = stats.overview.orders
+  const maxDekOrders = Math.max(...dekade.map(d => d.orders), 1)
+
+  return (
+    <div className="space-y-4">
+
+      {/* Metode Pembayaran */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-ink-strong mb-3">Metode Pembayaran</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={payments.map(p => ({ name: p.name, value: p.orders }))}
+                dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                {payments.map((p, i) => <Cell key={p.name} fill={PAL[i % PAL.length]} />)}
+              </Pie>
+              <Tooltip
+                formatter={(v, n) => [`${fmtNum(v)} pesanan`, n]}
+                contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, fontSize: 12 }} />
+              <Legend iconType="circle" iconSize={8} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-ink-strong mb-4">Ranking Metode Pembayaran</h3>
+          <div className="space-y-3">
+            {payments.map((p, i) => (
+              <div key={p.name} className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PAL[i % PAL.length] }} />
+                <span className="text-sm text-ink flex-1 truncate">{p.name}</span>
+                <span className="text-sm font-semibold text-ink-strong tabular-nums">{fmtNum(p.orders)}</span>
+                <span className="text-xs text-ink-faint w-10 text-right tabular-nums">{p.share.toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Performa Rentang Tanggal */}
+      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-ink-strong mb-4">Performa Rentang Tanggal</h3>
+        <div className="space-y-3 mb-4">
+          {dekade.map(d => (
+            <div key={d.range} className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-ink-strong w-14">{d.range}</span>
+              <div className="flex-1 bg-fill/8 rounded-full h-6 overflow-hidden">
+                <div className="h-full rounded-full bg-indigo-500 flex items-center justify-end pr-2.5"
+                  style={{ width: `${totalOrders ? (d.orders / totalOrders) * 100 : 0}%`, minWidth: d.orders ? '2.5rem' : 0 }}>
+                  {d.orders > 0 && <span className="text-[10px] font-bold text-white">{d.share.toFixed(0)}%</span>}
+                </div>
+              </div>
+              <span className="text-xs text-ink-faint tabular-nums w-24 text-right">{fmtNum(d.orders)} pesanan</span>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-3 pt-4 border-t border-line/8">
+          {dekade.map(d => (
+            <div key={d.range} className="bg-fill/5 rounded-xl p-3 text-center">
+              <p className="text-xs text-ink-faint mb-0.5">Tgl {d.range}</p>
+              <p className="text-lg font-bold text-ink-strong tabular-nums">{fmtNum(d.orders)}</p>
+              <p className="text-[11px] text-indigo-400 font-semibold">{d.share.toFixed(0)}%</p>
+              <p className="text-[11px] text-ink-faint mt-0.5">{fmtRpShort(d.gmv)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Penggunaan Promo — tampil hanya jika ada data voucher */}
+      {promo.hasData ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Voucher Seller */}
+          <div className="bg-surface border border-line/8 rounded-2xl p-5">
+            <h3 className="text-sm font-semibold text-ink-strong mb-1">Penggunaan Voucher Seller</h3>
+            <p className="text-[11px] text-ink-faint mb-3">Nominal ditanggung penjual</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={[
+                  { name: 'Pakai Voucher', value: promo.withVoucherSeller },
+                  { name: 'Tanpa Voucher', value: promo.withoutVoucherSeller },
+                ]} dataKey="value" nameKey="name" innerRadius={45} outerRadius={72} paddingAngle={2}>
+                  <Cell fill="#3b82f6" />
+                  <Cell fill="rgba(255,255,255,0.08)" />
+                </Pie>
+                <Tooltip formatter={(v, n) => [`${fmtNum(v)} pesanan`, n]}
+                  contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-2 mt-1">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm text-ink">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />Pakai Voucher Seller
+                </span>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-ink-strong tabular-nums">{fmtNum(promo.withVoucherSeller)} pesanan</p>
+                  <p className="text-[11px] text-blue-400">{totalOrders ? ((promo.withVoucherSeller / totalOrders) * 100).toFixed(0) : 0}% dari total</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm text-ink-muted">
+                  <span className="w-2 h-2 rounded-full bg-fill/25" />Tanpa Voucher
+                </span>
+                <p className="text-sm text-ink-muted tabular-nums">{fmtNum(promo.withoutVoucherSeller)} pesanan</p>
+              </div>
+              <div className="pt-2 border-t border-line/8 flex justify-between items-center">
+                <span className="text-xs text-ink-faint">Total nominal voucher seller</span>
+                <span className="text-sm font-bold text-blue-400 tabular-nums">{fmtRp(promo.totalVoucherSeller)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Voucher Shopee */}
+          <div className="bg-surface border border-line/8 rounded-2xl p-5">
+            <h3 className="text-sm font-semibold text-ink-strong mb-1">Voucher Ditanggung Shopee</h3>
+            <p className="text-[11px] text-ink-faint mb-3">Platform yang menanggung diskon</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={[
+                  { name: 'Pakai Voucher Shopee', value: promo.withVoucherShopee },
+                  { name: 'Tanpa', value: promo.withoutVoucherShopee },
+                ]} dataKey="value" nameKey="name" innerRadius={45} outerRadius={72} paddingAngle={2}>
+                  <Cell fill="#f97316" />
+                  <Cell fill="rgba(255,255,255,0.08)" />
+                </Pie>
+                <Tooltip formatter={(v, n) => [`${fmtNum(v)} pesanan`, n]}
+                  contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-2 mt-1">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm text-ink">
+                  <span className="w-2 h-2 rounded-full bg-orange-500" />Pakai Voucher Shopee
+                </span>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-ink-strong tabular-nums">{fmtNum(promo.withVoucherShopee)} pesanan</p>
+                  <p className="text-[11px] text-orange-400">{totalOrders ? ((promo.withVoucherShopee / totalOrders) * 100).toFixed(0) : 0}% dari total</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm text-ink-muted">
+                  <span className="w-2 h-2 rounded-full bg-fill/25" />Tanpa Voucher Shopee
+                </span>
+                <p className="text-sm text-ink-muted tabular-nums">{fmtNum(promo.withoutVoucherShopee)} pesanan</p>
+              </div>
+              <div className="pt-2 border-t border-line/8 flex justify-between items-center">
+                <span className="text-xs text-ink-faint">Total nominal voucher Shopee</span>
+                <span className="text-sm font-bold text-orange-400 tabular-nums">{fmtRp(promo.totalVoucherShopee)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-surface border border-line/8 rounded-2xl p-5 text-center py-8">
+          <p className="text-sm text-ink-faint">Data voucher tidak tersedia</p>
+          <p className="text-xs text-ink-faint mt-1">Kolom "Voucher Ditanggung Penjual" / "Voucher Ditanggung Shopee" tidak ditemukan di file ini</p>
+        </div>
+      )}
     </div>
   )
 }

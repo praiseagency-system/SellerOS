@@ -105,11 +105,62 @@ export function computeStore(lines) {
     name, gmv: b.gmv, orders: b.orderSet.size, share: gmv ? (b.gmv / gmv) * 100 : 0,
   })).sort((a, b) => b.gmv - a.gmv)
 
+  // ── Metode Pembayaran ──
+  const payMap = aggBucket(valid, l => l.pay)
+  const payments = [...payMap.entries()].map(([name, b]) => ({
+    name, orders: b.orderSet.size, gmv: b.gmv,
+    share: orders ? (b.orderSet.size / orders) * 100 : 0,
+  })).sort((a, b) => b.orders - a.orders)
+
+  // ── Rentang Tanggal (dekade) ──
+  const dekadeOf = l => { const d = new Date(l.t).getDate(); return d <= 10 ? '1–10' : d <= 20 ? '11–20' : '21–31' }
+  const dekMap = aggBucket(valid, dekadeOf)
+  const dekade = ['1–10', '11–20', '21–31'].map(k => {
+    if (!dekMap.has(k)) return { range: k, orders: 0, gmv: 0, units: 0, share: 0 }
+    const b = dekMap.get(k)
+    return { range: k, orders: b.orderSet.size, gmv: b.gmv, units: b.units,
+      share: orders ? (b.orderSet.size / orders) * 100 : 0 }
+  })
+
+  // ── Top 5 Jam ──
+  const top5Hours = [...time.byHour]
+    .filter(h => h.orders > 0)
+    .sort((a, b) => b.orders - a.orders)
+    .slice(0, 5)
+    .map(h => ({ ...h, label: `${String(h.hour).padStart(2, '0')}:00`, pct: orders ? (h.orders / orders) * 100 : 0 }))
+
+  // ── Penggunaan Promo (Shopee: vs/vsp/ds; TikTok: semua 0) ──
+  const orderPromo = new Map()
+  for (const l of valid) {
+    if (!orderPromo.has(l.o)) orderPromo.set(l.o, { vs: 0, vsp: 0, ds: 0 })
+    const p = orderPromo.get(l.o)
+    if ((l.vs  || 0) > 0) p.vs  += l.vs
+    if ((l.vsp || 0) > 0) p.vsp += l.vsp
+    if ((l.ds  || 0) > 0) p.ds  += l.ds
+  }
+  let withVS = 0, withVSP = 0, totalVS = 0, totalVSP = 0, totalDS = 0
+  for (const p of orderPromo.values()) {
+    if (p.vs  > 0) { withVS++;  totalVS  += p.vs  }
+    if (p.vsp > 0) { withVSP++; totalVSP += p.vsp }
+    totalDS += p.ds
+  }
+  const promo = {
+    withVoucherSeller:    withVS,
+    withoutVoucherSeller: orders - withVS,
+    totalVoucherSeller:   totalVS,
+    withVoucherShopee:    withVSP,
+    withoutVoucherShopee: orders - withVSP,
+    totalVoucherShopee:   totalVSP,
+    totalDiskonShopee:    totalDS,
+    hasData: totalVS > 0 || totalVSP > 0,
+  }
+
   return {
     overview, marketplaces, weekly, months,
     products, top20Share, top20Count,
     categories, catGmvTotal,
-    time, provinces, cities,
+    time, top5Hours, provinces, cities,
+    payments, dekade, promo,
     flags: {
       hasCategory: categories.length > 0,
       hasMultiMarketplace: marketplaces.length > 1,
