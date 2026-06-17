@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Target, HeartPulse,
 } from 'lucide-react'
 import { getProducts, deleteProduct, duplicateProduct } from '../utils/products'
 import { computeCalc, productStatus } from '../utils/calc'
+import CalcBreakdown from '../components/CalcBreakdown'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -39,6 +40,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const [fRoas, setFRoas]     = useState('')   // ROAS BEP maksimal
   const [selected, setSelected] = useState([]) // ids untuk compare
   const [showCompare, setShowCompare] = useState(false)
+  const [detailProduct, setDetailProduct] = useState(null) // produk untuk modal rincian
 
   const categories = useMemo(
     () => [...new Set(products.map(p => p.categoryLabel).filter(Boolean))],
@@ -143,6 +145,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
             <ProductCard key={p.id} p={p}
               selected={selected.includes(p.id)}
               onSelect={() => toggleSelect(p.id)}
+              onShowDetail={() => setDetailProduct(p)}
               onOpen={() => onOpenProduct(p)}
               onDuplicate={() => handleDuplicate(p.id)}
               onDelete={() => handleDelete(p.id)} />
@@ -152,6 +155,13 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
 
       {showCompare && (
         <CompareModal products={compareProducts} onClose={() => setShowCompare(false)} />
+      )}
+
+      {detailProduct && (
+        <ProductDetailModal
+          p={detailProduct}
+          onClose={() => setDetailProduct(null)}
+          onOpen={() => { const prod = detailProduct; setDetailProduct(null); onOpenProduct(prod) }} />
       )}
     </div>
   )
@@ -179,28 +189,30 @@ function Select({ value, onChange, options }) {
   )
 }
 
-function ProductCard({ p, selected, onSelect, onOpen, onDuplicate, onDelete }) {
+function ProductCard({ p, selected, onSelect, onShowDetail, onOpen, onDuplicate, onDelete }) {
   const s = STATUS_CLS[p.status.color] || STATUS_CLS.green
   const calc = p.calc
   return (
     <div className={`bg-surface border rounded-2xl p-4 transition-all ${selected ? 'border-blue-600/50 ring-1 ring-blue-600/30' : 'border-line/8 hover:border-line/20'}`}>
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
-          <p className="text-[11px] text-ink-faint truncate">
-            {p.sku ? `${p.sku} · ` : ''}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
-          </p>
+      <div className="cursor-pointer" onClick={onShowDetail} title="Lihat rincian kalkulasi">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
+            <p className="text-[11px] text-ink-faint truncate">
+              {p.sku ? `${p.sku} · ` : ''}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
+            </p>
+          </div>
+          <label className="flex-shrink-0 cursor-pointer mt-0.5" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={selected} onChange={onSelect} className="accent-blue-600 w-4 h-4" />
+          </label>
         </div>
-        <label className="flex-shrink-0 cursor-pointer mt-0.5">
-          <input type="checkbox" checked={selected} onChange={onSelect} className="accent-blue-600 w-4 h-4" />
-        </label>
-      </div>
 
-      <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
-        <Metric label="Harga Jual" value={calc ? fmt(calc.h) : '—'} />
-        <Metric label="Profit Bersih" value={calc ? fmt(calc.profit) : '—'} cls={calc && calc.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
-        <Metric label="Margin Bersih" value={calc ? `${calc.marginNoAd.toFixed(1)}%` : '—'} />
-        <Metric label="ROAS BEP" value={calc?.roasBep != null ? `${calc.roasBep.toFixed(1)}×` : '—'} />
+        <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
+          <Metric label="Harga Jual" value={calc ? fmt(calc.h) : '—'} />
+          <Metric label="Profit Bersih" value={calc ? fmt(calc.profit) : '—'} cls={calc && calc.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
+          <Metric label="Margin Bersih" value={calc ? `${calc.marginNoAd.toFixed(1)}%` : '—'} />
+          <Metric label="ROAS BEP" value={calc?.roasBep != null ? `${calc.roasBep.toFixed(1)}×` : '—'} />
+        </div>
       </div>
 
       <div className="flex items-center justify-between">
@@ -232,6 +244,85 @@ function IconBtn({ children, onClick, title, danger }) {
       className={`p-1.5 rounded-lg transition-colors ${danger ? 'text-ink-faint hover:text-red-400 hover:bg-red-500/10' : 'text-ink-faint hover:text-ink hover:bg-fill/8'}`}>
       {children}
     </button>
+  )
+}
+
+// ROAS Intelligence versi ringkas — untuk modal detail produk.
+function RoasSimple({ c, status }) {
+  const s = STATUS_CLS[status.color] || STATUS_CLS.green
+  const viable = c.roasBep != null && c.profitNoAd > 0
+  return (
+    <div className="bg-surface border border-line/8 rounded-2xl p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-blue-600/15 flex items-center justify-center">
+          <Target className="w-4 h-4 text-blue-400" />
+        </div>
+        <h3 className="text-sm font-semibold text-ink-strong">ROAS Intelligence</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3.5">
+          <p className="text-xs text-ink-muted mb-1">Budget Iklan Maksimal</p>
+          <p className="text-xl font-bold text-blue-400 tabular-nums">
+            {viable ? fmt(c.profitNoAd) : '—'}<span className="text-xs font-normal text-ink-faint"> / order</span>
+          </p>
+        </div>
+        <div className="rounded-xl border border-line/10 bg-fill/5 p-3.5">
+          <p className="text-xs text-ink-muted mb-1">ROAS BEP</p>
+          <p className="text-xl font-bold text-ink-strong tabular-nums">{viable ? `${c.roasBep.toFixed(1)}×` : '—'}</p>
+        </div>
+      </div>
+      {!viable && (
+        <div className="rounded-xl border border-red-500/25 bg-red-500/5 p-3 text-xs text-red-300/90">
+          Produk belum profit sebelum iklan — perbaiki harga/HPP/biaya dulu.
+        </div>
+      )}
+      <div className={`rounded-xl border ${s.border} ${s.bg} p-3.5 flex items-center justify-between`}>
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg ${s.bg} flex items-center justify-center`}>
+            <HeartPulse className={`w-4 h-4 ${s.text}`} />
+          </div>
+          <p className="text-xs text-ink-muted">Product Health Score</p>
+        </div>
+        <div className="text-right">
+          <p className={`text-sm font-bold ${s.text}`}>{status.label}</p>
+          <p className="text-[11px] text-ink-faint tabular-nums">Margin {c.marginNoAd.toFixed(1)}%</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProductDetailModal({ p, onClose, onOpen }) {
+  const c = p.calc
+  const isTikTok = p.platform === 'tiktok'
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-surface w-full max-w-md rounded-2xl border border-line/10 shadow-2xl flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line/8 flex-shrink-0">
+          <div className="min-w-0">
+            <h2 className="font-semibold text-ink-strong truncate">{p.name}</h2>
+            <p className="text-[11px] text-ink-faint truncate">
+              {PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-ink-muted hover:text-ink flex-shrink-0"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="overflow-auto p-5 space-y-4">
+          {c ? (
+            <>
+              <RoasSimple c={c} status={p.status} />
+              <CalcBreakdown c={c} isTikTok={isTikTok} profitCls={c.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
+            </>
+          ) : (
+            <p className="text-sm text-ink-faint text-center py-6">Belum ada data kalkulasi untuk produk ini.</p>
+          )}
+          <button onClick={onOpen}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            <Pencil className="w-4 h-4" /> Buka di Kalkulator
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
