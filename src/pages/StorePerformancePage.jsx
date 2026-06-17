@@ -563,8 +563,9 @@ function LogisticsCard({ lsf }) {
       <div className="flex items-center gap-2 mb-1">
         <Truck className="w-4 h-4 text-blue-400" />
         <h3 className="text-sm font-semibold text-ink-strong">Estimasi Biaya Logistik</h3>
+        <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 rounded-full px-1.5 py-0.5">TikTok LSF</span>
         <span
-          title="Estimasi berbasis tarif Standard ≤1kg dari Jawa. Order berbobot >1kg atau layanan lain bisa berbeda."
+          title="Estimasi Biaya Layanan Logistik (LSF) TikTok berbasis tarif Standard ≤1kg dari Jawa. Khusus TikTok Shop — tidak berlaku di Shopee. Order berbobot >1kg atau layanan lain bisa berbeda."
           className="text-[11px] leading-none text-ink-faint border border-line/20 rounded-full w-4 h-4 flex items-center justify-center cursor-help">?</span>
       </div>
       <p className="text-xs text-ink-muted mb-4">

@@ -88,8 +88,9 @@ function ProgramToggle({ label, desc, value, isOn, onToggle, accent = 'orange' }
 export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const init = initialProduct?.state || {}
 
-  // Biaya logistik blended dari data toko (dihitung sekali). Fallback Rp990
-  // (Jawa Non-Jakarta ≤1kg) bila belum ada import.
+  // Biaya Logistik (LSF) hanya berlaku di TikTok Shop, tidak ada di Shopee.
+  // Blended dihitung sekali dari data toko; fallback Rp990 (Jawa Non-Jakarta
+  // ≤1kg) bila belum ada import.
   const storeLSF = useMemo(() => getBlendedLogistics(), [])
   const lsfDefault = storeLSF?.hasData ? String(storeLSF.blended) : '990'
 
@@ -100,7 +101,8 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const [jual,    setJual]    = useState(init.jual ?? '')
   const [adCost,  setAdCost]  = useState(init.adCost ?? '')
   const [voucher, setVoucher] = useState(init.voucher ?? '')
-  const [ongkir,  setOngkir]  = useState(init.ongkir ?? lsfDefault)
+  // Default LSF hanya saat platform TikTok; Shopee mulai kosong (manual).
+  const [ongkir,  setOngkir]  = useState(init.ongkir ?? (init.platform === 'tiktok' ? lsfDefault : ''))
 
   // Shopee — category picker (admin fee)
   const [selectedCat, setSelectedCat] = useState(init.selectedCat ?? null) // { label, fee }
@@ -164,6 +166,8 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
     setPromoXtraOn(false); setLiveXtraOn(false); setPreOrderOn(false)
     setTtSeller('marketplace'); setSelectedTtCat(null); setTtKomisiManual('')
     setTtGmvMax(false); setTtGxp(false); setTtPreOrder(false); setCComm('')
+    // Biaya Logistik (LSF) khusus TikTok: isi blended saat ke TikTok, kosong di Shopee.
+    setOngkir(id === 'tiktok' ? lsfDefault : '')
   }
 
   const catLabel = isTikTok ? (selectedTtCat?.label || null) : (selectedCat?.label || null)
@@ -481,9 +485,11 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
             </h3>
             <NumInput label="Biaya Iklan"     value={adCost}  onChange={setAdCost}  hint="Biaya iklan yang dialokasikan per unit terjual" />
             <NumInput label="Voucher Seller"  value={voucher} onChange={setVoucher} hint="Nominal voucher yang kamu tanggung sendiri" />
-            <NumInput label="Biaya Logistik"  value={ongkir}  onChange={setOngkir}
-              hint="Ongkos kirim yang ditanggung seller"
-              badge={storeLSF?.hasData && (
+            <NumInput
+              label={isTikTok ? 'Biaya Logistik' : 'Subsidi Ongkir'}
+              value={ongkir} onChange={setOngkir}
+              hint={isTikTok ? 'Biaya Layanan Logistik (LSF) yang ditanggung seller' : 'Ongkos kirim yang ditanggung seller'}
+              badge={isTikTok && storeLSF?.hasData && (
                 <span
                   title="Estimasi berbasis tarif Standard ≤1kg dari Jawa. Order berbobot >1kg atau layanan lain bisa berbeda."
                   className="inline-flex items-center text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-1.5 py-0.5 cursor-help">
