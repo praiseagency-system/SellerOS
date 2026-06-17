@@ -79,8 +79,10 @@ export function deleteWorkspace(id) {
   // Don't allow deleting the last workspace
   if (list.length === 0) return false
   localStorage.setItem(WS_KEY, JSON.stringify(list))
-  // Clean its sessions
+  // Clean ALL data scoped to this workspace
   localStorage.removeItem(sessionsKeyFor(id))
+  localStorage.removeItem(`quadrant_products_v1::${id}`)
+  localStorage.removeItem(`quadrant_store_v1::${id}`)
   // If current was deleted, switch to first remaining
   if (getCurrentWorkspaceId() === id) {
     localStorage.setItem(CURRENT_KEY, list[0].id)
