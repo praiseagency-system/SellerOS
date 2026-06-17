@@ -43,10 +43,14 @@ export function computeStore(lines) {
     return { week: w, gmv: b.gmv, units: b.units, orders: b.orderSet.size, aov: b.orderSet.size ? b.gmv / b.orderSet.size : 0 }
   })
   weekly.forEach((wk, i) => {
+    // Hanya bandingkan dengan minggu sebelumnya yang benar-benar berdekatan
+    // (week - 1). Kalau ada gap (mis. minggu 3 kosong), tampilkan null bukan
+    // perbandingan yang menyesatkan.
     const prev = weekly[i - 1]
-    wk.growthGmv = prev ? growth(wk.gmv, prev.gmv) : null
-    wk.growthOrders = prev ? growth(wk.orders, prev.orders) : null
-    wk.growthAov = prev ? growth(wk.aov, prev.aov) : null
+    const isAdjacent = prev && prev.week === wk.week - 1
+    wk.growthGmv    = isAdjacent ? growth(wk.gmv, prev.gmv) : null
+    wk.growthOrders = isAdjacent ? growth(wk.orders, prev.orders) : null
+    wk.growthAov    = isAdjacent ? growth(wk.aov, prev.aov) : null
   })
 
   const months = [...new Set(valid.map(l => {
