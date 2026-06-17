@@ -38,6 +38,14 @@ export default function App() {
     setCurrentPage('calculator')
   }
 
+  // Navigasi sidebar: buka kalkulator selalu sebagai produk BARU. Tanpa ini,
+  // editingProduct yang basi (dari edit/duplikat sebelumnya) ikut terbawa,
+  // sehingga "Simpan" malah menimpa produk lama, bukan membuat yang baru.
+  function handleNavigate(target) {
+    if (target === 'calculator') { newProduct(); return }
+    setCurrentPage(target)
+  }
+
   const [workspaces, setWorkspaces] = useState(() => getWorkspaces())
   const [currentWorkspace, setCurrentWs] = useState(() => getCurrentWorkspace())
   // Bumping this remounts the provider → resets loaded data when workspace changes
@@ -61,7 +69,7 @@ export default function App() {
     <QuadrantProvider key={wsKey}>
       <Layout
         currentPage={currentPage}
-        onNavigate={setCurrentPage}
+        onNavigate={handleNavigate}
         pageTitle={meta.title}
         pageSubtitle={meta.subtitle}
         workspaces={workspaces}
