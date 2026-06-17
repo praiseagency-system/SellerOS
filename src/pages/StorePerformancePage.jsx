@@ -463,7 +463,7 @@ function Lokasi({ stats }) {
         <ResponsiveContainer width="100%" height={Math.max(160, prov.length * 26)}>
           <BarChart data={prov} layout="vertical" margin={{ left: 10 }}>
             <XAxis type="number" tickFormatter={fmtRpShort} tick={{ fontSize: 11, fill: '#888' }} />
-            <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: '#aaa' }} />
+            <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 10, fill: '#aaa' }} />
             <Tooltip formatter={v => fmtRp(v)} contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, fontSize: 12 }} />
             <Bar dataKey="gmv" fill="#3b82f6" radius={[0, 5, 5, 0]} />
           </BarChart>

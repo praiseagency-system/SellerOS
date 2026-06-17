@@ -57,6 +57,18 @@ export function detectSource(headers) {
 function isCancelled(status) {
   return /batal|cancel|dibatalkan/i.test((status ?? '').toString())
 }
+
+// Shopee mengirim nama provinsi/kota dalam ALL CAPS — ubah ke Title Case
+// agar tampil rapi di chart & tabel. Singkatan umum (DKI, NTB, NAD, dll)
+// dipertahankan huruf besar.
+const KEEP_UPPER = new Set(['DKI','NTB','NAD','DIY','DI','KAB','KOTA'])
+function toTitleCase(str) {
+  if (!str) return str
+  return str.replace(/\S+/g, w => {
+    const clean = w.replace(/[^A-Za-z]/g, '')
+    return KEEP_UPPER.has(clean.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+  })
+}
 function weekOfMonth(d) {
   // W1=1-7, W2=8-14, W3=15-21, W4=22-akhir bulan.
   // Tgl 29-31 digabung ke W4 agar tidak ada "minggu semu" 2-3 hari
@@ -128,8 +140,8 @@ export function normalizeSheet(aoa, sourceHint) {
       r: revenue,
       ok: !isCancelled(status),
       pay: (get(r, C.payment) ?? '').toString().trim() || '(Lainnya)',
-      pr: (get(r, C.province) ?? '').toString().trim() || '(Tidak diketahui)',
-      ci: (get(r, C.city) ?? '').toString().trim() || '(Tidak diketahui)',
+      pr: toTitleCase((get(r, C.province) ?? '').toString().trim()) || '(Tidak diketahui)',
+      ci: toTitleCase((get(r, C.city) ?? '').toString().trim()) || '(Tidak diketahui)',
       b: (get(r, C.buyer) ?? '').toString().trim(),
     })
   }
