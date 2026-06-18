@@ -7,6 +7,8 @@ import ProductsPage from './pages/ProductsPage'
 import StorePerformancePage from './pages/StorePerformancePage'
 import { QuadrantProvider } from './contexts/QuadrantContext'
 import { useLang } from './contexts/LanguageContext'
+import { useAuth } from './contexts/AuthContext'
+import LoginPage from './pages/LoginPage'
 import {
   getWorkspaces, getCurrentWorkspace, setCurrentWorkspace,
 } from './utils/workspace'
@@ -14,7 +16,21 @@ import { getSessions } from './utils/storage'
 
 const PAGE_KEYS = ['import', 'quadrant', 'calculator', 'products', 'performance', 'reports', 'ai']
 
+// Gate auth: cek sesi dulu, tampilkan login bila belum masuk.
 export default function App() {
+  const { loading, user } = useAuth()
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-app">
+        <span className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+  if (!user) return <LoginPage />
+  return <MainApp />
+}
+
+function MainApp() {
   const { t } = useLang()
   // Kalau workspace ini sudah punya periode tersimpan, langsung buka Kuadran
   // (data di-restore otomatis di QuadrantContext). Kalau kosong, mulai di Import.

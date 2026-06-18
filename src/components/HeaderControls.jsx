@@ -1,12 +1,14 @@
-import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown } from 'lucide-react'
+import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown, LogOut } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function HeaderControls({ notifCount = '8+', showPeriod = true }) {
   const { theme, setTheme } = useTheme()
   const { lang, setLang, t } = useLang()
   const { periodType, periodLabel, prevLabel, isCompareMode, hasData, setShowHistory } = useQuadrant()
+  const { user, signOut } = useAuth()
 
   const typeLabel = periodType ? t(`period.${periodType}`) : t('period.none')
   const mainLabel = hasData && periodLabel ? periodLabel : t('period.empty')
@@ -92,6 +94,20 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true })
           </span>
         )}
       </div>
+      )}
+
+      {/* Akun + keluar */}
+      {user && (
+        <button
+          onClick={() => signOut()}
+          title={`${user.email} — Keluar`}
+          className="flex items-center gap-2 bg-fill/5 border border-line/10 rounded-full pl-1 pr-2.5 py-1 text-ink-muted hover:text-ink hover:bg-fill/10 transition-colors"
+        >
+          <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold uppercase">
+            {(user.email?.[0] || '?')}
+          </span>
+          <LogOut className="w-4 h-4" />
+        </button>
       )}
     </div>
   )
