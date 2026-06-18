@@ -8,7 +8,7 @@ import {
   ComposedChart, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
 import { ingestFile } from '../utils/storeIngest'
-import { getStore, addUpload, removeFile, clearStore } from '../utils/storeData'
+import { getStore, addUpload, removeFile, clearStore, getBlendedLogistics } from '../utils/storeData'
 import { computeStore, quickInsights } from '../utils/storeAnalytics'
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
@@ -42,6 +42,9 @@ export default function StorePerformancePage() {
     return lines.length ? computeStore(lines) : null
   }, [store, mp])
   const insights = useMemo(() => (stats ? quickInsights(stats) : []), [stats])
+
+  // Estimasi biaya logistik (LSF) selalu dari order TikTok saja, tak ikut filter.
+  const tiktokLSF = useMemo(() => getBlendedLogistics(), [store])
 
   async function handleFiles(fileList) {
     const files = Array.from(fileList || [])
@@ -169,7 +172,7 @@ export default function StorePerformancePage() {
           {tab === 'produk' && <Produk stats={stats} />}
           {tab === 'kategori' && <Kategori stats={stats} />}
           {tab === 'waktu' && <Waktu stats={stats} />}
-          {tab === 'lokasi' && <Lokasi stats={stats} mp={mp} />}
+          {tab === 'lokasi' && <Lokasi stats={stats} mp={mp} lsf={tiktokLSF} />}
           {tab === 'transaksi' && <Transaksi stats={stats} />}
         </>
       )}
@@ -550,14 +553,15 @@ function Waktu({ stats }) {
   )
 }
 
-function Lokasi({ stats, mp }) {
+function Lokasi({ stats, mp, lsf }) {
   const prov = stats.provinces.slice(0, 12)
   const cities = stats.cities.slice(0, 12)
-  // LSF khusus TikTok — sembunyikan estimasi saat filter Shopee.
-  const showLSF = stats.logistics?.hasData && mp !== 'Shopee'
+  // LSF khusus TikTok — angka selalu dari order TikTok saja. Tampil hanya saat
+  // filter Semua atau TikTok; sembunyikan untuk Shopee & Tokopedia.
+  const showLSF = lsf?.hasData && (mp === 'all' || mp === 'TikTok')
   return (
     <div className="space-y-4">
-      {showLSF && <LogisticsCard lsf={stats.logistics} />}
+      {showLSF && <LogisticsCard lsf={lsf} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Provinsi Teratas" value={stats.provinces[0]?.name || '—'} sub={stats.provinces[0] ? `${stats.provinces[0].share.toFixed(0)}% GMV` : ''} />
         <KpiCard label="Kota Teratas" value={stats.cities[0]?.name || '—'} sub={stats.cities[0] ? `${stats.cities[0].share.toFixed(0)}% GMV` : ''} />

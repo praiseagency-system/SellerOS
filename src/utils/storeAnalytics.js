@@ -155,15 +155,12 @@ export function computeStore(lines) {
     hasData: totalVS > 0 || totalVSP > 0,
   }
 
-  // ── Biaya Logistik Blended (LSF TikTok per zona tujuan) ──
-  const logistics = computeLogistics(lines)
-
   return {
     overview, marketplaces, weekly, months,
     products, top20Share, top20Count,
     categories, catGmvTotal,
     time, top5Hours, provinces, cities,
-    payments, dekade, promo, logistics,
+    payments, dekade, promo,
     flags: {
       hasCategory: categories.length > 0,
       hasMultiMarketplace: marketplaces.length > 1,

@@ -11,14 +11,13 @@ export function getStore() {
   catch { return { files: [], lines: [] } }
 }
 
-// Biaya logistik blended dari dataset toko aktif (untuk default Kalkulator).
-// LSF khusus TikTok — hanya hitung dari order bersumber TikTok (exclude Shopee).
-// Mengembalikan null bila belum ada data TikTok yang di-import.
+// Biaya logistik blended dari dataset toko aktif (untuk Kalkulator & kartu Lokasi).
+// LSF khusus TikTok Shop — hanya hitung dari order marketplace TikTok
+// (exclude Shopee & Tokopedia). Mengembalikan null bila belum ada data TikTok.
 export function getBlendedLogistics() {
   const store = getStore()
   if (!store.lines || !store.lines.length) return null
-  const ttFiles = new Set((store.files || []).filter(f => f.source === 'tiktok').map(f => f.name))
-  const lines = store.lines.filter(l => ttFiles.has(l._f))
+  const lines = store.lines.filter(l => (l.m || '').toLowerCase().includes('tiktok'))
   if (!lines.length) return null
   const lsf = computeLogistics(lines)
   return lsf.hasData ? lsf : null
