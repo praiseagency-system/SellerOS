@@ -1,402 +1,270 @@
-# HANDOFF — Seller Tools: Kuadran Traffic Conversion (Shopee Quadrant)
+# HANDOFF — SellerOS (Growth Intelligence Platform)
 
-> Dokumen ini dibuat agar AI/dev lain bisa langsung melanjutkan pekerjaan tanpa
-> penjelasan tambahan. Ditulis berdasarkan inspeksi langsung terhadap kode sumber
-> pada `2026-06-17`. Tidak ada riwayat Git di folder ini (tidak ada `.git`), jadi
-> sebagian "status pengerjaan" disimpulkan dari kode itu sendiri (flag `soon: true`,
-> komentar, struktur file) — bukan dari commit log atau percakapan sebelumnya.
+> Dokumen ini agar AI/dev lain bisa langsung melanjutkan tanpa penjelasan
+> tambahan. Diperbarui **2026-06-18** berdasarkan inspeksi source code + git log
+> + konteks dari founder. **Menggantikan versi sebelumnya** (2026-06-17) yang
+> sudah usang — versi lama mendeskripsikan app sebagai murni offline/no-backend,
+> padahal autentikasi kini sudah memakai **Supabase**.
 
 ---
 
-## 1. Ringkasan Tujuan Project
+## 1. Posisi & Visi Produk (BACA DULU)
 
-**Nama produk:** Seller Tools — Kuadran Traffic Conversion
-**Apa ini:** Webapp analitik 100% client-side (tanpa server/database) untuk
-membantu seller Shopee (dan TikTok Shop) menganalisis performa produk dengan:
+**Nama:** SellerOS. **Repo:** `github.com/praiseagency-system/SellerOS`.
 
-- Memetakan setiap produk ke dalam **4 kuadran** berdasarkan:
-  - Sumbu X: **Traffic** (jumlah pengunjung)
-  - Sumbu Y: **Conversion Rate**
-  - Kuadran: High Traffic/High Conversion, High Traffic/Low Conversion,
-    Low Traffic/High Conversion, Low Traffic/Low Conversion
-- Mengimpor data ekspor toko Shopee/TikTok Shop (file Excel) lalu mem-parsing-nya
-  menjadi data produk yang siap dianalisis.
-- Menghitung kalkulasi biaya & profitabilitas produk (fee Shopee, fee ongkir,
-  fee TikTok, dsb).
-- Membandingkan periode (period-over-period) untuk melihat **movement**
-  produk antar kuadran dari waktu ke waktu.
-- Menyimpan riwayat per **workspace** (multi-toko) di `localStorage` browser —
-  tidak butuh akun/server.
+**Posisi saat ini:** **internal operating system** untuk **Praise Agency** —
+dipakai founder + tim agency dulu, **belum** SaaS publik. Jangan over-engineer
+untuk skala ribuan user. SaaS adalah langkah masa depan, bukan fokus sekarang.
 
-Target pengguna: seller/penjual online (Shopee & TikTok Shop) yang ingin
-keputusan data-driven soal produk mana yang perlu didorong iklannya, diturunkan
-harganya, atau dihentikan.
+**Tujuan akhir:** bukan dashboard, melainkan **alat bantu pengambilan keputusan**
+untuk owner, marketplace specialist, dan ads specialist — berbasis data.
+
+**Prioritas founder saat ini (urut):**
+1. Fondasi data yang benar.
+2. Workflow analisis yang lebih baik.
+3. Bantu keputusan marketplace & iklan.
+4. Validasi kegunaan operasional harian.
+
+**Roadmap produk (visi):**
+- **Phase 1 — Marketplace Calculator** ✅ selesai
+- **Phase 2 — Product Intelligence · Quadrant Analysis · Store Performance** 🟡 sebagian besar selesai (fungsional, tapi fondasi data masih localStorage)
+- **Phase 3 — Campaign Monitoring · Ads Monitoring** 🔴 belum (sinyal iklan ada, entitas belum)
+- **Phase 4 — AI Recommendation Engine** 🔴 belum (stub `soon`)
+
+> **Affiliate Monitoring DIPISAH** jadi produk sendiri — jangan gabung ke repo ini.
 
 ---
 
 ## 2. Status Pengerjaan Saat Ini
 
-Aplikasi **sudah fungsional dan bisa dijalankan** (bukan prototipe kosong).
-Sudah ada `dist/` hasil build sebelumnya, dan ada portable zip
-(`shopee-quadrant-portable.zip` di `Downloads`) yang dipakai untuk memindahkan
-project ke PC lain — ini kemungkinan PC tujuan dari proses pemindahan tersebut.
+App **fungsional & bisa dijalankan**. Migrasi ke Supabase berjalan bertahap dan
+sudah mencakup: **auth/profiles**, **workspaces**, dan **periods + products
+(data import & analisis kuadran)** — semuanya kini di Supabase (per-akun,
+multi-user-ready & terverifikasi end-to-end). Yang **masih di `localStorage`**:
+(1) produk tersimpan Kalkulator (`quadrant_products_v1`), (2) data Performa Toko
+(`quadrant_store_v1`) — slice migrasi berikutnya.
 
-Tidak ada version control (Git) di folder ini — **sangat disarankan untuk
-`git init` + commit awal sebelum melanjutkan pengembangan**, supaya ada riwayat
-perubahan yang bisa dilacak.
+**Migrasi Supabase — Step 1–3 + Settings SELESAI** (git: `10245e6`, `4fdab46`):
+- `src/lib/supabase.js` — client; baca env `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`.
+  Pakai **fallback placeholder URL** agar `createClient` tak throw saat env kosong;
+  `isSupabaseConfigured` untuk guard.
+- `src/contexts/AuthContext.jsx` — sesi persisten, `signInWithPassword/signUp/
+  signInWithGoogle/signOut/refreshProfile`, expose `user/profile/isAdmin/loading`.
+  Short-circuit `setLoading(false)` bila env belum di-set.
+- `src/pages/LoginPage.jsx` — login/signup + Google (dark theme).
+- `src/pages/SettingsPage.jsx` — info akun + toggle consent `share_with_admin` + logout.
+- `supabase/migrations/0001_init.sql` — tabel `profiles/workspaces/periods/products`,
+  RLS consent-based, trigger auto-profile + anti-eskalasi role, GRANTs.
+- `.env.example` (committed); `.env.local` gitignored.
 
-Tidak ditemukan file `.env` atau env var apa pun — aplikasi ini murni
-client-side, tidak butuh secret/API key (lihat bagian 5).
+**SELESAI:** workspaces → Supabase (`src/data/workspaces.js`); periods + products
+→ Supabase (`src/data/periods.js`, migration `0003`). **PENDING:** Kalkulator
+produk & Performa Toko → Supabase; halaman `/admin` (belum ada); validasi upload.
+**Catatan posisi:** RLS rumit / panel admin consent **bisa ditunda** selama masih
+internal tool (semua anggota tim = trusted). Prioritaskan fondasi data & workflow,
+bukan multi-tenant. Akun dummy test: `dummy.tester@selleros.app`.
+
+Git repo aktif (branch `main`, remote `origin` = SellerOS). Tidak ada perubahan
+uncommitted saat dokumen ini dibuat.
 
 ---
 
-## 3. Struktur Folder dan File Penting
-
-Lokasi project: `C:\Users\OC\Documents\shopee-quadrant-portable\shopee-quadrant`
+## 3. Struktur Folder Penting
 
 ```
 shopee-quadrant/
-├── .claude/
-│   └── launch.json              # config debug launcher (npm run dev --port 5173)
-├── public/
-│   ├── favicon.svg
-│   └── icons.svg
 ├── src/
-│   ├── main.jsx                 # entry point React
-│   ├── App.jsx                  # root component, routing antar "page" via state
-│   ├── i18n.js                  # semua string UI (ID/EN?) — cek isinya untuk nav/page labels
-│   ├── App.css / index.css      # styling global
+│   ├── main.jsx          # entry; provider nesting: Theme → Language → Auth → App
+│   ├── App.jsx           # AUTH GATE (loading→spinner, !user→LoginPage) + thin router via useState(PAGE_KEYS)
+│   ├── lib/
+│   │   └── supabase.js   # client Supabase + isSupabaseConfigured
 │   ├── contexts/
-│   │   ├── QuadrantContext.jsx  # state global data produk & kuadran per workspace
-│   │   ├── LanguageContext.jsx  # context bahasa (useLang(), t())
-│   │   └── ThemeContext.jsx     # context tema (light/dark)
-│   ├── components/
-│   │   ├── Layout.jsx           # shell aplikasi: sidebar nav, header — KUNCI untuk lihat semua menu/fitur
-│   │   ├── WorkspaceSwitcher.jsx# UI ganti/buat workspace (multi-toko)
-│   │   ├── HeaderControls.jsx
-│   │   ├── HistoryPanel.jsx     # riwayat periode + export/import session .json
-│   │   ├── FileUpload.jsx       # upload file Excel ekspor Shopee/TikTok
-│   │   ├── CategoryPicker.jsx
-│   │   ├── OngkirPicker.jsx     # pilihan program ongkir (gratis ongkir/XTRA) utk hitung fee
-│   │   ├── TikTokPicker.jsx
-│   │   ├── ProductTable.jsx
-│   │   ├── QuadrantChart.jsx    # chart scatter kuadran (pakai Recharts)
-│   │   ├── QuadrantSummary.jsx
-│   │   ├── QuadrantTableView.jsx
-│   │   ├── MovementView.jsx     # perbandingan pergerakan produk antar kuadran/periode
-│   │   ├── RoasIntelligence.jsx # analisis ROAS
-│   │   └── Settings.jsx
+│   │   ├── AuthContext.jsx      # Supabase auth (user/profile/isAdmin)
+│   │   ├── QuadrantContext.jsx  # STATE INTI kuadran; handleUpload/loadSession; baca localStorage
+│   │   ├── LanguageContext.jsx  # i18n (t()), ID/EN
+│   │   └── ThemeContext.jsx     # dark/light
 │   ├── pages/
-│   │   ├── ImportPage.jsx       # halaman import data
-│   │   ├── QuadrantPage.jsx     # halaman utama kuadran
-│   │   ├── CalculatorPage.jsx   # kalkulator biaya/profitabilitas produk (file TERBESAR, 691 baris)
-│   │   ├── ProductsPage.jsx     # daftar produk + buka di calculator
-│   │   └── StorePerformancePage.jsx # performa toko (506 baris)
+│   │   ├── LoginPage.jsx        # NEW — login/signup/Google
+│   │   ├── SettingsPage.jsx     # NEW — akun + consent toggle + logout
+│   │   ├── ImportPage.jsx       # upload Excel/CSV + period picker
+│   │   ├── QuadrantPage.jsx     # tampilan kuadran (display-only, consume context)
+│   │   ├── CalculatorPage.jsx   # kalkulator fee/profit (file besar)
+│   │   ├── ProductsPage.jsx     # daftar produk → buka di calculator
+│   │   └── StorePerformancePage.jsx
+│   ├── components/
+│   │   ├── Layout.jsx           # sidebar (array NAV) + WorkspaceSwitcher + HistoryPanel
+│   │   ├── HeaderControls.jsx   # tema/bahasa/notif/periode + avatar→Settings + logout
+│   │   ├── WorkspaceSwitcher.jsx, HistoryPanel.jsx, FileUpload.jsx
+│   │   ├── QuadrantChart/Summary/TableView.jsx, MovementView.jsx, RoasIntelligence.jsx
+│   │   ├── CategoryPicker/OngkirPicker/TikTokPicker.jsx, ProductTable.jsx, CalcBreakdown.jsx
+│   │   └── PlatformIcon.jsx, Settings.jsx
 │   └── utils/
-│       ├── workspace.js         # CRUD workspace, localStorage keys
-│       ├── storage.js           # CRUD session/riwayat periode per workspace
-│       ├── parseShopeeData.js   # parser file Excel ekspor Shopee
-│       ├── parseTikTokData.js   # parser file Excel ekspor TikTok Shop
-│       ├── quadrantUtils.js     # logika pembagian 4 kuadran
-│       ├── calc.js              # kalkulasi biaya/profit
-│       ├── feeData.js           # tabel fee Shopee per kategori (360 baris — data referensi)
-│       ├── ongkirFeeData.js     # tabel fee ongkir/XTRA (272 baris)
-│       ├── tiktokFeeData.js     # tabel fee TikTok Shop
-│       ├── compareData.js       # logika compare antar periode
-│       ├── products.js          # helper data produk
-│       ├── storeData.js / storeAnalytics.js / storeIngest.js  # data & analitik performa toko
-│       └── (semua data tabel fee perlu di-update manual jika Shopee/TikTok ubah skema biaya)
-├── README.md                    # instruksi pindah PC, build, stack (sudah ada, bahasa Indonesia)
-├── package.json
-├── vite.config.js               # config default Vite + plugin React, TANPA alias/env khusus
-├── tailwind.config.js
-├── postcss.config.js
-├── eslint.config.js
-├── start-dev-5175.bat           # shortcut Windows: jalankan dev server di port 5175 (127.0.0.1)
-├── dist/                        # hasil build produksi (sudah ada, mungkin sudah usang — rebuild ulang)
-└── vite-dev.out.log / vite-dev.err.log / vite-bg-out.log / vite-bg-err.log
-    # log sisa dev server sebelumnya — saat ini KOSONG (tidak ada error tercatat)
+│       ├── workspace.js  # CRUD workspace (localStorage); key quadrant_sessions_v1::<wsId>
+│       ├── storage.js    # CRUD sesi/periode (localStorage); makeSession/compactProduct/getPreviousSession
+│       ├── parseShopeeData.js / parseTikTokData.js  # parser Excel/CSV (+ data iklan → roas)
+│       ├── quadrantUtils.js, calc.js, compareData.js, products.js
+│       ├── feeData.js / ongkirFeeData.js / tiktokFeeData.js  # tabel fee HARDCODED
+│       └── storeData.js / storeAnalytics.js / storeIngest.js
+├── supabase/migrations/0001_init.sql
+├── .env.example / .env.local(gitignored)
+├── .github/workflows/deploy.yml   # GitHub Pages (lihat §Risiko: konflik vs target Vercel)
+└── README.md / HANDOFF.md
 ```
 
-**File paling kritikal untuk dipahami lebih dulu:**
-1. [src/App.jsx](src/App.jsx) — routing & daftar page (`PAGE_KEYS`)
-2. [src/components/Layout.jsx](src/components/Layout.jsx) — daftar menu nav (`NAV` array) → di sinilah terlihat fitur `reports` dan `ai` masih `soon: true`
-3. [src/utils/workspace.js](src/utils/workspace.js) & [src/utils/storage.js](src/utils/storage.js) — arsitektur penyimpanan data
-4. [src/contexts/QuadrantContext.jsx](src/contexts/QuadrantContext.jsx) — state management inti
+**File paling kritikal dipahami lebih dulu:**
+1. `src/App.jsx` — auth gate + routing.
+2. `src/contexts/QuadrantContext.jsx` — state inti & alur upload/restore data.
+3. `src/utils/storage.js` + `workspace.js` — model data localStorage saat ini.
+4. `supabase/migrations/0001_init.sql` — skema Supabase target.
 
 ---
 
-## 4. Teknologi yang Digunakan
+## 4. Teknologi
 
-| Layer | Teknologi | Versi (package.json) |
-|---|---|---|
-| Build tool | Vite | ^8.0.12 |
-| UI framework | React | ^19.2.6 |
-| Styling | Tailwind CSS | ^3.4.19 + PostCSS + Autoprefixer |
-| Charts | Recharts | ^3.8.1 |
-| Parsing Excel | SheetJS (`xlsx`) | ^0.18.5 |
-| Icons | lucide-react | ^1.17.0 |
-| Linting | ESLint (flat config) | ^10.3.0 |
-| Penyimpanan data | **Browser `localStorage`** — TIDAK ada backend/database/API eksternal |
+| Layer | Teknologi |
+|---|---|
+| Build | Vite ^8 |
+| UI | React ^19, Tailwind ^3.4, lucide-react |
+| Charts | Recharts ^3.8 |
+| Parsing | SheetJS `xlsx` ^0.18 |
+| Auth + DB | **Supabase** (`@supabase/supabase-js` ^2.108) |
+| Data bisnis | **`localStorage` (belum dimigrasi ke Supabase)** |
 
-Tidak ada framework routing (React Router dll.) — navigasi antar "page"
-dilakukan murni via `useState` di `App.jsx`. Tidak ada state management
-eksternal (Redux/Zustand) — pakai React Context API bawaan.
+Routing tanpa library (state `currentPage` + `PAGE_KEYS`). State via Context API.
+Belum ada test framework.
 
 ---
 
-## 5. Environment Variables yang Diperlukan
+## 5. Environment Variables (WAJIB sekarang)
 
-**Tidak ada environment variable yang diperlukan.** Aplikasi ini:
-- Tidak memanggil API eksternal/backend.
-- Tidak punya file `.env`/`.env.example` di project.
-- `vite.config.js` polos, tanpa `import.meta.env.*` custom.
+```
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-public-key>
+```
 
-Jika ke depan menambah integrasi AI (lihat menu "AI Tools" yang masih `soon`),
-kemungkinan besar akan butuh API key (misal untuk LLM) — saat itu baru perlu
-ditambahkan `.env` + entri di `.gitignore` (saat ini `.gitignore` belum punya
-baris `.env`, perlu ditambahkan nanti).
+Salin `.env.example` → `.env.local`. Tanpa env, app tidak crash (fallback
+placeholder), tapi login tidak berfungsi — langsung tampil pesan setup.
+Di Vercel/CI: set kedua env di project settings.
+
+Setup Supabase: jalankan `0001_init.sql` di SQL Editor, aktifkan provider
+Email + Google, jadikan admin via
+`update public.profiles set role='admin' where email='...';`.
 
 ---
 
-## 6. Dependency dan Cara Instalasi
+## 6. Fitur yang Sudah Berfungsi
 
-Prasyarat: **Node.js v18+** ([nodejs.org](https://nodejs.org)).
+1. **Auth Supabase** — login/signup email-pass + Google, sesi persisten.
+2. **Import Data** — `ImportPage`: platform (Shopee/TikTok) + tipe (mingguan 7h/
+   bulanan 30h) + period picker + upload zones. Shopee (Performa Produk .xlsx +
+   Iklan .csv), TikTok (Products .xlsx + multi-file iklan .xlsx).
+3. **Analisis Kuadran** — table view 2×2, scatter chart, tabel sortable.
+4. **Auto-save + Auto-compare** — tiap upload tersimpan & dibandingkan dengan
+   periode sebelumnya (tab "Perubahan" + delta + badge naik/turun kuadran).
+5. **Kalkulator fee & profit** — fee Shopee per kategori, ongkir/XTRA, fee TikTok,
+   logistik LSF (TikTok-only), modal rincian + ROAS scaling ladder.
+6. **Daftar Produk** → buka di kalkulator.
+7. **Performa Toko** — analitik level toko + marketplace filter + tab Transaksi.
+8. **Riwayat Periode** — arsip read-only, export/import `.json`, tombol "Buka".
+9. **Multi-workspace** — tiap workspace = 1 brand/toko (localStorage).
+10. **Settings** — info akun + consent toggle + logout.
+11. **i18n (ID/EN)** + **dark/light theme**.
+
+Auto-restore: `QuadrantContext` me-restore periode terbaru saat mount; `App.jsx`
+initial page = `getSessions().length>0 ? 'quadrant' : 'import'`.
+
+---
+
+## 7. Fitur Stub (`soon: true` di `Layout.jsx` NAV)
+
+- **"Reports"** (`id: reports`) — belum ada implementasi (placeholder WIP).
+- **"AI Tools"** (`id: ai`) — belum ada implementasi (calon Phase 4).
+
+---
+
+## 8. Risiko & Keterbatasan (titik perhatian utama)
+
+1. **Inkonsistensi auth-vs-data (RISIKO #1):** auth = Supabase, data = localStorage.
+   Data tidak sinkron antar device walau sudah login. Step 4 migrasi harus
+   menutup ini.
+2. **Model data marketplace-specific & terpecah:** `compactProduct()`
+   ([storage.js](src/utils/storage.js)) memakai field Shopee-centric
+   (`pengunjung`, `kode_produk`, `conversion_rate`), sedangkan skema Supabase
+   pakai field ternormalisasi (`traffic_value`, `conversion_value`, `raw_data`).
+   **Dua model belum direkonsiliasi.** Untuk jadi decision-tool/AI engine,
+   butuh **canonical data model** + sumbu waktu (time-series) yang bersih.
+   Tiga namespace localStorage terpisah (`sessions`/`products`/`store`) menyulitkan
+   query lintas-entitas.
+3. **Konflik target deploy:** README/HANDOFF menyebut rencana **Vercel**, tapi
+   ada workflow **GitHub Pages** (`.github/workflows/deploy.yml`) + `base:'./'`.
+   Pilih satu, rapikan.
+4. **Tabel fee hardcoded** (`feeData.js` dll.) — harus update manual saat
+   Shopee/TikTok ubah skema biaya. Untuk akurasi profit historis, idealnya jadi
+   data versioned + tanggal-berlaku.
+5. **Nol automated test** — parser & calc adalah logika kritikal (keputusan uang),
+   tapi belum ada test. Risiko regresi diam-diam.
+6. **Routing via state** — memadai untuk sekarang; `/admin` atau deep-link nanti
+   mungkin perlu router.
+7. **Data tidak portable otomatis** — localStorage tidak ikut pindah; pakai
+   export/import `.json` di Riwayat Periode.
+
+---
+
+## 9. Rekomendasi Langkah Berikutnya (sesuai posisi internal-tool + decision-making)
+
+**P0 — Fondasi data:**
+1. **Definisikan canonical data model** (Product/Period-Snapshot/AdSpend/Metric +
+   `raw` per-platform) SEBELUM menambah fitur Phase 3. Ini keputusan termahal
+   untuk ditunda.
+2. Selesaikan migrasi data localStorage → Supabase (tutup inkonsistensi #1).
+   Pertahankan export/import `.json` sebagai tambahan.
+3. Bangun data access layer tunggal (`src/data/`) — hentikan akses localStorage
+   tersebar.
+
+**P1 — Leverage keputusan tertinggi:**
+4. **Time-series N-periode** (bukan compare 2-periode) → tren, bukan snapshot.
+5. **Movement/transisi kuadran sebagai daftar aksi**, bukan sekadar badge.
+6. **Korelasi Ads ↔ Produk ↔ Kuadran** (di mana spend tidak sejalan performa).
+7. **Decision/outcome log** — catat aksi specialist + alasan + hasilnya. **Ini
+   data paling strategis untuk AI Recommendation nanti; mulai kumpulkan sekarang
+   walau manual** (histori tidak bisa dibangun surut).
+
+**P2 — Pengerasan:**
+8. Test untuk `utils/` murni (parser, calc, quadrant).
+9. Putuskan deploy (Vercel) + rapikan workflow.
+10. Tunda: panel admin consent rumit, multi-tenant, integrasi API marketplace —
+    sampai ada kebutuhan nyata / arah SaaS.
+
+---
+
+## 10. Perintah
 
 ```bash
-# 1. Masuk ke folder project
-cd shopee-quadrant
-
-# 2. Install dependency (node_modules sudah ada di PC ini, tapi jika pindah PC lagi
-#    tanpa node_modules, jalankan ini)
 npm install
-
-# 3. Jalankan dev server
-npm run dev
-# default port Vite: 5173 (atau custom — lihat bagian 11)
-```
-
-`node_modules` **sudah terpasang** di environment ini (folder ada). Jika
-memindahkan project ke PC ketiga, **jangan** ikut copy `node_modules` (besar),
-cukup `npm install` ulang — sudah diinstruksikan di [README.md](README.md).
-
----
-
-## 7. Fitur yang Sudah Selesai
-
-Berdasarkan kode yang sudah utuh & terhubung di `App.jsx` / `Layout.jsx`
-(bukan `soon: true`):
-
-1. **Import data** (`ImportPage` + `FileUpload` + `parseShopeeData.js` /
-   `parseTikTokData.js`) — upload file Excel ekspor toko Shopee & TikTok Shop.
-2. **Multi-workspace** (`WorkspaceSwitcher`, `workspace.js`) — kelola beberapa
-   toko terpisah, masing-masing dengan riwayat sendiri di localStorage.
-3. **Analisis Kuadran** (`QuadrantPage`, `QuadrantChart`, `QuadrantTableView`,
-   `QuadrantSummary`, `quadrantUtils.js`) — scatter chart + tabel pembagian
-   4 kuadran traffic × conversion.
-4. **Riwayat periode** (`HistoryPanel`, `storage.js`) — simpan snapshot per
-   periode, export/import sebagai file `.json` (ini juga mekanisme migrasi
-   data antar PC, karena localStorage tidak ikut pindah folder).
-5. **Movement / Perbandingan periode** (`MovementView`, `compareData.js`,
-   `getPreviousSession()` di `storage.js`) — lihat pergerakan produk antar
-   kuadran dari periode sebelumnya ke periode terbaru.
-6. **Kalkulator biaya & profitabilitas** (`CalculatorPage`, `calc.js`,
-   `feeData.js`, `ongkirFeeData.js`, `tiktokFeeData.js`, `CategoryPicker`,
-   `OngkirPicker`, `TikTokPicker`) — hitung fee admin Shopee per kategori,
-   fee program ongkir/XTRA, fee TikTok Shop, dan estimasi profit produk.
-7. **Daftar Produk** (`ProductsPage`, `ProductTable`, `products.js`) — lihat
-   semua produk, buka salah satu untuk diedit di kalkulator.
-8. **Performa Toko** (`StorePerformancePage`, `storeData.js`,
-   `storeAnalytics.js`, `storeIngest.js`) — analitik level toko (bukan hanya
-   per produk), file ini termasuk terbesar (506 baris) jadi cukup matang.
-9. **ROAS Intelligence** (`RoasIntelligence.jsx`) — analisis return on ad spend.
-10. **Multi-bahasa** (`i18n.js`, `LanguageContext.jsx`) — semua label UI lewat
-    fungsi `t()`, mendukung ganti bahasa.
-11. **Dark/Light theme** (`ThemeContext.jsx`).
-12. **Settings** (`Settings.jsx`) — pengaturan aplikasi.
-13. **Build produksi** — sudah pernah berhasil di-build (`dist/` folder ada).
-
----
-
-## 8. Fitur yang Sedang Dikerjakan / Belum Dimulai
-
-Terlihat eksplisit di [src/components/Layout.jsx](src/components/Layout.jsx)
-(array `NAV`), kedua menu ini diberi flag `soon: true` (nonaktif, tidak bisa
-diklik, label "Soon" muncul di sidebar):
-
-1. **"Reports"** (`id: 'reports'`, section "ANALISIS CERDAS") — menu laporan,
-   **belum ada implementasi sama sekali**. Saat diklik akan tetap menampilkan
-   placeholder `{t('page.wip')}` dari `App.jsx` (karena `'reports'` ada di
-   `PAGE_KEYS` tapi tidak punya kondisi render page-nya di `App.jsx`).
-2. **"AI Tools"** (`id: 'ai'`, section "AI TOOLS") — fitur AI, **belum ada
-   implementasi sama sekali**. Sama seperti di atas, hanya placeholder WIP.
-   Kemungkinan rencana: integrasi LLM untuk insight otomatis dari data kuadran
-   (belum ada kode/desain apa pun untuk ini — perlu didiskusikan ulang scope-nya
-   dengan user sebelum mulai, karena tidak ada catatan rencana di kode).
-
-Tidak ditemukan kode setengah-jadi (commented-out blocks besar, fungsi stub
-kosong dengan TODO) di luar dua menu di atas — selain itu codebase terlihat
-"selesai" untuk scope yang sudah dibangun.
-
----
-
-## 9. Bug / Kendala yang Belum Selesai
-
-**Tidak ditemukan bug tercatat secara eksplisit** (tidak ada komentar `TODO`,
-`FIXME`, `BUG`, `HACK`, dan log file dev server — `vite-dev.err.log`,
-`vite-bg-err.log` — kosong, tidak ada stack trace error).
-
-Hal-hal yang perlu **diverifikasi manual** oleh siapa pun yang melanjutkan
-(bukan bug pasti, tapi titik risiko arsitektural yang layak dicek ulang):
-
-1. **`dist/` mungkin usang** — dibuild dari kode versi sebelumnya, belum tentu
-   sinkron dengan `src/` saat ini. Rebuild (`npm run build`) sebelum deploy.
-2. **Data tidak portable otomatis** — workspace & riwayat tersimpan di
-   `localStorage` browser, bukan di file project. Jika lanjut di PC/browser
-   lain, data lama **tidak akan muncul** kecuali sudah di-export manual lewat
-   `HistoryPanel` (lihat README bagian "Catatan penting"). **Tanyakan ke user
-   apakah data lama sudah di-export sebelum pindah PC.**
-3. **`feeData.js`, `ongkirFeeData.js`, `tiktokFeeData.js`** berisi tabel fee
-   hardcoded — jika Shopee/TikTok mengubah skema biaya admin/ongkir, tabel ini
-   harus diupdate manual (tidak ada mekanisme fetch otomatis dari API resmi).
-4. Tidak ada test otomatis (tidak ditemukan folder `__tests__`, file `*.test.js`,
-   atau dependency testing framework di `package.json`) — semua verifikasi
-   fitur saat ini manual via UI.
-5. Tidak ada Git — **tidak ada cara melihat riwayat perubahan/rollback** jika
-   ada regresi. Sangat disarankan inisialisasi repo Git sesegera mungkin.
-
----
-
-## 10. Daftar Task Berikutnya (Berdasarkan Prioritas)
-
-**P0 — Sebelum lanjut coding apa pun:**
-1. `git init` di folder `shopee-quadrant/`, buat `.gitignore` sudah ada (cek
-   ulang sudah include `node_modules`, `dist`, `*.log` — sudah benar), commit
-   baseline awal supaya ada titik aman untuk rollback.
-2. Konfirmasi ke user: apakah data localStorage dari PC lama sudah di-export
-   (`.json` per periode via HistoryPanel) dan perlu di-import di PC ini?
-
-**P1 — Lanjutkan fitur yang sudah direncanakan (terlihat dari UI "Soon"):**
-3. Tentukan scope **"Reports"** — laporan apa yang dibutuhkan? (ringkasan
-   periode, ekspor PDF/Excel, dashboard gabungan semua workspace?) — perlu
-   klarifikasi user, belum ada spesifikasi di kode.
-4. Tentukan scope **"AI Tools"** — insight otomatis dari LLM atas data kuadran?
-   Jika ya, akan butuh API key (env var baru, lihat bagian 5) dan keputusan
-   provider (OpenAI/Anthropic/dll).
-
-**P2 — Pengerasan kualitas (tidak urgent tapi disarankan):**
-5. Tambahkan automated test minimal untuk `utils/` murni (parsing, calc,
-   quadrantUtils) — logika ini krusial dan mudah diuji tanpa UI.
-6. Rebuild `dist/` dan verifikasi `npm run preview` cocok dengan `npm run dev`.
-7. Review ulang tabel fee (`feeData.js`, `ongkirFeeData.js`, `tiktokFeeData.js`)
-   terhadap kebijakan terbaru Shopee/TikTok (kebijakan biaya sering berubah).
-
----
-
-## 11. Perintah Build, Run, Test, dan Deploy
-
-```bash
-# Development (hot reload), port default 5173
-npm run dev
-
-# Development di port custom (sudah ada shortcut Windows)
-# start-dev-5175.bat -> jalankan npm run dev -- --host 127.0.0.1 --port 5175
-
-# Lint
+npm run dev       # http://localhost:5173
 npm run lint
-
-# Build produksi -> output ke dist/
-npm run build
-
-# Preview hasil build secara lokal (simulasi production)
+npm run build     # → dist/
 npm run preview
 ```
 
-**Test:** Tidak ada script `test` di `package.json` dan tidak ada test
-framework terpasang — belum ada automated testing sama sekali.
-
-**Deploy:** Tidak ada konfigurasi deploy (tidak ada `vercel.json`,
-`netlify.toml`, CI/CD workflow). Sesuai README, `dist/` adalah static site
-biasa — bisa di-host di Netlify/Vercel/static hosting apa pun dengan cara
-upload folder `dist/` atau connect repo Git lalu set build command
-`npm run build` dan publish directory `dist`.
+Tidak ada `npm test` (belum ada test). Data uji: file `public/test-*.xlsx`.
 
 ---
 
-## 12. Keputusan Arsitektur Penting yang Sudah Dibuat
+## 11. Keputusan Arsitektur yang Sudah Dibuat
 
-1. **Tanpa backend/database** — semua logika & state ada di browser. Pilihan
-   ini menyederhanakan deployment (cukup static hosting) tapi membuat data
-   tidak otomatis sinkron antar device/browser (lihat bagian 9, poin 2).
-2. **`localStorage` sebagai sumber kebenaran data**, dengan key dinamis
-   `quadrant_sessions_v1::<workspaceId>` (lihat `workspace.js` →
-   `sessionsKeyFor()`) — setiap workspace (toko) punya riwayat sesi terisolasi.
-3. **Migrasi data legacy otomatis**: saat tidak ada workspace tersimpan,
-   `getWorkspaces()` membuat workspace default "Toko Utama" dan memindahkan
-   sesi lama dari key global `quadrant_sessions_v1` (versi sebelum
-   multi-workspace ada) ke key workspace baru — lihat `migrateLegacySessions()`
-   di [workspace.js:97](src/utils/workspace.js). Ini menandakan app sempat
-   di-refactor dari single-workspace ke multi-workspace, dan kompatibilitas
-   mundur dijaga.
-4. **Identitas "periode" = kombinasi `label` + `platform`**: re-upload data
-   untuk periode yang sama akan **mengganti** snapshot lama, bukan membuat
-   duplikat (lihat komentar di `saveSession()`, [storage.js:16-21](src/utils/storage.js)).
-5. **Pemilihan "periode pembanding"** untuk movement view memprioritaskan
-   periode kronologis terdekat sebelumnya (`periodValue` lexicographic compare,
-   format semacam `"2026-05"`), dengan fallback ke sesi tersimpan terakhir
-   yang platform-nya sama tapi periode beda — lihat `getPreviousSession()`
-   di [storage.js:29-38](src/utils/storage.js).
-6. **Routing tanpa library** — `App.jsx` mengelola halaman aktif lewat
-   `useState('currentPage')` + daftar string `PAGE_KEYS`, bukan React Router.
-   Sederhana karena tidak butuh deep-linking/URL per halaman.
-7. **Remount-by-key pattern** dipakai dua kali secara sengaja di `App.jsx`:
-   - `calcKey` membump remount `CalculatorPage` agar form ter-reset saat ganti
-     produk yang diedit.
-   - `wsKey` membump remount `QuadrantProvider` (seluruh context data) saat
-     ganti workspace, supaya data lama tidak "nyangkut" dari workspace
-     sebelumnya.
-8. **Fitur masa depan di-stub via flag UI** (`soon: true`) di `Layout.jsx`,
-   bukan via route/komponen kosong yang bisa diakses — pendekatan ini mencegah
-   user mengklik fitur yang belum ada.
-9. **Tabel fee (Shopee/TikTok/ongkir) disimpan sebagai data statis di kode**
-   (`feeData.js` dkk.), bukan fetch dari API — trade-off: tidak butuh
-   koneksi/API key, tapi harus dirawat manual saat kebijakan platform berubah.
+1. **Auth via Supabase**; data bisnis masih localStorage (transisi).
+2. **Workspace = tenant**, sesi di-scope per workspace (`quadrant_sessions_v1::<wsId>`).
+3. **Periode = `label` + `platform`**; re-upload periode sama → ganti snapshot,
+   bukan duplikat ([storage.js](src/utils/storage.js)).
+4. **`periodValue`** (mis. `"2026-05"`) = sumbu waktu untuk perbandingan kronologis.
+5. **Routing tanpa library**; remount-by-key (`calcKey`, `wsKey`).
+6. **Fitur masa depan di-stub** via flag `soon` di NAV, bukan route kosong.
+7. **Tabel fee statis di kode** — trade-off: tanpa API, tapi rawat manual.
+8. **RLS consent-based di skema Supabase** sudah dirancang (helper SECURITY DEFINER,
+   anti-eskalasi role) — siap dipakai jika/ketika data dipindah ke Supabase.
 
 ---
 
-## 13. Konteks Diskusi yang Perlu Diketahui
-
-- **Tidak ada riwayat percakapan/sesi sebelumnya yang tersimpan** terkait
-  project ini di environment yang dipakai untuk membuat dokumen ini — seluruh
-  isi dokumen ini disusun dari **pembacaan langsung source code**, bukan dari
-  ringkasan obrolan dengan user sebelumnya. Jika ada keputusan desain/diskusi
-  lisan dengan user yang belum tercermin di kode atau komentar, **informasi
-  itu HILANG** dan AI/dev penerus harus menanyakan ulang ke user, terutama untuk:
-  - Scope pasti fitur **"Reports"** dan **"AI Tools"**.
-  - Apakah ada rencana menambah platform e-commerce lain (selain Shopee &
-    TikTok Shop) — kode parser (`parseShopeeData.js`, `parseTikTokData.js`)
-    saat ini eksplisit hanya 2 platform.
-  - Apakah perlu migrasi dari `localStorage` ke penyimpanan lain (cloud sync,
-    file lokal) — saat ini desainnya murni offline-first single-browser.
-- **Bahasa kode & UI**: komentar kode dan string `i18n.js` dominan **Bahasa
-  Indonesia** (termasuk README). Pertahankan konsistensi bahasa ini saat
-  menambah fitur baru, kecuali user secara eksplisit minta full English.
-- **File ekspor zip** `shopee-quadrant-portable.zip` ada di
-  `C:\Users\OC\Downloads\` — ini kemungkinan adalah arsip yang dipakai untuk
-  memindahkan project ini ke PC saat ini. Folder aktif yang harus dipakai
-  untuk melanjutkan kerja adalah:
-  `C:\Users\OC\Documents\shopee-quadrant-portable\shopee-quadrant\`
-  (BUKAN file zip-nya, dan bukan folder `dist/` di dalamnya — itu hanya hasil
-  build, bukan source).
-- **Tidak ada CLAUDE.md atau dokumen panduan AI lain** di project ini sebelum
-  dokumen `HANDOFF.md` ini dibuat — jadi dokumen ini menjadi sumber konteks
-  utama untuk AI assistant berikutnya. **Update bagian 2, 7, 8, 9, 10 di
-  dokumen ini setiap kali progres berubah signifikan**, supaya tetap akurat
-  untuk handoff selanjutnya.
-
----
-
-*Dokumen ini dihasilkan otomatis oleh Claude (Sonnet 4.6) berdasarkan inspeksi
-source code pada 2026-06-17. Tidak ada data rahasia/credential apa pun yang
-disertakan karena project ini memang tidak menggunakan environment variable
-atau API key.*
+*Diperbarui 2026-06-18. Perbarui §1, §2, §6–§9 setiap progres signifikan agar
+tetap akurat untuk handoff berikutnya.*

@@ -1,67 +1,8 @@
-import { getCurrentWorkspaceId, sessionsKeyFor } from './workspace'
+// Helper sesi MURNI (tanpa I/O). Persistensi periode/produk kini di Supabase
+// (lihat src/data/periods.js). File ini hanya: bentuk-ulang produk, pilih
+// periode pembanding, dan export/import sesi sebagai file .json.
 
-// Sessions are scoped to the active workspace
-function currentKey() {
-  return sessionsKeyFor(getCurrentWorkspaceId())
-}
-
-export function getSessions() {
-  try { return JSON.parse(localStorage.getItem(currentKey()) || '[]') }
-  catch { return [] }
-}
-
-export function saveSession(session) {
-  const key = currentKey()
-  const sessions = getSessions()
-  // Treat (label + platform) as a period identity: re-uploading the same
-  // period replaces the old snapshot instead of duplicating it.
-  const filtered = sessions.filter(s =>
-    s.id !== session.id &&
-    !(s.label === session.label && s.platform === session.platform)
-  )
-  filtered.unshift(session)
-  localStorage.setItem(key, JSON.stringify(filtered))
-}
-
-// Pick the "previous period" for comparison.
-// Prefers the chronologically-closest earlier period (by periodValue, e.g. "2026-05"),
-// falling back to the most recent saved session with a different period.
-export function getPreviousSession(platform, periodValue) {
-  const same = getSessions().filter(s => s.platform === platform)
-  if (periodValue) {
-    const earlier = same
-      .filter(s => s.periodValue && s.periodValue < periodValue)
-      .sort((a, b) => (a.periodValue < b.periodValue ? 1 : -1))
-    if (earlier.length) return earlier[0]
-  }
-  return same.find(s => s.periodValue !== periodValue) || null
-}
-
-export function deleteSession(id) {
-  const key = currentKey()
-  const sessions = getSessions().filter(s => s.id !== id)
-  localStorage.setItem(key, JSON.stringify(sessions))
-}
-
-export function exportSession(session) {
-  const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `kuadran_${session.platform}_${session.label.replace(/\s+/g, '_')}.json`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-export async function importSession(file) {
-  const text = await file.text()
-  const session = JSON.parse(text)
-  if (!session.id || !session.products || !session.platform)
-    throw new Error('Format file tidak valid.')
-  return session
-}
-
-// Compact a product for storage (strip comparison deltas, keep core data)
+// Padatkan produk untuk disimpan (buang delta perbandingan, simpan data inti).
 export function compactProduct(p) {
   return {
     kode_produk:    p.kode_produk,
@@ -78,18 +19,36 @@ export function compactProduct(p) {
   }
 }
 
-export function makeSession({ label, platform, periodValue, periodType, settings, products }) {
-  const counts = { 1: 0, 2: 0, 3: 0, 4: 0 }
-  products.forEach(p => counts[p.quadrant]++)
-  return {
-    id:        crypto.randomUUID(),
-    label,
-    platform,
-    periodValue: periodValue ?? null,
-    periodType:  periodType ?? null,
-    settings,
-    savedAt:   new Date().toISOString(),
-    summary:   counts,
-    products:  products.map(compactProduct),
+// Pilih "periode sebelumnya" untuk perbandingan, dari daftar sesi yang sudah
+// dimuat. Prioritas: periode kronologis terdekat yang lebih awal (by periodValue,
+// mis. "2026-05"); fallback ke sesi terbaru dengan periode berbeda.
+export function pickPreviousSession(sessions, platform, periodValue) {
+  const same = sessions.filter(s => s.platform === platform)
+  if (periodValue) {
+    const earlier = same
+      .filter(s => s.periodValue && s.periodValue < periodValue)
+      .sort((a, b) => (a.periodValue < b.periodValue ? 1 : -1))
+    if (earlier.length) return earlier[0]
   }
+  return same.find(s => s.periodValue !== periodValue) || null
+}
+
+// Unduh sesi sebagai file .json (untuk pindah data antar akun/perangkat).
+export function exportSession(session) {
+  const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `kuadran_${session.platform}_${String(session.label).replace(/\s+/g, '_')}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// Baca & validasi file .json sesi (dipakai sebelum disimpan ke Supabase).
+export async function parseImportedSession(file) {
+  const text = await file.text()
+  const session = JSON.parse(text)
+  if (!session.products || !session.platform || !session.label)
+    throw new Error('Format file tidak valid.')
+  return session
 }

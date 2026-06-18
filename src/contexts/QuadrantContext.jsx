@@ -4,7 +4,8 @@ import { parseShopeeData, parseIklanData } from '../utils/parseShopeeData'
 import { parseTikTokData, parseTikTokAdData } from '../utils/parseTikTokData'
 import { getQuadrant, getTrafficThreshold } from '../utils/quadrantUtils'
 import { compareProducts } from '../utils/compareData'
-import { getSessions, saveSession, makeSession, getPreviousSession } from '../utils/storage'
+import { pickPreviousSession } from '../utils/storage'
+import { listSessions, saveSession } from '../data/periods'
 
 export const PLATFORM_DEFAULTS = {
   shopee: { periodDays: 30, targetHarian: 20,  conversionThreshold: 2.0 },
@@ -33,7 +34,7 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   const [prevLabel, setPrevLabel] = useState(null)
   const [periodLabel, setPeriodLabel] = useState(null)
   const [periodType, setPeriodType] = useState(null)
-  const [sessions, setSessions] = useState(() => getSessions())
+  const [sessions, setSessions] = useState([])
   const [showHistory, setShowHistory] = useState(false)
 
   const trafficThreshold = useMemo(() => getTrafficThreshold(settings), [settings])
@@ -74,8 +75,13 @@ export function QuadrantProvider({ children, onSessionsChange }) {
       const currWithQ = currData.map(p => ({ ...p, quadrant: getQuadrant(p, newSettings) }))
       const label = `${pLabel} · ${PLATFORM_LABELS[plat]?.name}`
 
-      const prev = getPreviousSession(plat, periodValue)
+      await saveSession({
+        label, platform: plat, periodValue, periodType: pType, settings: newEff, products: currWithQ,
+      })
+      const saved = await listSessions()
+      setSessions(saved)
 
+      const prev = pickPreviousSession(saved, plat, periodValue)
       let displayProducts = currWithQ
       if (prev) {
         const prevWithQ = prev.products.map(p => ({ ...p, quadrant: getQuadrant(p, newSettings) }))
@@ -89,10 +95,6 @@ export function QuadrantProvider({ children, onSessionsChange }) {
         setActiveTab('kuadran')
       }
 
-      saveSession(makeSession({
-        label, platform: plat, periodValue, periodType: pType, settings: newEff, products: currWithQ,
-      }))
-
       setPlatform(plat)
       setSettings(newSettings)
       setHasIklan(!!roasMap)
@@ -100,7 +102,6 @@ export function QuadrantProvider({ children, onSessionsChange }) {
       setPeriodType(pType ?? null)
       setProducts(displayProducts)
       setActiveQuadrant(null)
-      setSessions(getSessions())
       onSessionsChange?.()
       return true
     } catch (e) {
@@ -114,13 +115,13 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   // Rebuild the active view from a saved session (riwayat periode). Mirrors the
   // post-parse part of handleUpload, but reads products from localStorage instead
   // of re-parsing an Excel file. Used for auto-restore on mount + "Buka" di riwayat.
-  function loadSession(session) {
+  function loadSession(session, allSessions = sessions) {
     if (!session) return
     const plat = session.platform
     const sett = session.settings || PLATFORM_DEFAULTS[plat]
     const currWithQ = session.products.map(p => ({ ...p, quadrant: getQuadrant(p, sett) }))
 
-    const prev = getPreviousSession(plat, session.periodValue)
+    const prev = pickPreviousSession(allSessions, plat, session.periodValue)
     let displayProducts = currWithQ
     if (prev && prev.id !== session.id) {
       const prevWithQ = prev.products.map(p => ({ ...p, quadrant: getQuadrant(p, sett) }))
@@ -148,14 +149,28 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   // data is still in localStorage. Runs once per mount (provider remounts on
   // workspace change via wsKey).
   useEffect(() => {
-    const saved = getSessions()
-    // Intentional one-time restore on mount; cascading-render cost is negligible.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (saved.length > 0) loadSession(saved[0])
+    let active = true
+    ;(async () => {
+      try {
+        const saved = await listSessions()
+        if (!active) return
+        setSessions(saved)
+        if (saved.length > 0) loadSession(saved[0], saved)
+      } catch (e) {
+        console.error('Gagal memuat sesi:', e)
+      }
+    })()
+    return () => { active = false }
+    // Restore sekali saat mount; loadSession sengaja tidak jadi dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function updateSetting(key, val) { setSettings(s => ({ ...s, [key]: val })) }
-  function refreshSessions() { setSessions(getSessions()); onSessionsChange?.() }
+  async function refreshSessions() {
+    const saved = await listSessions()
+    setSessions(saved)
+    onSessionsChange?.()
+  }
 
   const value = {
     products, productsWithQuadrant, filteredProducts,

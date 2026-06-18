@@ -1,8 +1,7 @@
 ﻿import { useState, useRef, useEffect } from 'react'
 import { ChevronDown, Check, Plus, X, Store, Trash2 } from 'lucide-react'
-import {
-  PRESET_COLORS, createWorkspace, deleteWorkspace,
-} from '../utils/workspace'
+import { PRESET_COLORS, clearWorkspaceLocalData } from '../utils/workspace'
+import { createWorkspace, deleteWorkspace } from '../data/workspaces'
 
 function WsAvatar({ ws, size = 'sm' }) {
   const dim = size === 'md' ? 'w-9 h-9 text-xs' : 'w-7 h-7 text-[10px]'
@@ -18,6 +17,8 @@ function WsAvatar({ ws, size = 'sm' }) {
 function CreateModal({ onClose, onCreated }) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(PRESET_COLORS[0])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -25,11 +26,18 @@ function CreateModal({ onClose, onCreated }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  function submit() {
-    if (!name.trim()) return
-    const ws = createWorkspace({ name, color })
-    onCreated(ws)
-    onClose()
+  async function submit() {
+    if (!name.trim() || busy) return
+    setBusy(true); setErr(null)
+    try {
+      const ws = await createWorkspace({ name, color })
+      await onCreated(ws)
+      onClose()
+    } catch (e) {
+      console.error(e)
+      setErr('Gagal membuat workspace. Coba lagi.')
+      setBusy(false)
+    }
   }
 
   return (
@@ -75,16 +83,18 @@ function CreateModal({ onClose, onCreated }) {
             <span className="text-sm text-ink truncate">{name || 'Workspace Baru'}</span>
           </div>
 
+          {err && <p className="text-xs text-red-400">{err}</p>}
+
           <div className="flex gap-2">
-            <button onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-line/10 text-sm text-ink-muted hover:bg-fill/5">
+            <button onClick={onClose} disabled={busy}
+              className="flex-1 py-2.5 rounded-xl border border-line/10 text-sm text-ink-muted hover:bg-fill/5 disabled:opacity-50">
               Batal
             </button>
-            <button onClick={submit} disabled={!name.trim()}
+            <button onClick={submit} disabled={!name.trim() || busy}
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                name.trim() ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-fill/5 text-ink-faint'
+                name.trim() && !busy ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-fill/5 text-ink-faint'
               }`}>
-              Buat
+              {busy ? 'Membuat…' : 'Buat'}
             </button>
           </div>
         </div>
@@ -104,15 +114,21 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
-  function handleDelete(e, id) {
+  async function handleDelete(e, id) {
     e.stopPropagation()
     if (workspaces.length <= 1) {
       alert('Tidak bisa menghapus workspace terakhir.')
       return
     }
     if (!confirm('Hapus workspace ini beserta semua riwayatnya?')) return
-    deleteWorkspace(id)
-    onChange()
+    try {
+      await deleteWorkspace(id)
+      clearWorkspaceLocalData(id)
+      await onChange()
+    } catch (err) {
+      console.error(err)
+      alert('Gagal menghapus workspace. Coba lagi.')
+    }
     setOpen(false)
   }
 
@@ -171,7 +187,7 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
       {showCreate && (
         <CreateModal
           onClose={() => setShowCreate(false)}
-          onCreated={() => onChange()}
+          onCreated={async (ws) => { await onChange(); onSwitch(ws.id) }}
         />
       )}
     </>

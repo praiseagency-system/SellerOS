@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { X, Trash2, Download, Upload, Clock, FolderOpen } from 'lucide-react'
 import { QUADRANT_CONFIG } from '../utils/quadrantUtils'
-import { deleteSession, exportSession, importSession, saveSession } from '../utils/storage'
+import { exportSession, parseImportedSession } from '../utils/storage'
+import { deleteSession, saveSession } from '../data/periods'
 import { PlatformIcon } from './PlatformIcon'
 
 const PLATFORM_STYLE = {
@@ -79,18 +80,29 @@ export default function HistoryPanel({ sessions, onClose, onSessionsChange, onLo
 
   async function handleImport(file) {
     try {
-      const session = await importSession(file)
-      saveSession(session)
-      onSessionsChange()
+      const session = await parseImportedSession(file)
+      await saveSession({
+        label: session.label,
+        platform: session.platform,
+        periodValue: session.periodValue ?? null,
+        periodType: session.periodType ?? null,
+        settings: session.settings ?? null,
+        products: session.products,
+      })
+      await onSessionsChange()
     } catch (e) {
       alert('Gagal import: ' + e.message)
     }
   }
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
     if (!confirm('Hapus sesi ini?')) return
-    deleteSession(id)
-    onSessionsChange()
+    try {
+      await deleteSession(id)
+      await onSessionsChange()
+    } catch (e) {
+      alert('Gagal hapus: ' + e.message)
+    }
   }
 
   return (

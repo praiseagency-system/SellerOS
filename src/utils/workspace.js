@@ -1,4 +1,9 @@
-const WS_KEY = 'quadrant_workspaces_v1'
+// Pointer workspace aktif (preferensi per-device) + helper.
+// Daftar workspace kini disimpan di Supabase (lihat src/data/workspaces.js).
+// File ini hanya menyimpan POINTER workspace aktif + kunci localStorage untuk
+// data yang BELUM dimigrasi ke Supabase (sesi/produk/store) — akan menyusut
+// seiring data ikut pindah.
+
 const CURRENT_KEY = 'quadrant_current_workspace_v1'
 
 export const PRESET_COLORS = [
@@ -14,92 +19,32 @@ export const PRESET_COLORS = [
   '#6b7280', // gray
 ]
 
-function read(key, fallback) {
-  try { return JSON.parse(localStorage.getItem(key) ?? JSON.stringify(fallback)) }
-  catch { return fallback }
-}
-
-export function getWorkspaces() {
-  const list = read(WS_KEY, [])
-  if (list.length === 0) {
-    // Bootstrap a default workspace, migrating any legacy sessions into it
-    const def = {
-      id: crypto.randomUUID(),
-      name: 'Toko Utama',
-      color: PRESET_COLORS[0],
-      createdAt: new Date().toISOString(),
-    }
-    localStorage.setItem(WS_KEY, JSON.stringify([def]))
-    localStorage.setItem(CURRENT_KEY, def.id)
-    migrateLegacySessions(def.id)
-    return [def]
-  }
-  return list
+// Warna stabil dari id — dipakai bila workspace belum punya kolom `color`
+// (migration 0002 belum dijalankan). Deterministik agar warna tidak berubah-ubah.
+export function colorForId(id) {
+  const s = String(id)
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return PRESET_COLORS[h % PRESET_COLORS.length]
 }
 
 export function getCurrentWorkspaceId() {
-  const id = localStorage.getItem(CURRENT_KEY)
-  const list = getWorkspaces()
-  if (id && list.some(w => w.id === id)) return id
-  // Fallback to first
-  const first = list[0]?.id
-  if (first) localStorage.setItem(CURRENT_KEY, first)
-  return first
-}
-
-export function getCurrentWorkspace() {
-  const id = getCurrentWorkspaceId()
-  return getWorkspaces().find(w => w.id === id) || null
+  return localStorage.getItem(CURRENT_KEY) || null
 }
 
 export function setCurrentWorkspace(id) {
-  localStorage.setItem(CURRENT_KEY, id)
+  if (id) localStorage.setItem(CURRENT_KEY, id)
 }
 
-export function createWorkspace({ name, color }) {
-  const list = getWorkspaces()
-  const ws = {
-    id: crypto.randomUUID(),
-    name: name.trim() || 'Workspace Baru',
-    color: color || PRESET_COLORS[0],
-    createdAt: new Date().toISOString(),
-  }
-  localStorage.setItem(WS_KEY, JSON.stringify([...list, ws]))
-  localStorage.setItem(CURRENT_KEY, ws.id)
-  return ws
-}
-
-export function updateWorkspace(id, patch) {
-  const list = getWorkspaces().map(w => w.id === id ? { ...w, ...patch } : w)
-  localStorage.setItem(WS_KEY, JSON.stringify(list))
-}
-
-export function deleteWorkspace(id) {
-  const list = getWorkspaces().filter(w => w.id !== id)
-  // Don't allow deleting the last workspace
-  if (list.length === 0) return false
-  localStorage.setItem(WS_KEY, JSON.stringify(list))
-  // Clean ALL data scoped to this workspace
-  localStorage.removeItem(sessionsKeyFor(id))
-  localStorage.removeItem(`quadrant_products_v1::${id}`)
-  localStorage.removeItem(`quadrant_store_v1::${id}`)
-  // If current was deleted, switch to first remaining
-  if (getCurrentWorkspaceId() === id) {
-    localStorage.setItem(CURRENT_KEY, list[0].id)
-  }
-  return true
-}
-
-// ─── Session key scoping ──────────────────────────────────────────
+// ─── Kunci localStorage yang masih di-scope per-workspace ─────────────────
 export function sessionsKeyFor(workspaceId) {
   return `quadrant_sessions_v1::${workspaceId}`
 }
 
-// Migrate old global sessions (pre-workspace) into the given workspace
-function migrateLegacySessions(workspaceId) {
-  const legacy = localStorage.getItem('quadrant_sessions_v1')
-  if (legacy) {
-    localStorage.setItem(sessionsKeyFor(workspaceId), legacy)
-    localStorage.removeItem('quadrant_sessions_v1')
-  }
+// Bersihkan data localStorage yang masih di-scope ke workspace (sesi/produk/store)
+// saat workspace dihapus. Data Supabase (periods/products) terhapus via CASCADE.
+export function clearWorkspaceLocalData(id) {
+  localStorage.removeItem(sessionsKeyFor(id))
+  localStorage.removeItem(`quadrant_products_v1::${id}`)
+  localStorage.removeItem(`quadrant_store_v1::${id}`)
 }
