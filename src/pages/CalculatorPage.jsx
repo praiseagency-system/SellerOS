@@ -8,7 +8,7 @@ import RoasIntelligence from '../components/RoasIntelligence'
 import TikTokPicker from '../components/TikTokPicker'
 import { tiktokPlatformRate } from '../utils/tiktokFeeData'
 import { computeCalc } from '../utils/calc'
-import { saveProduct } from '../utils/products'
+import { saveProduct } from '../data/calcProducts'
 import { getBlendedLogistics } from '../utils/storeData'
 
 function fmt(n) {
@@ -173,18 +173,23 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
   const catLabel = isTikTok ? (selectedTtCat?.label || null) : (selectedCat?.label || null)
 
-  function handleSave({ name, sku, targetMargin, targetRoas }) {
-    saveProduct({
-      id: initialProduct?.id,
-      name, sku,
-      platform,
-      categoryLabel: catLabel,
-      targetMargin: targetMargin === '' ? null : +targetMargin,
-      targetRoas:   targetRoas === '' ? null : +targetRoas,
-      state: calcState,
-    })
-    setShowSaveModal(false)
-    onAfterSave?.()
+  async function handleSave({ name, sku, targetMargin, targetRoas }) {
+    try {
+      await saveProduct({
+        id: initialProduct?.id,
+        name, sku,
+        platform,
+        categoryLabel: catLabel,
+        targetMargin: targetMargin === '' ? null : +targetMargin,
+        targetRoas:   targetRoas === '' ? null : +targetRoas,
+        state: calcState,
+      })
+      setShowSaveModal(false)
+      onAfterSave?.()
+    } catch (e) {
+      console.error(e)
+      alert('Gagal menyimpan produk. Coba lagi.')
+    }
   }
 
   return (

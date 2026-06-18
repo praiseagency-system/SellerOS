@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare,
 } from 'lucide-react'
-import { getProducts, deleteProduct, duplicateProduct } from '../utils/products'
+import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
 import { computeCalc, productStatus } from '../utils/calc'
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
@@ -27,11 +27,7 @@ function withMetrics(p) {
 }
 
 export default function ProductsPage({ onOpenProduct, onNewProduct }) {
-  const [refresh, setRefresh] = useState(0)
-  const products = useMemo(() => {
-    refresh
-    return getProducts().map(withMetrics)
-  }, [refresh])
+  const [products, setProducts] = useState([])
 
   const [search, setSearch]   = useState('')
   const [fMarket, setFMarket] = useState('all')
@@ -42,6 +38,16 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const [selected, setSelected] = useState([]) // ids untuk compare
   const [showCompare, setShowCompare] = useState(false)
   const [detailProduct, setDetailProduct] = useState(null) // produk untuk modal rincian
+
+  // Muat produk dari Supabase (di-scope ke workspace aktif).
+  const reload = useCallback(async () => {
+    const list = await listProducts()
+    setProducts(list.map(withMetrics))
+    setSelected(s => s.filter(id => list.some(p => p.id === id)))
+  }, [])
+  // Muat sekali saat mount / ganti workspace (reload melakukan fetch async).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { reload() }, [reload])
 
   const categories = useMemo(
     () => [...new Set(products.map(p => p.categoryLabel).filter(Boolean))],
@@ -75,9 +81,14 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
     }
   }, [products])
 
-  function refreshNow() { setRefresh(k => k + 1); setSelected(s => s.filter(id => getProducts().some(p => p.id === id))) }
-  function handleDelete(id) { deleteProduct(id); refreshNow() }
-  function handleDuplicate(id) { duplicateProduct(id); refreshNow() }
+  async function handleDelete(id) {
+    try { await deleteProduct(id); await reload() }
+    catch (e) { console.error(e); alert('Gagal menghapus produk.') }
+  }
+  async function handleDuplicate(id) {
+    try { await duplicateProduct(id); await reload() }
+    catch (e) { console.error(e); alert('Gagal menduplikasi produk.') }
+  }
   function toggleSelect(id) {
     setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
   }
