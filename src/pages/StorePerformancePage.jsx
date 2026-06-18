@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
   Package, Tags, Clock, MapPin, CreditCard, Truck,
@@ -8,7 +8,8 @@ import {
   ComposedChart, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
 import { ingestFile } from '../utils/storeIngest'
-import { getStore, addUpload, removeFile, clearStore, getBlendedLogistics } from '../utils/storeData'
+import { mergeUpload, removeFileFrom, blendedLogistics } from '../utils/storeData'
+import { loadStore, saveStore, clearStore } from '../data/storeDataset'
 import { computeStore, quickInsights } from '../utils/storeAnalytics'
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
@@ -25,13 +26,22 @@ const pct = n => (n == null ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`)
 const growthCls = n => (n == null ? 'text-ink-faint' : n >= 0 ? 'text-green-400' : 'text-red-400')
 
 export default function StorePerformancePage() {
-  const [store, setStore] = useState(() => getStore())
+  const [store, setStore] = useState({ files: [], lines: [] })
   const [tab, setTab] = useState('ringkasan')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [warning, setWarning] = useState(null)
   const [mpFilter, setMpFilter] = useState('all')
   const fileRef = useRef(null)
+
+  // Muat dataset toko dari Supabase (di-scope ke workspace aktif).
+  useEffect(() => {
+    let active = true
+    loadStore()
+      .then(s => { if (active) setStore(s) })
+      .catch(e => { console.error(e); if (active) setError('Gagal memuat data toko.') })
+    return () => { active = false }
+  }, [])
 
   // Daftar marketplace yang ada di dataset (untuk filter bila >1 sumber).
   const mpOptions = useMemo(() => [...new Set(store.lines.map(l => l.m))].sort(), [store])
@@ -44,7 +54,7 @@ export default function StorePerformancePage() {
   const insights = useMemo(() => (stats ? quickInsights(stats) : []), [stats])
 
   // Estimasi biaya logistik (LSF) selalu dari order TikTok saja, tak ikut filter.
-  const tiktokLSF = useMemo(() => getBlendedLogistics(), [store])
+  const tiktokLSF = useMemo(() => blendedLogistics(store), [store])
 
   async function handleFiles(fileList) {
     const files = Array.from(fileList || [])
@@ -54,10 +64,9 @@ export default function StorePerformancePage() {
       let cur = store
       for (const f of files) {
         const res = await ingestFile(f)
-        const { store: next, warning: w } = addUpload(res)
-        cur = next
-        if (w) setWarning(w)
+        cur = mergeUpload(cur, res)
       }
+      await saveStore(cur)
       setStore({ ...cur })
     } catch (e) {
       setError(e.message || 'Gagal memproses file.')
@@ -67,8 +76,15 @@ export default function StorePerformancePage() {
     }
   }
 
-  function handleRemove(name) { setStore({ ...removeFile(name) }) }
-  function handleClear() { clearStore(); setStore({ files: [], lines: [] }) }
+  async function handleRemove(name) {
+    const next = removeFileFrom(store, name)
+    try { await saveStore(next); setStore(next) }
+    catch (e) { console.error(e); setError('Gagal menghapus file.') }
+  }
+  async function handleClear() {
+    try { await clearStore(); setStore({ files: [], lines: [] }) }
+    catch (e) { console.error(e); setError('Gagal menghapus data.') }
+  }
 
   const TABS = [
     { id: 'ringkasan', label: 'Ringkasan', icon: Sparkles },
@@ -668,7 +684,6 @@ const PAL = ['#3b82f6', '#f97316', '#22c55e', '#eab308', '#8b5cf6', '#ec4899', '
 function Transaksi({ stats }) {
   const { payments, dekade, promo } = stats
   const totalOrders = stats.overview.orders
-  const maxDekOrders = Math.max(...dekade.map(d => d.orders), 1)
 
   return (
     <div className="space-y-4">

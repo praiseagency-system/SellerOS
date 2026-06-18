@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle } from 'lucide-react'
 import { PlatformIcon } from '../components/PlatformIcon'
 import CategoryPicker from '../components/CategoryPicker'
@@ -9,7 +9,8 @@ import TikTokPicker from '../components/TikTokPicker'
 import { tiktokPlatformRate } from '../utils/tiktokFeeData'
 import { computeCalc } from '../utils/calc'
 import { saveProduct } from '../data/calcProducts'
-import { getBlendedLogistics } from '../utils/storeData'
+import { blendedLogistics } from '../utils/storeData'
+import { loadStore } from '../data/storeDataset'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -92,7 +93,14 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   // Biaya Logistik (LSF) hanya berlaku di TikTok Shop, tidak ada di Shopee.
   // Blended dihitung sekali dari data toko; fallback Rp990 (Jawa Non-Jakarta
   // ≤1kg) bila belum ada import.
-  const storeLSF = useMemo(() => getBlendedLogistics(), [])
+  // Blended LSF dimuat async dari dataset toko (Supabase); lsfDefault dipakai
+  // saat ganti platform ke TikTok. Fallback Rp990 sebelum termuat / tanpa data.
+  const [storeLSF, setStoreLSF] = useState(null)
+  useEffect(() => {
+    let active = true
+    loadStore().then(s => { if (active) setStoreLSF(blendedLogistics(s)) }).catch(() => {})
+    return () => { active = false }
+  }, [])
   const lsfDefault = storeLSF?.hasData ? String(storeLSF.blended) : '990'
 
   const [platform, setPlatform] = useState(init.platform ?? 'shopee')

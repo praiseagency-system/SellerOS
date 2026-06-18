@@ -1,54 +1,34 @@
-// Dataset Store Performance — di-scope per workspace. Menyimpan baris ternormalisasi
-// gabungan dari semua file yang di-upload + metadata file.
-import { getCurrentWorkspaceId } from './workspace'
+// Helper dataset Store Performance — MURNI (tanpa I/O). Persistensi kini di
+// Supabase (lihat src/data/storeDataset.js). Dataset = { files, lines }.
 import { computeLogistics } from './storeAnalytics'
 
-function keyFor(ws) { return `quadrant_store_v1::${ws}` }
-function currentKey() { return keyFor(getCurrentWorkspaceId()) }
-
-export function getStore() {
-  try { return JSON.parse(localStorage.getItem(currentKey()) || '{"files":[],"lines":[]}') }
-  catch { return { files: [], lines: [] } }
-}
-
-// Biaya logistik blended dari dataset toko aktif (untuk Kalkulator & kartu Lokasi).
+// Biaya logistik blended dari dataset toko (untuk Kalkulator & kartu Lokasi).
 // LSF khusus TikTok Shop — hanya hitung dari order marketplace TikTok
 // (exclude Shopee & Tokopedia). Mengembalikan null bila belum ada data TikTok.
-export function getBlendedLogistics() {
-  const store = getStore()
-  if (!store.lines || !store.lines.length) return null
+export function blendedLogistics(store) {
+  if (!store?.lines?.length) return null
   const lines = store.lines.filter(l => (l.m || '').toLowerCase().includes('tiktok'))
   if (!lines.length) return null
   const lsf = computeLogistics(lines)
   return lsf.hasData ? lsf : null
 }
 
-// Tambah hasil ingest; file dengan nama sama menggantikan yang lama. Return store + warning.
-export function addUpload({ fileName, source, months, lines }) {
-  const store = getStore()
+// Gabungkan hasil ingest ke store (murni). File dengan nama sama menggantikan
+// yang lama. Mengembalikan store baru.
+export function mergeUpload(store, { fileName, source, months, lines }) {
   const files = store.files.filter(f => f.name !== fileName)
   const keptLines = store.lines.filter(l => l._f !== fileName)
   const tagged = lines.map(l => ({ ...l, _f: fileName }))
-  const next = {
+  return {
     files: [...files, { name: fileName, source, months, count: lines.length, savedAt: new Date().toISOString() }],
     lines: [...keptLines, ...tagged],
   }
-  let warning = null
-  try { localStorage.setItem(currentKey(), JSON.stringify(next)) }
-  catch { warning = 'Dataset terlalu besar untuk disimpan permanen — data tetap aktif di sesi ini.' }
-  return { store: next, warning }
 }
 
-export function clearStore() {
-  localStorage.removeItem(currentKey())
-}
-
-export function removeFile(fileName) {
-  const store = getStore()
-  const next = {
+// Buang satu file dari store (murni).
+export function removeFileFrom(store, fileName) {
+  return {
     files: store.files.filter(f => f.name !== fileName),
     lines: store.lines.filter(l => l._f !== fileName),
   }
-  try { localStorage.setItem(currentKey(), JSON.stringify(next)) } catch { /* ignore */ }
-  return next
 }
