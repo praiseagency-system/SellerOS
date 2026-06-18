@@ -228,7 +228,9 @@ export default function Layout({
               <p className="text-xs text-ink-muted truncate">{pageSubtitle}</p>
             )}
           </div>
-          <HeaderControls showPeriod={!['import', 'calculator', 'products', 'performance'].includes(currentPage)} />
+          <HeaderControls
+            onNavigate={onNavigate}
+            showPeriod={!['import', 'calculator', 'products', 'performance', 'settings'].includes(currentPage)} />
         </header>
 
         {/* Page content */}

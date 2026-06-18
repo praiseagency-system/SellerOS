@@ -5,6 +5,7 @@ import QuadrantPage from './pages/QuadrantPage'
 import CalculatorPage from './pages/CalculatorPage'
 import ProductsPage from './pages/ProductsPage'
 import StorePerformancePage from './pages/StorePerformancePage'
+import SettingsPage from './pages/SettingsPage'
 import { QuadrantProvider } from './contexts/QuadrantContext'
 import { useLang } from './contexts/LanguageContext'
 import { useAuth } from './contexts/AuthContext'
@@ -15,6 +16,10 @@ import {
 import { getSessions } from './utils/storage'
 
 const PAGE_KEYS = ['import', 'quadrant', 'calculator', 'products', 'performance', 'reports', 'ai']
+// Halaman tanpa key i18n — judul ditetapkan manual.
+const PAGE_META = {
+  settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
+}
 
 // Gate auth: cek sesi dulu, tampilkan login bila belum masuk.
 export default function App() {
@@ -67,8 +72,8 @@ function MainApp() {
   // Bumping this remounts the provider → resets loaded data when workspace changes
   const [wsKey, setWsKey] = useState(0)
 
-  const page = PAGE_KEYS.includes(currentPage) ? currentPage : 'quadrant'
-  const meta = { title: t(`page.${page}.title`), subtitle: t(`page.${page}.subtitle`) }
+  const page = (PAGE_KEYS.includes(currentPage) || PAGE_META[currentPage]) ? currentPage : 'quadrant'
+  const meta = PAGE_META[page] ?? { title: t(`page.${page}.title`), subtitle: t(`page.${page}.subtitle`) }
 
   function refreshWorkspaces() {
     setWorkspaces(getWorkspaces())
@@ -106,7 +111,8 @@ function MainApp() {
           <ProductsPage onOpenProduct={openProduct} onNewProduct={newProduct} />
         )}
         {currentPage === 'performance' && <StorePerformancePage />}
-        {!['import', 'quadrant', 'calculator', 'products', 'performance'].includes(currentPage) && (
+        {currentPage === 'settings' && <SettingsPage />}
+        {!['import', 'quadrant', 'calculator', 'products', 'performance', 'settings'].includes(currentPage) && (
           <div className="flex items-center justify-center min-h-[60vh]">
             <p className="text-ink-faint text-sm">{t('page.wip')}</p>
           </div>

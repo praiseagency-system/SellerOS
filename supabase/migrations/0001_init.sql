@@ -111,6 +111,14 @@ create trigger profiles_guard
   before update on public.profiles
   for each row execute function public.profiles_guard_update();
 
+-- ─── GRANTS (table-level; RLS tetap mengatur akses per-baris) ────────────────
+-- Tabel yang dibuat via SQL Editor tidak otomatis ter-grant ke role API.
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.profiles   to authenticated;
+grant select, insert, update, delete on public.workspaces to authenticated;
+grant select, insert, update, delete on public.periods    to authenticated;
+grant select, insert, update, delete on public.products   to authenticated;
+
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
 
 alter table public.profiles   enable row level security;

@@ -1,10 +1,10 @@
-import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown, LogOut } from 'lucide-react'
+import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown, LogOut, Settings } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function HeaderControls({ notifCount = '8+', showPeriod = true }) {
+export default function HeaderControls({ notifCount = '8+', showPeriod = true, onNavigate }) {
   const { theme, setTheme } = useTheme()
   const { lang, setLang, t } = useLang()
   const { periodType, periodLabel, prevLabel, isCompareMode, hasData, setShowHistory } = useQuadrant()
@@ -96,18 +96,28 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true })
       </div>
       )}
 
-      {/* Akun + keluar */}
+      {/* Akun: avatar → Pengaturan, ikon keluar → logout */}
       {user && (
-        <button
-          onClick={() => signOut()}
-          title={`${user.email} — Keluar`}
-          className="flex items-center gap-2 bg-fill/5 border border-line/10 rounded-full pl-1 pr-2.5 py-1 text-ink-muted hover:text-ink hover:bg-fill/10 transition-colors"
-        >
-          <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold uppercase">
-            {(user.email?.[0] || '?')}
-          </span>
-          <LogOut className="w-4 h-4" />
-        </button>
+        <div className="flex items-center bg-fill/5 border border-line/10 rounded-full pl-1 pr-1 py-1 gap-1">
+          <button
+            onClick={() => onNavigate?.('settings')}
+            title={`${user.email} — Pengaturan`}
+            className="flex items-center gap-1.5 text-ink-muted hover:text-ink transition-colors"
+          >
+            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold uppercase">
+              {(user.email?.[0] || '?')}
+            </span>
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+          <span className="w-px h-5 bg-line/15" />
+          <button
+            onClick={() => signOut()}
+            title="Keluar"
+            className="flex items-center justify-center w-7 h-7 rounded-full text-ink-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   )
