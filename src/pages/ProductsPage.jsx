@@ -2,9 +2,9 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Megaphone, Upload,
 } from 'lucide-react'
-import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
+import { listProducts, deleteProduct, duplicateProduct, saveProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
-import { productSummary, productVariations, productFees } from '../utils/product'
+import { productSummary, productVariations, productVariationsRaw, productFees } from '../utils/product'
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import VoucherPanel from '../components/VoucherPanel'
@@ -102,6 +102,30 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   async function handleDuplicate(id) {
     try { await duplicateProduct(id); await reload() }
     catch (e) { console.error(e); alert('Gagal menduplikasi produk.') }
+  }
+  // Tambah varian (dari menu Produk) → simpan + buka di Kalkulator untuk diisi.
+  async function handleAddVariation(product) {
+    try {
+      const clean = v => ({
+        name: v.name ?? '', sku: v.sku ?? '', variationId: v.variationId ?? '',
+        hpp: v.hpp ?? '', hargaCoret: v.hargaCoret ?? '',
+        jual: v.jual ?? '', jualCampaign: v.jualCampaign ?? '', jualFlash: v.jualFlash ?? '',
+      })
+      const variations = [
+        ...productVariationsRaw(product).map(clean),
+        { name: '', sku: '', variationId: '', hpp: '', hargaCoret: '', jual: '', jualCampaign: '', jualFlash: '' },
+      ]
+      const saved = await saveProduct({
+        id: product.id, name: product.name, platform: product.platform,
+        catalog: product.catalog, image: product.image ?? null, imagePath: product.imagePath ?? null,
+        categoryLabel: product.categoryLabel ?? null,
+        targetMargin: product.targetMargin ?? null, targetRoas: product.targetRoas ?? null,
+        fees: productFees(product), variations,
+      })
+      setDetailProduct(null)
+      await reload()
+      onOpenProduct(saved)
+    } catch (e) { console.error(e); alert('Gagal menambah varian.') }
   }
   function toggleSelect(id) {
     setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
@@ -219,6 +243,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
         <ProductDetailModal
           p={detailProduct}
           onClose={() => setDetailProduct(null)}
+          onAddVariation={() => handleAddVariation(detailProduct)}
           onOpen={() => { const prod = detailProduct; setDetailProduct(null); onOpenProduct(prod) }} />
       )}
     </div>
@@ -354,7 +379,7 @@ function VariationsTable({ variations }) {
   )
 }
 
-function ProductDetailModal({ p, onClose, onOpen }) {
+function ProductDetailModal({ p, onClose, onOpen, onAddVariation }) {
   const c = p.calc
   const isTikTok = p.platform === 'tiktok'
   const tiers = computePriceTiers(p.state || {})
@@ -411,10 +436,16 @@ function ProductDetailModal({ p, onClose, onOpen }) {
           ) : (
             <p className="text-sm text-ink-faint text-center py-6">Belum ada data kalkulasi untuk produk ini.</p>
           )}
-          <button onClick={onOpen}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-            <Pencil className="w-4 h-4" /> Buka di Kalkulator
-          </button>
+          <div className="flex gap-2">
+            <button onClick={onAddVariation}
+              className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors flex-shrink-0">
+              <Plus className="w-4 h-4" /> Varian
+            </button>
+            <button onClick={onOpen}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+              <Pencil className="w-4 h-4" /> Buka di Kalkulator
+            </button>
+          </div>
         </div>
       </div>
     </div>

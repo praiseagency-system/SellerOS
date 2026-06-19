@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2, Plus } from 'lucide-react'
+import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2 } from 'lucide-react'
 import { PlatformIcon } from '../components/PlatformIcon'
 import CategoryPicker from '../components/CategoryPicker'
 import OngkirPicker from '../components/OngkirPicker'
@@ -124,10 +124,6 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const ai = Math.min(activeIdx, variations.length - 1)
   const av = variations[ai] || {}
   const setVarField = (field, val) => setVariations(vs => vs.map((v, i) => i === ai ? { ...v, [field]: val } : v))
-  function addVariation() {
-    setVariations(vs => [...vs, { name: '', sku: '', hpp: '', hargaCoret: '', jual: '', jualCampaign: '', jualFlash: '' }])
-    setActiveIdx(variations.length)
-  }
   function removeVariation(idx) {
     if (variations.length <= 1) return
     setVariations(vs => vs.filter((_, i) => i !== idx))
@@ -308,37 +304,33 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
               {variations.length > 1 && <span className="text-[11px] text-ink-faint">Varian {ai + 1}/{variations.length}</span>}
             </div>
 
-            {/* Selektor varian */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {variations.map((v, i) => (
-                <button type="button" key={i} onClick={() => setActiveIdx(i)}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                    i === ai ? 'bg-blue-600/20 text-blue-400 border-blue-600/30' : 'border-line/10 text-ink-muted hover:border-line/20 hover:text-ink'
-                  }`}>
-                  {v.name?.trim() || `Varian ${i + 1}`}
-                  {variations.length > 1 && (
-                    <span onClick={e => { e.stopPropagation(); removeVariation(i) }}
-                      className="text-ink-faint hover:text-red-400 ml-0.5">×</span>
-                  )}
-                </button>
-              ))}
-              <button type="button" onClick={addVariation}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-dashed border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
-                <Plus className="w-3 h-3" /> Varian
-              </button>
-            </div>
-
+            {/* Selektor varian — hanya muncul saat produk punya >1 varian.
+                Menambah varian dilakukan dari menu Produk, bukan di sini. */}
             {variations.length > 1 && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Varian</label>
-                  <input value={av.name ?? ''} onChange={e => setVarField('name', e.target.value)} placeholder="mis. 50ml"
-                    className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {variations.map((v, i) => (
+                    <button type="button" key={i} onClick={() => setActiveIdx(i)}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                        i === ai ? 'bg-blue-600/20 text-blue-400 border-blue-600/30' : 'border-line/10 text-ink-muted hover:border-line/20 hover:text-ink'
+                      }`}>
+                      {v.name?.trim() || `Varian ${i + 1}`}
+                      <span onClick={e => { e.stopPropagation(); removeVariation(i) }}
+                        className="text-ink-faint hover:text-red-400 ml-0.5">×</span>
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-ink-muted mb-1.5">SKU Varian</label>
-                  <input value={av.sku ?? ''} onChange={e => setVarField('sku', e.target.value)} placeholder="mis. MNR-50"
-                    className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Varian</label>
+                    <input value={av.name ?? ''} onChange={e => setVarField('name', e.target.value)} placeholder="mis. 50ml"
+                      className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-ink-muted mb-1.5">SKU Varian</label>
+                    <input value={av.sku ?? ''} onChange={e => setVarField('sku', e.target.value)} placeholder="mis. MNR-50"
+                      className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                  </div>
                 </div>
               </div>
             )}
