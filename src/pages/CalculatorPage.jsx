@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2 } from 'lucide-react'
 import { PlatformIcon } from '../components/PlatformIcon'
 import CategoryPicker from '../components/CategoryPicker'
 import OngkirPicker from '../components/OngkirPicker'
@@ -7,8 +7,9 @@ import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import TikTokPicker from '../components/TikTokPicker'
 import { tiktokPlatformRate } from '../utils/tiktokFeeData'
-import { computeCalc } from '../utils/calc'
+import { computeCalc, computePriceTiers, productStatus } from '../utils/calc'
 import { saveProduct } from '../data/calcProducts'
+import { uploadProductImage, deleteProductImage } from '../data/productImages'
 import { blendedLogistics } from '../utils/storeData'
 import { loadStore } from '../data/storeDataset'
 
@@ -108,6 +109,8 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
   const [hpp,     setHpp]     = useState(init.hpp ?? '')
   const [jual,    setJual]    = useState(init.jual ?? '')
+  const [jualCampaign, setJualCampaign] = useState(init.jualCampaign ?? '')
+  const [jualFlash,    setJualFlash]    = useState(init.jualFlash ?? '')
   const [adCost,  setAdCost]  = useState(init.adCost ?? '')
   const [voucher, setVoucher] = useState(init.voucher ?? '')
   // Default LSF hanya saat platform TikTok; Shopee mulai kosong (manual).
@@ -153,16 +156,17 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
   // Snapshot seluruh input yang menentukan perhitungan & bisa disimpan sebagai produk
   const calcState = useMemo(() => ({
-    platform, hpp, jual, adCost, voucher, ongkir,
+    platform, hpp, jual, jualCampaign, jualFlash, adCost, voucher, ongkir,
     selectedCat, cAdminManual, selectedGox, cGoxManual,
     sellerType, promoXtraOn, liveXtraOn, preOrderOn,
     ttSeller, selectedTtCat, ttKomisiManual, ttGmvMax, ttGxp, ttPreOrder, cComm,
-  }), [platform, hpp, jual, adCost, voucher, ongkir,
+  }), [platform, hpp, jual, jualCampaign, jualFlash, adCost, voucher, ongkir,
        selectedCat, cAdminManual, selectedGox, cGoxManual,
        sellerType, promoXtraOn, liveXtraOn, preOrderOn,
        ttSeller, selectedTtCat, ttKomisiManual, ttGmvMax, ttGxp, ttPreOrder, cComm])
 
   const c = useMemo(() => computeCalc(calcState), [calcState])
+  const tiers = useMemo(() => computePriceTiers(calcState), [calcState])
 
   const profitCls = c ? (c.profit >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-faint'
   const profitBg  = c ? (c.profit >= 0 ? 'bg-green-500/8 border-green-500/20' : 'bg-red-500/8 border-red-500/20') : ''
@@ -181,13 +185,25 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
   const catLabel = isTikTok ? (selectedTtCat?.label || null) : (selectedCat?.label || null)
 
-  async function handleSave({ name, sku, targetMargin, targetRoas }) {
+  async function handleSave({ name, sku, targetMargin, targetRoas, imageFile, removeImage }) {
     try {
+      let image     = initialProduct?.image ?? null
+      let imagePath = initialProduct?.imagePath ?? null
+      if (removeImage && imagePath) {
+        await deleteProductImage(imagePath)
+        image = null; imagePath = null
+      }
+      if (imageFile) {
+        if (imagePath) await deleteProductImage(imagePath) // ganti: hapus yang lama
+        const up = await uploadProductImage(imageFile)
+        image = up.url; imagePath = up.path
+      }
       await saveProduct({
         id: initialProduct?.id,
         name, sku,
         platform,
         categoryLabel: catLabel,
+        image, imagePath,
         targetMargin: targetMargin === '' ? null : +targetMargin,
         targetRoas:   targetRoas === '' ? null : +targetRoas,
         state: calcState,
@@ -235,6 +251,11 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
             <h3 className="text-sm font-semibold text-ink">Harga &amp; Modal</h3>
             <NumInput label="HPP / Modal" value={hpp} onChange={setHpp} hint="Termasuk biaya packaging &amp; pengiriman ke gudang" />
             <NumInput label="Harga Jual"  value={jual} onChange={setJual} />
+            <div className="pt-1 border-t border-line/8 space-y-4">
+              <p className="text-[11px] text-ink-faint -mb-1">Harga promo <span className="font-normal">(opsional)</span> — biaya & program ikut konfigurasi di bawah, hanya harga yang berbeda.</p>
+              <NumInput label="Harga Campaign"   value={jualCampaign} onChange={setJualCampaign} hint="Harga saat ikut campaign (mis. 6.6, payday sale)" />
+              <NumInput label="Harga Flash Sale"  value={jualFlash}    onChange={setJualFlash}    hint="Harga saat slot Flash Sale" />
+            </div>
           </section>
 
           <section className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
@@ -535,6 +556,37 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
                 </div>
               </div>
 
+              {/* Perbandingan tier harga (Normal/Campaign/Flash Sale) */}
+              {tiers.length > 1 && (
+                <div className="bg-surface border border-line/8 rounded-2xl p-5">
+                  <h3 className="text-sm font-semibold text-ink mb-1">Perbandingan Harga</h3>
+                  <p className="text-[11px] text-ink-faint mb-3">Profit &amp; margin per unit (sebelum iklan) — biaya sama, hanya harga berbeda</p>
+                  <div className="space-y-2">
+                    {tiers.map(ti => {
+                      const st = productStatus(ti.calc.marginNoAd)
+                      const txt = st.color === 'green' ? 'text-green-400' : st.color === 'yellow' ? 'text-yellow-400' : 'text-red-400'
+                      const dot = st.color === 'green' ? 'bg-green-500' : st.color === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'
+                      return (
+                        <div key={ti.key} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-fill/5">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                              <p className="text-sm font-medium text-ink-strong">{ti.label}</p>
+                              {ti.belowBep && <span className="text-[10px] font-semibold text-red-400 bg-red-500/10 rounded px-1.5 py-0.5">di bawah BEP</span>}
+                            </div>
+                            <p className="text-[11px] text-ink-faint mt-0.5 ml-3">{fmt(ti.price)}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className={`text-sm font-bold tabular-nums ${ti.calc.profitNoAd >= 0 ? 'text-ink-strong' : 'text-red-400'}`}>{fmt(ti.calc.profitNoAd)}</p>
+                            <p className={`text-[11px] font-medium tabular-nums ${txt}`}>{ti.calc.marginNoAd.toFixed(1)}%</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* ROAS Intelligence */}
               <RoasIntelligence
                 hargaJual={c.h}
@@ -620,10 +672,36 @@ function SaveProductModal({ initialProduct, calc, defaultMargin, onSave, onClose
   const [targetMargin, setTargetMargin] = useState(initialProduct?.targetMargin ?? '')
   const [targetRoas,   setTargetRoas]   = useState(initialProduct?.targetRoas ?? '')
 
-  function submit(e) {
+  // Foto: preview lokal (objectURL) saat pilih file baru; upload sebenarnya
+  // terjadi di handleSave. `removed` menandai hapus foto lama yang sudah ada.
+  const [imageFile, setImageFile] = useState(null)
+  const [removed, setRemoved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const imgRef = useRef(null)
+  const localPreview = useMemo(() => (imageFile ? URL.createObjectURL(imageFile) : null), [imageFile])
+  useEffect(() => () => { if (localPreview) URL.revokeObjectURL(localPreview) }, [localPreview])
+  const shownImage = localPreview || (removed ? null : initialProduct?.image) || null
+
+  function pickFile(file) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { alert('File harus berupa gambar.'); return }
+    setImageFile(file); setRemoved(false)
+  }
+  function clearImage() {
+    setImageFile(null)
+    setRemoved(!!initialProduct?.image) // tandai hapus hanya bila ada foto tersimpan
+    if (imgRef.current) imgRef.current.value = ''
+  }
+
+  async function submit(e) {
     e.preventDefault()
-    if (!name.trim()) return
-    onSave({ name: name.trim(), sku: sku.trim(), targetMargin, targetRoas })
+    if (!name.trim() || busy) return
+    setBusy(true)
+    try {
+      await onSave({ name: name.trim(), sku: sku.trim(), targetMargin, targetRoas, imageFile, removeImage: removed })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -634,6 +712,31 @@ function SaveProductModal({ initialProduct, calc, defaultMargin, onSave, onClose
           <button type="button" onClick={onClose} className="text-ink-muted hover:text-ink"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
+          {/* Foto produk */}
+          <div>
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">Foto Produk</label>
+            <div className="flex items-center gap-3">
+              <div className="w-16 h-16 rounded-xl border border-line/10 bg-fill/5 overflow-hidden flex items-center justify-center flex-shrink-0">
+                {shownImage
+                  ? <img src={shownImage} alt="" className="w-full h-full object-cover" />
+                  : <ImagePlus className="w-5 h-5 text-ink-faint" />}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <button type="button" onClick={() => imgRef.current?.click()}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-line/10 text-ink-muted hover:text-ink hover:border-line/20 transition-colors w-fit">
+                  {shownImage ? 'Ganti Foto' : 'Pilih Foto'}
+                </button>
+                {shownImage && (
+                  <button type="button" onClick={clearImage}
+                    className="flex items-center gap-1 text-xs text-ink-faint hover:text-red-400 transition-colors w-fit">
+                    <Trash2 className="w-3 h-3" /> Hapus
+                  </button>
+                )}
+              </div>
+              <input ref={imgRef} type="file" accept="image/*" className="hidden"
+                onChange={e => pickFile(e.target.files[0])} />
+            </div>
+          </div>
           <div>
             <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Produk <span className="text-red-400">*</span></label>
             <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Kaos Polos Premium"
@@ -661,8 +764,8 @@ function SaveProductModal({ initialProduct, calc, defaultMargin, onSave, onClose
           )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-line/8">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-ink-muted border border-line/10 rounded-xl hover:border-line/20 hover:text-ink transition-colors">Batal</button>
-          <button type="submit" disabled={!name.trim()} className="px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-40 transition-colors">Simpan</button>
+          <button type="button" onClick={onClose} disabled={busy} className="px-4 py-2 text-sm text-ink-muted border border-line/10 rounded-xl hover:border-line/20 hover:text-ink disabled:opacity-40 transition-colors">Batal</button>
+          <button type="submit" disabled={!name.trim() || busy} className="px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-40 transition-colors">{busy ? 'Menyimpan…' : 'Simpan'}</button>
         </div>
       </form>
     </div>

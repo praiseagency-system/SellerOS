@@ -3,7 +3,7 @@ import {
   Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket,
 } from 'lucide-react'
 import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
-import { computeCalc, productStatus } from '../utils/calc'
+import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import VoucherPanel from '../components/VoucherPanel'
@@ -231,11 +231,17 @@ function ProductCard({ p, selected, onSelect, onShowDetail, onOpen, onDuplicate,
     <div className={`bg-surface border rounded-2xl p-4 transition-all ${selected ? 'border-blue-600/50 ring-1 ring-blue-600/30' : 'border-line/8 hover:border-line/20'}`}>
       <div className="cursor-pointer" onClick={onShowDetail} title="Lihat rincian kalkulasi">
         <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
-            <p className="text-[11px] text-ink-faint truncate">
-              {p.sku ? `${p.sku} · ` : ''}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
-            </p>
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            {p.image && (
+              <img src={p.image} alt="" loading="lazy"
+                className="w-10 h-10 rounded-lg object-cover border border-line/10 flex-shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
+              <p className="text-[11px] text-ink-faint truncate">
+                {p.sku ? `${p.sku} · ` : ''}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
+              </p>
+            </div>
           </div>
           <label className="flex-shrink-0 cursor-pointer mt-0.5" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={selected} onChange={onSelect} className="accent-blue-600 w-4 h-4" />
@@ -285,15 +291,21 @@ function IconBtn({ children, onClick, title, danger }) {
 function ProductDetailModal({ p, onClose, onOpen }) {
   const c = p.calc
   const isTikTok = p.platform === 'tiktok'
+  const tiers = computePriceTiers(p.state || {})
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-surface w-full max-w-md rounded-2xl border border-line/10 shadow-2xl flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-line/8 flex-shrink-0">
-          <div className="min-w-0">
-            <h2 className="font-semibold text-ink-strong truncate">{p.name}</h2>
-            <p className="text-[11px] text-ink-faint truncate">
-              {PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
-            </p>
+          <div className="flex items-center gap-3 min-w-0">
+            {p.image && (
+              <img src={p.image} alt="" className="w-11 h-11 rounded-xl object-cover border border-line/10 flex-shrink-0" />
+            )}
+            <div className="min-w-0">
+              <h2 className="font-semibold text-ink-strong truncate">{p.name}</h2>
+              <p className="text-[11px] text-ink-faint truncate">
+                {PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
+              </p>
+            </div>
           </div>
           <button onClick={onClose} className="text-ink-muted hover:text-ink flex-shrink-0"><X className="w-5 h-5" /></button>
         </div>
@@ -301,6 +313,31 @@ function ProductDetailModal({ p, onClose, onOpen }) {
           {c ? (
             <>
               <RoasIntelligence hargaJual={c.h} profit={c.profitNoAd} margin={c.marginNoAd} roasBep={c.roasBep} showHealth={false} />
+              {tiers.length > 1 && (
+                <div className="bg-fill/5 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-ink-muted mb-2">Perbandingan Harga</p>
+                  <div className="space-y-1.5">
+                    {tiers.map(ti => {
+                      const st = productStatus(ti.calc.marginNoAd)
+                      const txt = st.color === 'green' ? 'text-green-400' : st.color === 'yellow' ? 'text-yellow-400' : 'text-red-400'
+                      const dot = st.color === 'green' ? 'bg-green-500' : st.color === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'
+                      return (
+                        <div key={ti.key} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="flex items-center gap-1.5 text-ink">
+                            <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />{ti.label}
+                            {ti.belowBep && <span className="text-[10px] text-red-400">· di bawah BEP</span>}
+                          </span>
+                          <span className="flex items-center gap-2 tabular-nums">
+                            <span className="text-ink-faint">{fmt(ti.price)}</span>
+                            <span className={`font-semibold ${ti.calc.profitNoAd >= 0 ? 'text-ink-strong' : 'text-red-400'}`}>{fmt(ti.calc.profitNoAd)}</span>
+                            <span className={`font-medium w-12 text-right ${txt}`}>{ti.calc.marginNoAd.toFixed(1)}%</span>
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <CalcBreakdown c={c} isTikTok={isTikTok} profitCls={c.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
             </>
           ) : (

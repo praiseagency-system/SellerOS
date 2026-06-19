@@ -93,6 +93,30 @@ export function healthScore(margin) {
   return                  { key: 'sehat',       status: 'Sangat Sehat',      short: 'Sehat',          color: 'emerald', note: 'Margin sangat besar — ruang scaling luas.' }
 }
 
+// Tier harga: Normal / Campaign / Flash Sale. Biaya & program SAMA (founder:
+// "cukup beda harga saja") — hanya harga jual yang berganti, margin dihitung
+// ulang per harga. BEP identik antar-tier (tak bergantung harga).
+export const PRICE_TIERS = [
+  { key: 'normal',   label: 'Normal',     field: 'jual' },
+  { key: 'campaign', label: 'Campaign',   field: 'jualCampaign' },
+  { key: 'flash',    label: 'Flash Sale', field: 'jualFlash' },
+]
+
+// Mengembalikan daftar tier yang terisi (normal selalu, campaign/flash bila ada
+// harga). Tiap item: { key, label, price, calc, belowBep }.
+export function computePriceTiers(s) {
+  const base = computeCalc(s)
+  if (!base) return []
+  const bep = base.bep
+  return PRICE_TIERS.map(t => {
+    const price = +s[t.field] || 0
+    if (t.key === 'normal') return { ...t, price: base.h, calc: base, belowBep: false }
+    if (!price) return null
+    const calc = computeCalc({ ...s, jual: price })
+    return calc ? { ...t, price, calc, belowBep: bep != null && price < bep } : null
+  }).filter(Boolean)
+}
+
 // Status 3-tingkat untuk Product List/Dashboard
 export function productStatus(margin) {
   if (margin == null || isNaN(margin)) return { key: 'tidak-layak', label: 'Tidak Layak', color: 'red'    }
