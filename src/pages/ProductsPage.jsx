@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket,
 } from 'lucide-react'
 import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
 import { computeCalc, productStatus } from '../utils/calc'
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
+import VoucherPanel from '../components/VoucherPanel'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -28,6 +29,7 @@ function withMetrics(p) {
 
 export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const [products, setProducts] = useState([])
+  const [tab, setTab] = useState('produk') // 'produk' | 'voucher'
 
   const [search, setSearch]   = useState('')
   const [fMarket, setFMarket] = useState('all')
@@ -97,6 +99,25 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
 
   return (
     <div className="p-6 max-w-6xl">
+      {/* Tabs: Produk | Voucher */}
+      <div className="flex items-center gap-1 mb-6 border-b border-line/8">
+        {[
+          { id: 'produk', label: 'Produk', icon: Package },
+          { id: 'voucher', label: 'Voucher', icon: Ticket },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === t.id ? 'border-blue-500 text-ink-strong' : 'border-transparent text-ink-faint hover:text-ink-muted'
+            }`}>
+            <t.icon className="w-4 h-4" />{t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'voucher' ? (
+        <VoucherPanel products={products} />
+      ) : (
+      <>
       {/* Dashboard */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <StatCard label="Total Produk" value={dash.total} icon={Package} accent="blue" />
@@ -163,6 +184,8 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
               onDelete={() => handleDelete(p.id)} />
           ))}
         </div>
+      )}
+      </>
       )}
 
       {showCompare && (

@@ -11,6 +11,8 @@ import { ingestFile } from '../utils/storeIngest'
 import { mergeUpload, removeFileFrom, blendedLogistics } from '../utils/storeData'
 import { loadStore, saveStore, clearStore } from '../data/storeDataset'
 import { computeStore, quickInsights } from '../utils/storeAnalytics'
+import { listVouchers } from '../data/vouchers'
+import { matchVouchersToAmount } from '../utils/voucher'
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
@@ -32,7 +34,15 @@ export default function StorePerformancePage() {
   const [error, setError] = useState(null)
   const [warning, setWarning] = useState(null)
   const [mpFilter, setMpFilter] = useState('all')
+  const [vouchers, setVouchers] = useState([])
   const fileRef = useRef(null)
+
+  // Muat voucher (untuk cocokkan nominal voucher pesanan → nama voucher).
+  useEffect(() => {
+    let active = true
+    listVouchers().then(vs => { if (active) setVouchers(vs) }).catch(() => {})
+    return () => { active = false }
+  }, [])
 
   // Muat dataset toko dari Supabase (di-scope ke workspace aktif).
   useEffect(() => {
@@ -189,7 +199,7 @@ export default function StorePerformancePage() {
           {tab === 'kategori' && <Kategori stats={stats} />}
           {tab === 'waktu' && <Waktu stats={stats} />}
           {tab === 'lokasi' && <Lokasi stats={stats} mp={mp} lsf={tiktokLSF} />}
-          {tab === 'transaksi' && <Transaksi stats={stats} />}
+          {tab === 'transaksi' && <Transaksi stats={stats} vouchers={vouchers} />}
         </>
       )}
     </div>
@@ -681,9 +691,20 @@ function GeoTable({ title, rows }) {
 
 const PAL = ['#3b82f6', '#f97316', '#22c55e', '#eab308', '#8b5cf6', '#ec4899', '#14b8a6', '#6b7280']
 
-function Transaksi({ stats }) {
+function Transaksi({ stats, vouchers = [] }) {
   const { payments, dekade, promo } = stats
   const totalOrders = stats.overview.orders
+
+  // Cocokkan distribusi nominal voucher seller (dari data pesanan) ke voucher
+  // yang dibuat user. Nominal yang cocok diberi nama; sisanya "belum terdaftar".
+  const voucherUsage = useMemo(() => (promo.sellerVoucherByAmount || []).map(row => {
+    const matched = matchVouchersToAmount(vouchers, row.amount)
+    return {
+      ...row,
+      label: matched.length ? matched.map(v => v.name).join(', ') : `Voucher ${fmtRp(row.amount)}`,
+      unregistered: matched.length === 0,
+    }
+  }), [promo, vouchers])
 
   return (
     <div className="space-y-4">
@@ -790,6 +811,43 @@ function Transaksi({ stats }) {
                 <span className="text-sm font-bold text-blue-400 tabular-nums">{fmtRp(promo.totalVoucherSeller)}</span>
               </div>
             </div>
+
+            {/* Breakdown per voucher (cocok via nominal) */}
+            {voucherUsage.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-line/8">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-ink-muted">Voucher yang Dipakai</p>
+                  <span className="text-[10px] text-ink-faint">cocok via nominal</span>
+                </div>
+                <div className="space-y-2">
+                  {voucherUsage.slice(0, 6).map(row => {
+                    const share = promo.withVoucherSeller ? (row.orders / promo.withVoucherSeller) * 100 : 0
+                    return (
+                      <div key={row.amount}>
+                        <div className="flex items-center justify-between gap-2 text-xs mb-1">
+                          <span className={`truncate ${row.unregistered ? 'text-ink-faint' : 'text-ink'}`}
+                            title={row.unregistered ? 'Nominal ini belum cocok dengan voucher yang dibuat' : undefined}>
+                            {row.label}{row.unregistered && <span className="ml-1 text-[10px]">· belum terdaftar</span>}
+                          </span>
+                          <span className="flex-shrink-0 tabular-nums text-ink-muted">
+                            {fmtNum(row.orders)} ({share.toFixed(0)}%)
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-fill/10 overflow-hidden">
+                          <div className={`h-full rounded-full ${row.unregistered ? 'bg-fill/30' : 'bg-blue-500'}`}
+                            style={{ width: `${Math.max(2, share)}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {voucherUsage.some(r => r.unregistered) && (
+                  <p className="text-[10px] text-ink-faint mt-2 leading-relaxed">
+                    Nominal "belum terdaftar" = ada di data pesanan tapi belum cocok dengan voucher mana pun yang kamu buat di menu Produk → Voucher.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Voucher Shopee */}

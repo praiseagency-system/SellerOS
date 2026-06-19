@@ -139,15 +139,28 @@ export function computeStore(lines) {
     if ((l.ds  || 0) > 0) p.ds  += l.ds
   }
   let withVS = 0, withVSP = 0, totalVS = 0, totalVSP = 0, totalDS = 0
+  // Distribusi nominal voucher seller per pesanan → untuk cocokkan ke voucher
+  // yang dibuat user (data pesanan hanya punya nominal, bukan nama voucher).
+  const vsAmountMap = new Map()
   for (const p of orderPromo.values()) {
-    if (p.vs  > 0) { withVS++;  totalVS  += p.vs  }
+    if (p.vs  > 0) {
+      withVS++; totalVS += p.vs
+      const amt = Math.round(p.vs)
+      const e = vsAmountMap.get(amt) || { orders: 0, total: 0 }
+      e.orders++; e.total += p.vs
+      vsAmountMap.set(amt, e)
+    }
     if (p.vsp > 0) { withVSP++; totalVSP += p.vsp }
     totalDS += p.ds
   }
+  const sellerVoucherByAmount = [...vsAmountMap.entries()]
+    .map(([amount, e]) => ({ amount, orders: e.orders, total: Math.round(e.total) }))
+    .sort((a, b) => b.orders - a.orders)
   const promo = {
     withVoucherSeller:    withVS,
     withoutVoucherSeller: orders - withVS,
     totalVoucherSeller:   totalVS,
+    sellerVoucherByAmount,
     withVoucherShopee:    withVSP,
     withoutVoucherShopee: orders - withVSP,
     totalVoucherShopee:   totalVSP,
