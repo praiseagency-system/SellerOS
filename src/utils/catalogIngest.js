@@ -49,7 +49,8 @@ export function parseCatalogSheet(aoa) {
     const price = parseNum(get(r, 'price'))
     const baseName = get(r, 'name').toString().trim()
     if (!(price > 0) || !baseName) { skipped++; continue } // buang header/instruksi/kosong
-    const variationName = get(r, 'variationName').toString().trim()
+    let variationName = get(r, 'variationName').toString().trim()
+    if (variationName.toLowerCase() === 'default') variationName = '' // TikTok: "Default" = tanpa varian
     const sku = get(r, 'sku').toString().trim()
     const parentSku = get(r, 'parentSku').toString().trim()
     rows.push({
@@ -93,11 +94,25 @@ export function groupCatalog(rows) {
   return [...groups.values()]
 }
 
+// Hitung range sebenarnya dari address sel — TikTok batch-edit kadang menulis
+// `!ref` salah (hanya header) padahal data ada di baris bawah; tanpa ini
+// SheetJS hanya membaca beberapa baris pertama.
+function trueRange(ws) {
+  let maxR = 0, maxC = 0
+  for (const k in ws) {
+    if (k[0] === '!') continue
+    const c = XLSX.utils.decode_cell(k)
+    if (c.r > maxR) maxR = c.r
+    if (c.c > maxC) maxC = c.c
+  }
+  return { s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } }
+}
+
 export async function ingestCatalogFile(file) {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]] // Shopee: Sheet1; TikTok: Template
-  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', range: trueRange(ws) })
   const res = parseCatalogSheet(aoa)
   if (!res.source) {
     throw new Error('Format tidak dikenali. Upload file "Kelola Harga & Stok" (mass update / batch edit) dari Shopee atau TikTok.')

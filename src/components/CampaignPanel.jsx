@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign } from '../data/campaigns'
+import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
 
@@ -45,11 +46,53 @@ function campaignAgg(items, productMap) {
   return { count: items.length, products: new Set(items.map(it => it.productId)).size, avg, losing, noPrice }
 }
 
+// Monitoring: cocokkan item (varian by SKU) ke pesanan Performa Toko di dalam
+// window tanggal campaign → aktual (unit, GMV, harga aktual, margin aktual).
+function monitorCampaign(campaign, storeLines, productMap) {
+  const hasWindow = !!(campaign.startDate || campaign.endDate)
+  const start = campaign.startDate ? new Date(campaign.startDate + 'T00:00:00').getTime() : -Infinity
+  const end = campaign.endDate ? new Date(campaign.endDate + 'T23:59:59').getTime() : Infinity
+  const inWin = storeLines.filter(l => l.ok && l.t >= start && l.t <= end)
+  const bySku = new Map()
+  for (const l of inWin) {
+    const k = (l.k || '').toLowerCase().trim(); if (!k) continue
+    if (!bySku.has(k)) bySku.set(k, [])
+    bySku.get(k).push(l)
+  }
+  const items = (campaign.items || []).map(it => {
+    const lines = bySku.get((it.sku || '').toLowerCase().trim()) || []
+    const units = lines.reduce((s, l) => s + l.q, 0)
+    const gmv = lines.reduce((s, l) => s + l.r, 0)
+    const actualPrice = units ? gmv / units : null
+    const p = productMap[it.productId]
+    let actMargin = null, estProfit = null
+    if (p && actualPrice) {
+      const fees = productFees(p); const v = productVariations(p)[it.varIdx]
+      if (v) {
+        const ac = computeCalc({ ...fees, hpp: v.hpp, jual: String(Math.round(actualPrice)) })
+        actMargin = ac?.marginNoAd ?? null
+        estProfit = ac ? ac.profitNoAd * units : null
+      }
+    }
+    return { ...it, units, gmv, actualPrice, actMargin, estProfit, sold: units > 0 }
+  })
+  return {
+    hasWindow, hasStore: storeLines.length > 0,
+    ordersInWindow: new Set(inWin.map(l => l.o)).size,
+    items,
+    totalUnits: items.reduce((s, r) => s + r.units, 0),
+    totalGmv: items.reduce((s, r) => s + r.gmv, 0),
+    totalProfit: items.reduce((s, r) => s + (r.estProfit || 0), 0),
+    soldSku: items.filter(r => r.sold).length,
+  }
+}
+
 export default function CampaignPanel({ products }) {
   const [campaigns, setCampaigns] = useState([])
   const [editing, setEditing]   = useState(null)  // campaign / {} (baru) / null
   const [expanded, setExpanded] = useState(null)
   const [loadErr, setLoadErr]   = useState(false)
+  const [storeLines, setStoreLines] = useState([])
 
   const reload = useCallback(async () => {
     try { setCampaigns(await listCampaigns()); setLoadErr(false) }
@@ -57,6 +100,12 @@ export default function CampaignPanel({ products }) {
   }, [])
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { reload() }, [reload])
+  // Data Performa Toko (untuk monitoring aktual).
+  useEffect(() => {
+    let active = true
+    loadStore().then(s => { if (active) setStoreLines(s?.lines || []) }).catch(() => {})
+    return () => { active = false }
+  }, [])
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products])
 
@@ -106,6 +155,7 @@ export default function CampaignPanel({ products }) {
         <div className="space-y-3">
           {campaigns.map(c => {
             const agg = campaignAgg(c.items || [], productMap)
+            const mon = monitorCampaign(c, storeLines, productMap)
             const open = expanded === c.id
             const Chevron = open ? ChevronDown : ChevronRight
             return (
@@ -152,6 +202,39 @@ export default function CampaignPanel({ products }) {
                         </div>
                       )
                     })}
+
+                    {/* Monitoring: hasil aktual dari Performa Toko */}
+                    {mon.hasWindow && (
+                      <div className="mt-2 pt-2.5 border-t border-line/8">
+                        <p className="text-xs font-semibold text-ink-muted mb-1.5">Hasil Aktual <span className="font-normal text-ink-faint">· dari Performa Toko, cocok by SKU</span></p>
+                        {!mon.hasStore ? (
+                          <p className="text-[11px] text-ink-faint">Belum ada data Performa Toko. Upload laporan pesanan yang mencakup window campaign.</p>
+                        ) : mon.ordersInWindow === 0 ? (
+                          <p className="text-[11px] text-ink-faint">Tidak ada pesanan di window {dateRange(c)} pada data yang ter-upload.</p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted mb-2">
+                              <span>Pesanan window: <b className="text-ink-strong">{mon.ordersInWindow}</b></span>
+                              <span>Unit (produk campaign): <b className="text-ink-strong">{mon.totalUnits}</b></span>
+                              <span>GMV: <b className="text-ink-strong">{fmt(mon.totalGmv)}</b></span>
+                              <span>Est. profit: <b className={mon.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}>{fmt(mon.totalProfit)}</b></span>
+                            </div>
+                            {mon.items.filter(r => r.sold).length === 0 ? (
+                              <p className="text-[11px] text-ink-faint">Tidak ada SKU campaign yang cocok terjual di window ini.</p>
+                            ) : mon.items.filter(r => r.sold).map((r, i) => (
+                              <div key={i} className="flex items-center gap-3 text-sm">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-ink truncate text-[13px]">{r.name || r.sku}</p>
+                                  <p className="text-[11px] text-ink-faint truncate">{r.units} terjual · harga aktual {fmt(r.actualPrice)}</p>
+                                </div>
+                                <span className="text-[10px] text-ink-faint flex-shrink-0">proyeksi {itemMargin(r, productMap) != null ? `${itemMargin(r, productMap).toFixed(0)}%` : '—'} →</span>
+                                <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(r.actMargin)}`}>{r.actMargin != null ? `${r.actMargin.toFixed(1)}%` : '—'}</span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
