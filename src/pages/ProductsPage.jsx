@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Megaphone,
 } from 'lucide-react'
 import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import VoucherPanel from '../components/VoucherPanel'
+import CampaignPanel from '../components/CampaignPanel'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -104,6 +105,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
         {[
           { id: 'produk', label: 'Produk', icon: Package },
           { id: 'voucher', label: 'Voucher', icon: Ticket },
+          { id: 'campaign', label: 'Campaign', icon: Megaphone },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -116,6 +118,8 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
 
       {tab === 'voucher' ? (
         <VoucherPanel products={products} />
+      ) : tab === 'campaign' ? (
+        <CampaignPanel products={products} />
       ) : (
       <>
       {/* Dashboard */}
