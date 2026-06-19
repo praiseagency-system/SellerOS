@@ -41,7 +41,7 @@ export function parseCatalogSheet(aoa) {
   for (const k in MAP) idx[k] = header.indexOf(MAP[k])
   const get = (r, k) => (idx[k] >= 0 ? (r[idx[k]] ?? '') : '')
 
-  const products = []
+  const rows = []
   let skipped = 0
   for (let i = 1; i < aoa.length; i++) {
     const r = aoa[i]
@@ -52,9 +52,10 @@ export function parseCatalogSheet(aoa) {
     const variationName = get(r, 'variationName').toString().trim()
     const sku = get(r, 'sku').toString().trim()
     const parentSku = get(r, 'parentSku').toString().trim()
-    products.push({
+    rows.push({
       platform: source,
-      name: variationName ? `${baseName} - ${variationName}` : baseName,
+      baseName,
+      variationName,
       sku: sku || parentSku || '',
       productCode: get(r, 'productCode').toString().trim(),
       variationId: get(r, 'variationId').toString().trim(),
@@ -62,7 +63,34 @@ export function parseCatalogSheet(aoa) {
       price,
     })
   }
-  return { source, products, skipped }
+  return { source, rows, skipped }
+}
+
+// Kelompokkan baris jadi produk ber-varian, by Kode Produk (fallback nama induk).
+// Harga listing → hargaCoret (harga sebelum diskon); jual/HPP dikosongkan (manual).
+export function groupCatalog(rows) {
+  const groups = new Map()
+  for (const r of rows) {
+    const key = r.productCode || `name:${r.baseName.toLowerCase()}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        platform: r.platform,
+        name: r.baseName,
+        productCode: r.productCode,
+        parentSku: r.parentSku,
+        variations: [],
+      })
+    }
+    groups.get(key).variations.push({
+      name: r.variationName,
+      sku: r.sku,
+      variationId: r.variationId,
+      hargaCoret: String(r.price),  // "Harga" di file = harga sebelum diskon
+      jual: '',                     // harga net diisi manual
+      hpp: '',
+    })
+  }
+  return [...groups.values()]
 }
 
 export async function ingestCatalogFile(file) {
@@ -74,5 +102,5 @@ export async function ingestCatalogFile(file) {
   if (!res.source) {
     throw new Error('Format tidak dikenali. Upload file "Kelola Harga & Stok" (mass update / batch edit) dari Shopee atau TikTok.')
   }
-  return res
+  return { source: res.source, rows: res.rows, products: groupCatalog(res.rows), skipped: res.skipped }
 }

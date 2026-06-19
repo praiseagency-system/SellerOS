@@ -6,7 +6,13 @@ import { listProducts, saveProduct } from '../data/calcProducts'
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
-const keyOf = (platform, sku, name) => `${platform}|${(sku || name).toLowerCase().trim()}`
+const keyOf = (platform, code, name) => `${platform}|${(code || name).toLowerCase().trim()}`
+function priceRange(variations) {
+  const ps = variations.map(v => +v.hargaCoret || 0).filter(Boolean)
+  if (!ps.length) return '—'
+  const lo = Math.min(...ps), hi = Math.max(...ps)
+  return lo === hi ? fmtRp(lo) : `${fmtRp(lo)} – ${fmtRp(hi)}`
+}
 
 export default function CatalogImportModal({ onClose, onImported }) {
   const [parsed, setParsed] = useState(null)   // { source, products, skipped }
@@ -38,22 +44,22 @@ export default function CatalogImportModal({ onClose, onImported }) {
     setBusy(true); setError(null)
     try {
       const existing = await listProducts()
-      const have = new Set(existing.map(p => keyOf(p.platform, p.sku, p.name)))
-      let added = 0, dup = 0
+      const have = new Set(existing.map(p => keyOf(p.platform, p.catalog?.productCode, p.name)))
+      let added = 0, dup = 0, totalVar = 0
       for (const pr of parsed.products) {
-        const k = keyOf(pr.platform, pr.sku, pr.name)
+        const k = keyOf(pr.platform, pr.productCode, pr.name)
         if (have.has(k)) { dup++; continue }
         have.add(k)
         await saveProduct({
           name: pr.name,
-          sku: pr.sku,
           platform: pr.platform,
-          catalog: { productCode: pr.productCode, variationId: pr.variationId, parentSku: pr.parentSku },
-          state: { platform: pr.platform, jual: String(pr.price) },
+          catalog: { productCode: pr.productCode, parentSku: pr.parentSku },
+          fees: { platform: pr.platform },
+          variations: pr.variations,
         })
-        added++
+        added++; totalVar += pr.variations.length
       }
-      setDone({ added, dup })
+      setDone({ added, dup, totalVar })
       if (added > 0) onImported?.()
     } catch (e) {
       setError(e.message || 'Gagal mengimpor.')
@@ -96,9 +102,9 @@ export default function CatalogImportModal({ onClose, onImported }) {
           <div className="text-center py-4">
             <CheckCircle2 className="w-10 h-10 text-green-400 mx-auto mb-2" />
             <p className="text-sm font-semibold text-ink-strong">{done.added} produk ditambahkan</p>
-            {done.dup > 0 && <p className="text-xs text-ink-faint mt-1">{done.dup} dilewati (SKU/nama sudah ada)</p>}
-            <p className="text-[11px] text-ink-faint mt-3 max-w-[320px] mx-auto">
-              Lengkapi <span className="text-ink-muted font-medium">HPP/modal</span> & biaya platform di Kalkulator agar margin akurat. Harga campaign/flash bisa diisi belakangan.
+            <p className="text-xs text-ink-faint mt-0.5">{done.totalVar} varian total{done.dup > 0 ? ` · ${done.dup} produk dilewati (sudah ada)` : ''}</p>
+            <p className="text-[11px] text-ink-faint mt-3 max-w-[330px] mx-auto">
+              Harga yang masuk = <span className="text-ink-muted font-medium">harga sebelum diskon (coret)</span>. Lengkapi <span className="text-ink-muted font-medium">HPP & Harga Jual (net)</span> tiap varian di Kalkulator agar margin akurat.
             </p>
             <button onClick={onClose} className="mt-4 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">Selesai</button>
           </div>
@@ -109,7 +115,7 @@ export default function CatalogImportModal({ onClose, onImported }) {
           <>
             <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-fill/5 text-sm">
               <span className="text-ink-muted">Terdeteksi: <span className="font-semibold text-ink-strong">{PLATFORM_LABEL[parsed.source]}</span></span>
-              <span className="text-ink-strong font-semibold tabular-nums">{parsed.products.length} produk</span>
+              <span className="text-ink-strong font-semibold tabular-nums">{parsed.products.length} produk · {parsed.rows.length} varian</span>
             </div>
             <div className="border border-line/10 rounded-xl divide-y divide-line/8 max-h-64 overflow-auto">
               {parsed.products.slice(0, 200).map((p, i) => (
@@ -117,7 +123,9 @@ export default function CatalogImportModal({ onClose, onImported }) {
                   <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] text-ink-strong truncate">{p.name}</p>
-                    <p className="text-[11px] text-ink-faint truncate">{p.sku ? `SKU ${p.sku} · ` : 'tanpa SKU · '}{fmtRp(p.price)}</p>
+                    <p className="text-[11px] text-ink-faint truncate">
+                      {p.variations.length > 1 ? `${p.variations.length} varian · ` : ''}{priceRange(p.variations)}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -126,7 +134,7 @@ export default function CatalogImportModal({ onClose, onImported }) {
               )}
             </div>
             <p className="text-[11px] text-ink-faint">
-              Yang terisi otomatis: nama, SKU/kode, harga jual. <span className="text-ink-muted">HPP & harga promo diisi manual setelah import.</span> Produk dengan SKU/nama yang sudah ada akan dilewati.
+              Otomatis: nama, SKU/kode, <span className="text-ink-muted">harga sebelum diskon (coret)</span>. HPP & Harga Jual net diisi manual. Produk dengan Kode Produk/nama yang sudah ada dilewati.
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setParsed(null)} disabled={busy}

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
+import { productSummary, productVariations, productFees } from '../utils/product'
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import VoucherPanel from '../components/VoucherPanel'
@@ -21,12 +22,20 @@ const STATUS_CLS = {
 }
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 
-// Lampirkan metrik terhitung ke tiap produk
+// Lampirkan metrik terhitung. Produk ber-varian → ringkasan lintas-varian, plus
+// `state`/`calc` dari varian representatif agar konsumen lama (Voucher/Campaign/
+// Compare/Dashboard) tetap jalan tanpa perubahan.
 function withMetrics(p) {
-  const calc = computeCalc(p.state || {})
-  const margin = calc ? calc.marginNoAd : null
-  const status = productStatus(margin)
-  return { ...p, calc, status }
+  const summary = productSummary(p)
+  const fees = productFees(p)
+  const rep = summary.rep || {}
+  const state = {
+    ...fees,
+    hpp: rep.hpp ?? '', hargaCoret: rep.hargaCoret ?? '', jual: rep.jual ?? '',
+    jualCampaign: rep.jualCampaign ?? '', jualFlash: rep.jualFlash ?? '',
+  }
+  const calc = rep.calc || computeCalc(state)
+  return { ...p, summary, state, calc, status: summary.status, variations: productVariations(p) }
 }
 
 export default function ProductsPage({ onOpenProduct, onNewProduct }) {
@@ -253,7 +262,7 @@ function ProductCard({ p, selected, onSelect, onShowDetail, onOpen, onDuplicate,
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
               <p className="text-[11px] text-ink-faint truncate">
-                {p.sku ? `${p.sku} · ` : ''}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
+                {p.summary.count > 1 ? `${p.summary.count} varian · ` : (p.sku ? `${p.sku} · ` : '')}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
               </p>
             </div>
           </div>
@@ -262,12 +271,21 @@ function ProductCard({ p, selected, onSelect, onShowDetail, onOpen, onDuplicate,
           </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
-          <Metric label="Harga Jual" value={calc ? fmt(calc.h) : '—'} />
-          <Metric label="Profit Bersih" value={calc ? fmt(calc.profit) : '—'} cls={calc && calc.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
-          <Metric label="Margin Bersih" value={calc ? `${calc.marginNoAd.toFixed(1)}%` : '—'} />
-          <Metric label="ROAS BEP" value={calc?.roasBep != null ? `${calc.roasBep.toFixed(1)}×` : '—'} />
-        </div>
+        {p.summary.count > 1 ? (
+          <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
+            <Metric label="Varian" value={p.summary.count} />
+            <Metric label="Sudah ada harga" value={`${p.summary.priced}/${p.summary.count}`} cls={p.summary.needPrice ? 'text-yellow-400' : 'text-ink-strong'} />
+            <Metric label="Margin Bersih" value={p.summary.marginMin != null ? `${p.summary.marginMin.toFixed(0)}–${p.summary.marginMax.toFixed(0)}%` : '—'} />
+            <Metric label="Varian Rugi" value={p.summary.losing} cls={p.summary.losing ? 'text-red-400' : 'text-ink-strong'} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
+            <Metric label="Harga Jual" value={calc ? fmt(calc.h) : '—'} />
+            <Metric label="Profit Bersih" value={calc ? fmt(calc.profit) : '—'} cls={calc && calc.profit >= 0 ? 'text-green-400' : 'text-red-400'} />
+            <Metric label="Margin Bersih" value={calc ? `${calc.marginNoAd.toFixed(1)}%` : '—'} />
+            <Metric label="ROAS BEP" value={calc?.roasBep != null ? `${calc.roasBep.toFixed(1)}×` : '—'} />
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between">
@@ -302,6 +320,40 @@ function IconBtn({ children, onClick, title, danger }) {
   )
 }
 
+function VariationsTable({ variations }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-ink-muted mb-2">{variations.length} Varian · margin per unit (sebelum iklan)</p>
+      <div className="border border-line/10 rounded-xl divide-y divide-line/8 overflow-hidden">
+        {variations.map((v, i) => {
+          const st = v.calc ? productStatus(v.calc.marginNoAd) : null
+          const dot = !st ? 'bg-fill/30' : st.color === 'green' ? 'bg-green-500' : st.color === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'
+          return (
+            <div key={i} className="flex items-center gap-2 px-3 py-2">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] text-ink-strong truncate">{v.name || '(tanpa varian)'}</p>
+                <p className="text-[11px] text-ink-faint truncate">{v.sku || 'tanpa SKU'}{(+v.hargaCoret > 0) ? ` · coret ${fmt(+v.hargaCoret)}` : ''}</p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                {v.calc ? (
+                  <>
+                    <p className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(v.calc.h)}</p>
+                    <p className={`text-[11px] font-medium tabular-nums ${v.calc.marginNoAd >= 30 ? 'text-green-400' : v.calc.marginNoAd >= 20 ? 'text-yellow-400' : 'text-red-400'}`}>{v.calc.marginNoAd.toFixed(1)}%</p>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-yellow-400">belum ada harga jual</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <p className="text-[11px] text-ink-faint mt-2">Atur HPP &amp; Harga Jual tiap varian di Kalkulator.</p>
+    </div>
+  )
+}
+
 function ProductDetailModal({ p, onClose, onOpen }) {
   const c = p.calc
   const isTikTok = p.platform === 'tiktok'
@@ -324,7 +376,9 @@ function ProductDetailModal({ p, onClose, onOpen }) {
           <button onClick={onClose} className="text-ink-muted hover:text-ink flex-shrink-0"><X className="w-5 h-5" /></button>
         </div>
         <div className="overflow-auto p-5 space-y-4">
-          {c ? (
+          {p.summary?.count > 1 ? (
+            <VariationsTable variations={p.variations} />
+          ) : c ? (
             <>
               <RoasIntelligence hargaJual={c.h} profit={c.profitNoAd} margin={c.marginNoAd} roasBep={c.roasBep} showHealth={false} />
               {tiers.length > 1 && (

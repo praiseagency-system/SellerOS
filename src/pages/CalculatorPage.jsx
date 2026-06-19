@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2 } from 'lucide-react'
+import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2, Plus } from 'lucide-react'
 import { PlatformIcon } from '../components/PlatformIcon'
 import CategoryPicker from '../components/CategoryPicker'
 import OngkirPicker from '../components/OngkirPicker'
@@ -89,7 +89,8 @@ function ProgramToggle({ label, desc, value, isOn, onToggle, accent = 'orange' }
 }
 
 export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
-  const init = initialProduct?.state || {}
+  // Config biaya bersama: produk baru-model pakai `fees`; produk lama pakai `state`.
+  const init = initialProduct?.fees || initialProduct?.state || {}
 
   // Biaya Logistik (LSF) hanya berlaku di TikTok Shop, tidak ada di Shopee.
   // Blended dihitung sekali dari data toko; fallback Rp990 (Jawa Non-Jakarta
@@ -107,11 +108,42 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const [platform, setPlatform] = useState(init.platform ?? 'shopee')
   const isTikTok = platform === 'tiktok'
 
-  const [hpp,     setHpp]     = useState(init.hpp ?? '')
-  const [hargaCoret, setHargaCoret] = useState(init.hargaCoret ?? '')
-  const [jual,    setJual]    = useState(init.jual ?? '')
-  const [jualCampaign, setJualCampaign] = useState(init.jualCampaign ?? '')
-  const [jualFlash,    setJualFlash]    = useState(init.jualFlash ?? '')
+  // Varian: 1 produk = banyak varian, tiap varian punya harga & HPP sendiri.
+  // Produk lama/baru = 1 varian. Field harga di bawah selalu menunjuk varian
+  // AKTIF; config biaya (platform/kategori/program/iklan) bersama antar-varian.
+  const [variations, setVariations] = useState(() =>
+    (initialProduct?.variations?.length)
+      ? initialProduct.variations.map(v => ({ ...v }))
+      : [{
+          name: '', sku: initialProduct?.sku ?? '',
+          hpp: init.hpp ?? '', hargaCoret: init.hargaCoret ?? '',
+          jual: init.jual ?? '', jualCampaign: init.jualCampaign ?? '', jualFlash: init.jualFlash ?? '',
+        }]
+  )
+  const [activeIdx, setActiveIdx] = useState(0)
+  const ai = Math.min(activeIdx, variations.length - 1)
+  const av = variations[ai] || {}
+  const setVarField = (field, val) => setVariations(vs => vs.map((v, i) => i === ai ? { ...v, [field]: val } : v))
+  function addVariation() {
+    setVariations(vs => [...vs, { name: '', sku: '', hpp: '', hargaCoret: '', jual: '', jualCampaign: '', jualFlash: '' }])
+    setActiveIdx(variations.length)
+  }
+  function removeVariation(idx) {
+    if (variations.length <= 1) return
+    setVariations(vs => vs.filter((_, i) => i !== idx))
+    setActiveIdx(i => Math.max(0, (idx <= i ? i - 1 : i)))
+  }
+  const hpp = av.hpp ?? ''
+  const hargaCoret = av.hargaCoret ?? ''
+  const jual = av.jual ?? ''
+  const jualCampaign = av.jualCampaign ?? ''
+  const jualFlash = av.jualFlash ?? ''
+  const setHpp = v => setVarField('hpp', v)
+  const setHargaCoret = v => setVarField('hargaCoret', v)
+  const setJual = v => setVarField('jual', v)
+  const setJualCampaign = v => setVarField('jualCampaign', v)
+  const setJualFlash = v => setVarField('jualFlash', v)
+
   const [adCost,  setAdCost]  = useState(init.adCost ?? '')
   const [voucher, setVoucher] = useState(init.voucher ?? '')
   // Default LSF hanya saat platform TikTok; Shopee mulai kosong (manual).
@@ -203,15 +235,34 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
         const up = await uploadProductImage(imageFile)
         image = up.url; imagePath = up.path
       }
+      // Config biaya bersama (tanpa field harga; harga ada di tiap varian).
+      const feeConfig = {
+        platform, adCost, voucher, ongkir,
+        selectedCat, cAdminManual, selectedGox, cGoxManual,
+        sellerType, promoXtraOn, liveXtraOn, preOrderOn,
+        ttSeller, selectedTtCat, ttKomisiManual, ttGmvMax, ttGxp, ttPreOrder, cComm,
+      }
+      // Hanya simpan field varian yang asli (buang field terhitung mis. `calc`).
+      const cleanVar = v => ({
+        name: v.name ?? '', sku: v.sku ?? '', variationId: v.variationId ?? '',
+        hpp: v.hpp ?? '', hargaCoret: v.hargaCoret ?? '',
+        jual: v.jual ?? '', jualCampaign: v.jualCampaign ?? '', jualFlash: v.jualFlash ?? '',
+      })
+      // Produk single: SKU produk dari modal disalin ke varian tunggal.
+      const vars = (variations.length === 1
+        ? [{ ...variations[0], sku: variations[0].sku || sku }]
+        : variations).map(cleanVar)
       await saveProduct({
         id: initialProduct?.id,
         name, sku,
         platform,
         categoryLabel: catLabel,
+        catalog: initialProduct?.catalog,
         image, imagePath,
         targetMargin: targetMargin === '' ? null : +targetMargin,
         targetRoas:   targetRoas === '' ? null : +targetRoas,
-        state: calcState,
+        fees: feeConfig,
+        variations: vars,
       })
       setShowSaveModal(false)
       onAfterSave?.()
@@ -240,8 +291,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
         ))}
         <button
           onClick={() => setShowSaveModal(true)}
-          disabled={!c}
-          className="ml-auto flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+          className="ml-auto flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 transition-all">
           <Save className="w-4 h-4" />
           {initialProduct ? 'Perbarui Produk' : 'Simpan Produk'}
         </button>
@@ -253,7 +303,46 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
         <div className="space-y-5">
 
           <section className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-ink">Harga &amp; Modal</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-ink">Harga &amp; Modal</h3>
+              {variations.length > 1 && <span className="text-[11px] text-ink-faint">Varian {ai + 1}/{variations.length}</span>}
+            </div>
+
+            {/* Selektor varian */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {variations.map((v, i) => (
+                <button type="button" key={i} onClick={() => setActiveIdx(i)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    i === ai ? 'bg-blue-600/20 text-blue-400 border-blue-600/30' : 'border-line/10 text-ink-muted hover:border-line/20 hover:text-ink'
+                  }`}>
+                  {v.name?.trim() || `Varian ${i + 1}`}
+                  {variations.length > 1 && (
+                    <span onClick={e => { e.stopPropagation(); removeVariation(i) }}
+                      className="text-ink-faint hover:text-red-400 ml-0.5">×</span>
+                  )}
+                </button>
+              ))}
+              <button type="button" onClick={addVariation}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-dashed border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
+                <Plus className="w-3 h-3" /> Varian
+              </button>
+            </div>
+
+            {variations.length > 1 && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Varian</label>
+                  <input value={av.name ?? ''} onChange={e => setVarField('name', e.target.value)} placeholder="mis. 50ml"
+                    className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-ink-muted mb-1.5">SKU Varian</label>
+                  <input value={av.sku ?? ''} onChange={e => setVarField('sku', e.target.value)} placeholder="mis. MNR-50"
+                    className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                </div>
+              </div>
+            )}
+
             <NumInput label="HPP / Modal" value={hpp} onChange={setHpp} hint="Termasuk biaya packaging &amp; pengiriman ke gudang" />
             <NumInput label="Harga Sebelum Diskon (coret)" value={hargaCoret} onChange={setHargaCoret} hint="Opsional — harga normal yang dicoret. Hanya referensi, tidak dipakai hitung margin." />
             <NumInput label="Harga Jual (setelah diskon)" value={jual} onChange={setJual} hint={coretPct != null ? `Diskon ${coretPct}% dari harga coret` : undefined} />
