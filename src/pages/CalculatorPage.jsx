@@ -108,6 +108,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   const isTikTok = platform === 'tiktok'
 
   const [hpp,     setHpp]     = useState(init.hpp ?? '')
+  const [hargaCoret, setHargaCoret] = useState(init.hargaCoret ?? '')
   const [jual,    setJual]    = useState(init.jual ?? '')
   const [jualCampaign, setJualCampaign] = useState(init.jualCampaign ?? '')
   const [jualFlash,    setJualFlash]    = useState(init.jualFlash ?? '')
@@ -156,14 +157,18 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
   // Snapshot seluruh input yang menentukan perhitungan & bisa disimpan sebagai produk
   const calcState = useMemo(() => ({
-    platform, hpp, jual, jualCampaign, jualFlash, adCost, voucher, ongkir,
+    platform, hpp, hargaCoret, jual, jualCampaign, jualFlash, adCost, voucher, ongkir,
     selectedCat, cAdminManual, selectedGox, cGoxManual,
     sellerType, promoXtraOn, liveXtraOn, preOrderOn,
     ttSeller, selectedTtCat, ttKomisiManual, ttGmvMax, ttGxp, ttPreOrder, cComm,
-  }), [platform, hpp, jual, jualCampaign, jualFlash, adCost, voucher, ongkir,
+  }), [platform, hpp, hargaCoret, jual, jualCampaign, jualFlash, adCost, voucher, ongkir,
        selectedCat, cAdminManual, selectedGox, cGoxManual,
        sellerType, promoXtraOn, liveXtraOn, preOrderOn,
        ttSeller, selectedTtCat, ttKomisiManual, ttGmvMax, ttGxp, ttPreOrder, cComm])
+
+  // Diskon dari harga coret (referensi, tidak mempengaruhi margin).
+  const coretPct = (+hargaCoret > 0 && +jual > 0 && +hargaCoret > +jual)
+    ? Math.round((1 - (+jual) / (+hargaCoret)) * 100) : null
 
   const c = useMemo(() => computeCalc(calcState), [calcState])
   const tiers = useMemo(() => computePriceTiers(calcState), [calcState])
@@ -250,7 +255,8 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
           <section className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
             <h3 className="text-sm font-semibold text-ink">Harga &amp; Modal</h3>
             <NumInput label="HPP / Modal" value={hpp} onChange={setHpp} hint="Termasuk biaya packaging &amp; pengiriman ke gudang" />
-            <NumInput label="Harga Jual"  value={jual} onChange={setJual} />
+            <NumInput label="Harga Sebelum Diskon (coret)" value={hargaCoret} onChange={setHargaCoret} hint="Opsional — harga normal yang dicoret. Hanya referensi, tidak dipakai hitung margin." />
+            <NumInput label="Harga Jual (setelah diskon)" value={jual} onChange={setJual} hint={coretPct != null ? `Diskon ${coretPct}% dari harga coret` : undefined} />
             <div className="pt-1 border-t border-line/8 space-y-4">
               <p className="text-[11px] text-ink-faint -mb-1">Harga promo <span className="font-normal">(opsional)</span> — biaya & program ikut konfigurasi di bawah, hanya harga yang berbeda.</p>
               <NumInput label="Harga Campaign"   value={jualCampaign} onChange={setJualCampaign} hint="Harga saat ikut campaign (mis. 6.6, payday sale)" />

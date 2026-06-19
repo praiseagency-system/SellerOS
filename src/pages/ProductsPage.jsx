@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Megaphone,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Megaphone, Upload,
 } from 'lucide-react'
 import { listProducts, deleteProduct, duplicateProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
@@ -8,6 +8,7 @@ import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import VoucherPanel from '../components/VoucherPanel'
 import CampaignPanel from '../components/CampaignPanel'
+import CatalogImportModal from '../components/CatalogImportModal'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -30,7 +31,8 @@ function withMetrics(p) {
 
 export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const [products, setProducts] = useState([])
-  const [tab, setTab] = useState('produk') // 'produk' | 'voucher'
+  const [tab, setTab] = useState('produk') // 'produk' | 'voucher' | 'campaign'
+  const [showCatalog, setShowCatalog] = useState(false)
 
   const [search, setSearch]   = useState('')
   const [fMarket, setFMarket] = useState('all')
@@ -145,6 +147,10 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
           className="w-28 bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
         <input type="number" value={fRoas} onChange={e => setFRoas(e.target.value)} placeholder="ROAS ≤ ×"
           className="w-28 bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+        <button onClick={() => setShowCatalog(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
+          <Upload className="w-4 h-4" /> Import Katalog
+        </button>
         <button onClick={onNewProduct}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
           <Plus className="w-4 h-4" /> Produk Baru
@@ -190,6 +196,10 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
         </div>
       )}
       </>
+      )}
+
+      {showCatalog && (
+        <CatalogImportModal onClose={() => setShowCatalog(false)} onImported={reload} />
       )}
 
       {showCompare && (
