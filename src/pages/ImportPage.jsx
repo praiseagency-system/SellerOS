@@ -26,7 +26,7 @@ function buildPeriod(periodType, value) {
   return { label: `Minggu ${+w} · ${y}`, periodValue: value, periodDays: 7 }
 }
 
-export default function ImportPage({ onImported }) {
+export default function ImportPage({ onImported, embedded = false }) {
   const { handleUpload, isLoading, error } = useQuadrant()
   const { t } = useLang()
 
@@ -73,9 +73,11 @@ export default function ImportPage({ onImported }) {
   }
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className={embedded ? 'p-5' : 'p-6 max-w-3xl'}>
       {/* Form card */}
-      <div className="bg-surface border border-line/8 rounded-2xl p-6 space-y-6">
+      <div className={embedded
+        ? 'space-y-6'
+        : 'bg-surface border border-line/8 rounded-2xl p-6 space-y-6'}>
 
         {/* Platform */}
         <div>

@@ -4,6 +4,8 @@ import QuadrantTableView from '../components/QuadrantTableView'
 import ProductTable from '../components/ProductTable'
 import QuadrantSummary from '../components/QuadrantSummary'
 import MovementView from '../components/MovementView'
+import Modal from '../components/Modal'
+import ImportPage from './ImportPage'
 import { useQuadrant } from '../contexts/QuadrantContext'
 import { useLang } from '../contexts/LanguageContext'
 import { CONVERSION_BENCHMARKS, fmtNum } from '../utils/quadrantUtils'
@@ -25,13 +27,13 @@ function EmptyState({ onGoImport }) {
       </p>
       <button onClick={onGoImport}
         className="mt-6 flex items-center gap-2 text-sm px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-        <Download className="w-4 h-4" />{t('quadrant.empty.cta')}
+        <Download className="w-4 h-4" />{t('nav.import.label')}
       </button>
     </div>
   )
 }
 
-export default function QuadrantPage({ onNavigate }) {
+export default function QuadrantPage() {
   const {
     hasData, platform, platformLabels,
     productsWithQuadrant, filteredProducts,
@@ -43,6 +45,7 @@ export default function QuadrantPage({ onNavigate }) {
   const { t } = useLang()
 
   const [showBenchmark, setShowBenchmark] = useState(false)
+  const [showImport, setShowImport] = useState(false)
 
   const TABS = [
     { id: 'kuadran',   label: t('quadrant.tab.kuadran'),   icon: LayoutGrid },
@@ -72,6 +75,10 @@ export default function QuadrantPage({ onNavigate }) {
             </div>
 
             <div className="flex items-center gap-1.5 ml-auto">
+              <button onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">
+                <Download className="w-3 h-3" /><span>{t('nav.import.label')}</span>
+              </button>
               <button onClick={() => setShowHistory(true)}
                 className="relative flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-line/10 text-ink-muted hover:text-ink transition-colors">
                 <History className="w-3 h-3" /><span>{t('quadrant.history')}</span>
@@ -176,7 +183,7 @@ export default function QuadrantPage({ onNavigate }) {
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
         {!hasData ? (
-          <EmptyState onGoImport={() => onNavigate?.('import')} />
+          <EmptyState onGoImport={() => setShowImport(true)} />
         ) : (
           <>
             {activeTab === 'kuadran' && (
@@ -195,6 +202,13 @@ export default function QuadrantPage({ onNavigate }) {
           </>
         )}
       </div>
+
+      {showImport && (
+        <Modal title={t('nav.import.label')} subtitle={t('nav.import.sub')}
+          onClose={() => setShowImport(false)} maxWidth="max-w-2xl">
+          <ImportPage embedded onImported={() => setShowImport(false)} />
+        </Modal>
+      )}
     </div>
   )
 }

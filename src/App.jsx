@@ -1,6 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react'
 import Layout from './components/Layout'
-import ImportPage from './pages/ImportPage'
 import QuadrantPage from './pages/QuadrantPage'
 import CalculatorPage from './pages/CalculatorPage'
 import ProductsPage from './pages/ProductsPage'
@@ -14,7 +13,7 @@ import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
 import { listSessions } from './data/periods'
 
-const PAGE_KEYS = ['import', 'quadrant', 'calculator', 'products', 'performance', 'reports', 'ai']
+const PAGE_KEYS = ['quadrant', 'calculator', 'products', 'performance', 'reports', 'ai']
 // Halaman tanpa key i18n — judul ditetapkan manual.
 const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
@@ -36,9 +35,9 @@ export default function App() {
 
 function MainApp() {
   const { t } = useLang()
-  // Kalau workspace ini sudah punya periode tersimpan, langsung buka Kuadran
-  // (data di-restore otomatis di QuadrantContext). Kalau kosong, mulai di Import.
-  const [currentPage, setCurrentPage] = useState('import')
+  // Selalu mulai di Kuadran. Bila ada periode tersimpan, data di-restore otomatis
+  // (QuadrantContext). Bila kosong, Kuadran menampilkan empty-state + tombol Import.
+  const [currentPage, setCurrentPage] = useState('quadrant')
 
   // Produk yang sedang dibuka di kalkulator (null = produk baru/kosong).
   // calcKey membump-remount CalculatorPage agar field ter-reset/terisi sesuai produk.
@@ -143,8 +142,7 @@ function MainApp() {
         onSwitchWorkspace={handleSwitchWorkspace}
         onWorkspaceChange={refreshWorkspaces}
       >
-        {currentPage === 'import' && <ImportPage onImported={() => setCurrentPage('quadrant')} />}
-        {currentPage === 'quadrant' && <QuadrantPage onNavigate={setCurrentPage} />}
+        {currentPage === 'quadrant' && <QuadrantPage />}
         {currentPage === 'calculator' && (
           <CalculatorPage
             key={calcKey}
@@ -157,7 +155,7 @@ function MainApp() {
         )}
         {currentPage === 'performance' && <StorePerformancePage />}
         {currentPage === 'settings' && <SettingsPage />}
-        {!['import', 'quadrant', 'calculator', 'products', 'performance', 'settings'].includes(currentPage) && (
+        {!['quadrant', 'calculator', 'products', 'performance', 'settings'].includes(currentPage) && (
           <div className="flex items-center justify-center min-h-[60vh]">
             <p className="text-ink-faint text-sm">{t('page.wip')}</p>
           </div>

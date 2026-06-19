@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   LayoutGrid, Calculator, TrendingUp,
-  ChevronRight, ChevronDown, Download,
+  ChevronRight, ChevronDown,
   BarChart3, Sparkles, Info, Menu, Package
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
@@ -14,7 +14,6 @@ const NAV = [
   {
     section: 'KUADRAN TRAFFIC',
     items: [
-      { id: 'import',   icon: Download,   hasSub: true },
       { id: 'quadrant', icon: LayoutGrid, hasSub: true },
     ],
   },

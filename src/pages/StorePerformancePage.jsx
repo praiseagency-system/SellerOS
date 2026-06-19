@@ -13,6 +13,7 @@ import { loadStore, saveStore, clearStore } from '../data/storeDataset'
 import { computeStore, quickInsights } from '../utils/storeAnalytics'
 import { listVouchers } from '../data/vouchers'
 import { matchVouchersToAmount } from '../utils/voucher'
+import Modal from '../components/Modal'
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
@@ -35,6 +36,7 @@ export default function StorePerformancePage() {
   const [warning, setWarning] = useState(null)
   const [mpFilter, setMpFilter] = useState('all')
   const [vouchers, setVouchers] = useState([])
+  const [showImport, setShowImport] = useState(false)
   const fileRef = useRef(null)
 
   // Muat voucher (untuk cocokkan nominal voucher pesanan → nama voucher).
@@ -109,50 +111,23 @@ export default function StorePerformancePage() {
 
   return (
     <div className="p-6 max-w-5xl">
-      {/* Upload zone */}
-      <div
-        onDragOver={e => e.preventDefault()}
-        onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files) }}
-        className="border-2 border-dashed border-line/15 rounded-2xl p-6 text-center hover:border-blue-600/40 transition-colors"
-      >
-        <input ref={fileRef} type="file" accept=".xlsx,.csv" multiple className="hidden"
-          onChange={e => handleFiles(e.target.files)} />
-        <div className="w-11 h-11 rounded-2xl bg-blue-600/10 flex items-center justify-center mx-auto mb-2">
-          <Upload className="w-5 h-5 text-blue-500" />
+      {/* Header: status data + tombol Import (ringkas, modal saat dipencet) */}
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="min-w-0">
+          {store.files.length > 0 ? (
+            <p className="text-xs text-ink-muted">
+              <span className="font-semibold text-ink">{store.files.length} file</span>
+              {' · '}{fmtNum(store.lines.length)} baris{stats ? ` · ${stats.months.join(', ')}` : ''}
+            </p>
+          ) : (
+            <p className="text-xs text-ink-faint">Belum ada data terimport</p>
+          )}
         </div>
-        <p className="text-sm font-medium text-ink-strong">{busy ? 'Memproses...' : 'Upload Laporan Pesanan Bulanan'}</p>
-        <p className="text-xs text-ink-faint mt-1">Shopee / TikTok / Tokopedia · XLSX atau CSV · deteksi & analitik otomatis</p>
-        <button onClick={() => fileRef.current?.click()} disabled={busy}
-          className="mt-3 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors">
-          Pilih File
+        <button onClick={() => setShowImport(true)} disabled={busy}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors flex-shrink-0">
+          <Upload className="w-4 h-4" />{busy ? 'Memproses…' : 'Import Data'}
         </button>
       </div>
-
-      {error && (
-        <div className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-sm text-red-300">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />{error}
-        </div>
-      )}
-      {warning && (
-        <div className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-sm text-amber-300">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />{warning}
-        </div>
-      )}
-
-      {/* File chips */}
-      {store.files.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {store.files.map(f => (
-            <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-fill/5 border border-line/10 text-xs text-ink-muted">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
-              <span className="font-medium text-ink">{f.source === 'shopee' ? 'Shopee' : 'TikTok/Tokopedia'}</span>
-              · {f.months.join(', ')} · {fmtNum(f.count)} baris
-              <button onClick={() => handleRemove(f.name)} className="text-ink-faint hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
-            </span>
-          ))}
-          <button onClick={handleClear} className="text-xs text-ink-faint hover:text-red-400 ml-1">Hapus semua</button>
-        </div>
-      )}
 
       {!stats ? (
         <div className="mt-6 bg-surface border border-line/8 rounded-2xl flex flex-col items-center justify-center text-center p-12 min-h-[260px]">
@@ -161,6 +136,10 @@ export default function StorePerformancePage() {
           </div>
           <p className="text-sm font-medium text-ink">Upload sekali, dashboard langsung jadi</p>
           <p className="text-xs text-ink-faint mt-1 max-w-[280px]">Deteksi marketplace, normalisasi, pembagian mingguan, dan analitik — semua otomatis tanpa setup.</p>
+          <button onClick={() => setShowImport(true)}
+            className="mt-4 flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">
+            <Upload className="w-4 h-4" /> Import Data
+          </button>
         </div>
       ) : (
         <>
@@ -201,6 +180,58 @@ export default function StorePerformancePage() {
           {tab === 'lokasi' && <Lokasi stats={stats} mp={mp} lsf={tiktokLSF} />}
           {tab === 'transaksi' && <Transaksi stats={stats} vouchers={vouchers} />}
         </>
+      )}
+
+      {showImport && (
+        <Modal title="Import Data Performa Toko"
+          subtitle="Shopee / TikTok / Tokopedia · XLSX atau CSV · deteksi & analitik otomatis"
+          onClose={() => setShowImport(false)} maxWidth="max-w-xl">
+          <div className="p-5">
+            <div
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files) }}
+              className="border-2 border-dashed border-line/15 rounded-2xl p-6 text-center hover:border-blue-600/40 transition-colors"
+            >
+              <input ref={fileRef} type="file" accept=".xlsx,.csv" multiple className="hidden"
+                onChange={e => handleFiles(e.target.files)} />
+              <div className="w-11 h-11 rounded-2xl bg-blue-600/10 flex items-center justify-center mx-auto mb-2">
+                <Upload className="w-5 h-5 text-blue-500" />
+              </div>
+              <p className="text-sm font-medium text-ink-strong">{busy ? 'Memproses...' : 'Upload Laporan Pesanan Bulanan'}</p>
+              <p className="text-xs text-ink-faint mt-1">Tarik & lepas file ke sini, atau pilih manual</p>
+              <button onClick={() => fileRef.current?.click()} disabled={busy}
+                className="mt-3 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                Pilih File
+              </button>
+            </div>
+
+            {error && (
+              <div className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-sm text-red-300">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />{error}
+              </div>
+            )}
+            {warning && (
+              <div className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-sm text-amber-300">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />{warning}
+              </div>
+            )}
+
+            {/* File chips */}
+            {store.files.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {store.files.map(f => (
+                  <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-fill/5 border border-line/10 text-xs text-ink-muted">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="font-medium text-ink">{f.source === 'shopee' ? 'Shopee' : 'TikTok/Tokopedia'}</span>
+                    · {f.months.join(', ')} · {fmtNum(f.count)} baris
+                    <button onClick={() => handleRemove(f.name)} className="text-ink-faint hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+                  </span>
+                ))}
+                <button onClick={handleClear} className="text-xs text-ink-faint hover:text-red-400 ml-1">Hapus semua</button>
+              </div>
+            )}
+          </div>
+        </Modal>
       )}
     </div>
   )
