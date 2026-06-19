@@ -1,25 +1,22 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
-  ArrowRight, CalendarRange, AlertTriangle,
+  CalendarRange, AlertTriangle, ArrowLeft, Save,
 } from 'lucide-react'
+import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign } from '../data/campaigns'
-import { computeCalc, productStatus } from '../utils/calc'
+import { computeCalc } from '../utils/calc'
+import { productFees, productVariations } from '../utils/product'
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
-
-function fmt(n) {
-  if (n == null || isNaN(n)) return '—'
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+const fmt = n => (n == null || isNaN(n)) ? '—' : 'Rp' + Math.round(n).toLocaleString('id-ID')
 function marginCls(m) {
   if (m == null || isNaN(m)) return 'text-ink-faint'
   return m >= 30 ? 'text-green-400' : m >= 20 ? 'text-yellow-400' : 'text-red-400'
 }
 function fmtDate(d) {
   if (!d) return null
-  const dt = new Date(d)
-  if (isNaN(dt)) return d
+  const dt = new Date(d); if (isNaN(dt)) return d
   return dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 function dateRange(c) {
@@ -30,23 +27,27 @@ function dateRange(c) {
   return 'tanpa tanggal'
 }
 
-// Proyeksi satu produk pada harga campaign-nya.
-function projectProduct(p) {
-  const normal = p.calc || computeCalc(p.state || {})
-  const campaignPrice = +p.state?.jualCampaign || 0
-  const camp = campaignPrice ? computeCalc({ ...(p.state || {}), jual: campaignPrice }) : null
-  return {
-    hasCampaignPrice: !!campaignPrice,
-    campaignPrice,
-    normalMargin: normal?.marginNoAd ?? null,
-    campMargin: camp?.marginNoAd ?? null,
-    campProfit: camp?.profitNoAd ?? null,
-  }
+// Margin sebuah item (varian pada harga campaign) berdasarkan produknya.
+function itemMargin(item, productMap) {
+  const p = productMap[item.productId]
+  if (!p) return null
+  const fees = productFees(p)
+  const v = productVariations(p)[item.varIdx]
+  if (!v) return null
+  const calc = computeCalc({ ...fees, hpp: v.hpp, jual: item.price })
+  return calc ? calc.marginNoAd : null
+}
+function campaignAgg(items, productMap) {
+  const margins = items.map(it => itemMargin(it, productMap)).filter(m => m != null)
+  const avg = margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : null
+  const losing = margins.filter(m => m < 0).length
+  const noPrice = items.filter(it => !(+it.price > 0)).length
+  return { count: items.length, products: new Set(items.map(it => it.productId)).size, avg, losing, noPrice }
 }
 
 export default function CampaignPanel({ products }) {
   const [campaigns, setCampaigns] = useState([])
-  const [editing, setEditing]   = useState(null)  // campaign / {} (baru) / null (tutup)
+  const [editing, setEditing]   = useState(null)  // campaign / {} (baru) / null
   const [expanded, setExpanded] = useState(null)
   const [loadErr, setLoadErr]   = useState(false)
 
@@ -57,9 +58,7 @@ export default function CampaignPanel({ products }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { reload() }, [reload])
 
-  const productMap = useMemo(
-    () => Object.fromEntries(products.map(p => [p.id, p])), [products]
-  )
+  const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products])
 
   async function handleSave(form) {
     try { await saveCampaign(form); setEditing(null); await reload() }
@@ -71,12 +70,16 @@ export default function CampaignPanel({ products }) {
     catch (e) { console.error(e); alert('Gagal menghapus campaign.') }
   }
 
+  // Editor full-page menggantikan daftar saat membuat/mengedit.
+  if (editing) {
+    return <CampaignEditor initial={editing} products={products} productMap={productMap}
+      onSave={handleSave} onClose={() => setEditing(null)} />
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-4">
-        <p className="text-sm text-ink-muted">
-          {campaigns.length} campaign · proyeksi margin di harga campaign tiap produk
-        </p>
+        <p className="text-sm text-ink-muted">{campaigns.length} campaign · proyeksi margin di harga campaign per varian</p>
         <button onClick={() => setEditing({})}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
           <Plus className="w-4 h-4" /> Campaign Baru
@@ -85,7 +88,7 @@ export default function CampaignPanel({ products }) {
 
       {loadErr && (
         <div className="mb-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300">
-          Tabel <code>campaigns</code> belum tersedia. Jalankan migrasi <code>0008_campaigns.sql</code> di Supabase → SQL Editor terlebih dahulu.
+          Tabel/kolom campaign belum lengkap. Jalankan migrasi <code>0008_campaigns.sql</code> &amp; <code>0009_campaign_items.sql</code> di Supabase → SQL Editor.
         </div>
       )}
 
@@ -96,238 +99,266 @@ export default function CampaignPanel({ products }) {
           </div>
           <p className="text-sm font-medium text-ink">Belum ada campaign</p>
           <p className="text-xs text-ink-faint mt-1 max-w-[300px]">
-            Buat event campaign (mis. 6.6, Payday Sale), pilih produk yang ikut, lalu lihat proyeksi margin di harga campaign masing-masing.
+            Buat event campaign (mis. 6.6), pilih produk &amp; varian, atur harga campaign tiap varian, lihat proyeksi margin.
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {campaigns.map(c => (
-            <CampaignCard key={c.id} c={c} productMap={productMap}
-              expanded={expanded === c.id}
-              onToggle={() => setExpanded(x => x === c.id ? null : c.id)}
-              onEdit={() => setEditing(c)}
-              onDelete={() => handleDelete(c.id)} />
-          ))}
+          {campaigns.map(c => {
+            const agg = campaignAgg(c.items || [], productMap)
+            const open = expanded === c.id
+            const Chevron = open ? ChevronDown : ChevronRight
+            return (
+              <div key={c.id} className="bg-surface border border-line/8 rounded-2xl overflow-hidden">
+                <div className="flex items-center gap-3 p-4">
+                  <button onClick={() => setExpanded(x => x === c.id ? null : c.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                    <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
+                    <div className="w-9 h-9 rounded-xl bg-blue-600/10 flex items-center justify-center flex-shrink-0">
+                      <Megaphone className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-ink-strong truncate">{c.name}</p>
+                      <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
+                        <CalendarRange className="w-3 h-3" />{dateRange(c)} · {agg.products} produk · {agg.count} varian
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {agg.avg != null && <span className={`text-xs font-semibold tabular-nums ${marginCls(agg.avg)}`}>~{agg.avg.toFixed(0)}%</span>}
+                    {(agg.losing > 0 || agg.noPrice > 0) && (
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 rounded-lg px-1.5 py-1">
+                        <AlertTriangle className="w-3 h-3" />{agg.losing > 0 ? `${agg.losing} rugi` : `${agg.noPrice} no harga`}
+                      </span>
+                    )}
+                    <button title="Edit" onClick={() => setEditing(c)} className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-fill/8 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                    <button title="Hapus" onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg text-ink-faint hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+                {open && (
+                  <div className="border-t border-line/8 px-4 py-3 space-y-1.5">
+                    {(c.items || []).length === 0 ? (
+                      <p className="text-xs text-ink-faint py-1">Belum ada varian. Klik edit untuk menambah.</p>
+                    ) : (c.items || []).map((it, i) => {
+                      const m = itemMargin(it, productMap)
+                      const gone = !productMap[it.productId]
+                      return (
+                        <div key={i} className="flex items-center gap-3 text-sm">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-ink-strong truncate text-[13px]">{it.name || '(varian)'}{gone && <span className="text-ink-faint"> · produk dihapus</span>}</p>
+                            <p className="text-[11px] text-ink-faint truncate">{it.sku || 'tanpa SKU'}</p>
+                          </div>
+                          <span className="text-[13px] font-semibold text-ink-strong tabular-nums flex-shrink-0">{fmt(+it.price)}</span>
+                          <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
-      )}
-
-      {editing && (
-        <CampaignModal initial={editing} products={products}
-          onSave={handleSave} onClose={() => setEditing(null)} />
       )}
     </div>
   )
 }
 
-function CampaignCard({ c, productMap, expanded, onToggle, onEdit, onDelete }) {
-  const linked = c.productIds.map(id => productMap[id]).filter(Boolean)
-  const missing = c.productIds.length - linked.length
-  const Chevron = expanded ? ChevronDown : ChevronRight
+function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
+  const [name, setName]       = useState(initial.name ?? '')
+  const [startDate, setStart] = useState(initial.startDate ?? '')
+  const [endDate, setEnd]     = useState(initial.endDate ?? '')
+  const [items, setItems]     = useState(initial.items ?? [])
+  const [showPicker, setShowPicker] = useState(false)
+  const [busy, setBusy]       = useState(false)
 
-  // Agregat proyeksi
-  const agg = useMemo(() => {
-    const proj = linked.map(projectProduct)
-    const withPrice = proj.filter(p => p.hasCampaignPrice)
-    const noPrice = proj.length - withPrice.length
-    const losing = withPrice.filter(p => p.campMargin != null && p.campMargin < 0).length
-    const thin = withPrice.filter(p => p.campMargin != null && p.campMargin >= 0 && p.campMargin < 20).length
-    const avgMargin = withPrice.length
-      ? withPrice.reduce((s, p) => s + (p.campMargin || 0), 0) / withPrice.length
-      : null
-    return { total: proj.length, withPrice: withPrice.length, noPrice, losing, thin, avgMargin }
-  }, [linked])
+  // Item dikelompokkan per produk (urut sesuai produk).
+  const byProduct = useMemo(() => {
+    const groups = new Map()
+    for (const it of items) {
+      if (!groups.has(it.productId)) groups.set(it.productId, [])
+      groups.get(it.productId).push(it)
+    }
+    return [...groups.entries()]
+  }, [items])
+
+  const agg = useMemo(() => campaignAgg(items, productMap), [items, productMap])
+  const enrolledIds = useMemo(() => new Set(items.map(it => it.productId)), [items])
+
+  function addProduct(p) {
+    const vars = productVariations(p)
+    const add = vars.map((v, idx) => ({
+      productId: p.id, varIdx: idx,
+      sku: v.sku || '', name: v.name ? `${p.name} - ${v.name}` : p.name,
+      price: String(+v.jualCampaign || +v.jual || ''),
+    }))
+    setItems(prev => [...prev.filter(it => it.productId !== p.id), ...add])
+  }
+  function removeProduct(productId) { setItems(prev => prev.filter(it => it.productId !== productId)) }
+  function setPrice(productId, varIdx, price) {
+    setItems(prev => prev.map(it => (it.productId === productId && it.varIdx === varIdx) ? { ...it, price } : it))
+  }
+
+  async function submit() {
+    if (!name.trim() || busy) return
+    setBusy(true)
+    await onSave({ id: initial.id, name: name.trim(), startDate, endDate, items })
+    setBusy(false)
+  }
 
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-3 p-4">
-        <button onClick={onToggle} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-          <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
-          <div className="w-9 h-9 rounded-xl bg-blue-600/10 flex items-center justify-center flex-shrink-0">
-            <Megaphone className="w-4 h-4 text-blue-500" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-ink-strong truncate">{c.name}</p>
-            <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
-              <CalendarRange className="w-3 h-3" />{dateRange(c)} · {c.productIds.length} produk
-            </p>
-          </div>
+    <div className="space-y-4">
+      {/* Header editor */}
+      <div className="flex items-center gap-3">
+        <button onClick={onClose} className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink">
+          <ArrowLeft className="w-4 h-4" /> Kembali
         </button>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {agg.avgMargin != null && (
-            <span className={`text-xs font-semibold tabular-nums ${marginCls(agg.avgMargin)}`}>
-              ~{agg.avgMargin.toFixed(0)}%
-            </span>
-          )}
-          {(agg.losing > 0 || agg.noPrice > 0) && (
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 rounded-lg px-1.5 py-1">
-              <AlertTriangle className="w-3 h-3" />{agg.losing > 0 ? `${agg.losing} rugi` : `${agg.noPrice} no harga`}
-            </span>
-          )}
-          <button title="Edit" onClick={onEdit}
-            className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-fill/8 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
-          <button title="Hapus" onClick={onDelete}
-            className="p-1.5 rounded-lg text-ink-faint hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={submit} disabled={!name.trim() || busy}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+            <Save className="w-4 h-4" />{busy ? 'Menyimpan…' : (initial.id ? 'Perbarui' : 'Simpan')}
+          </button>
         </div>
       </div>
 
-      {expanded && (
-        <div className="border-t border-line/8">
-          {/* Agregat */}
-          <div className="grid grid-cols-4 gap-px bg-line/8">
-            <Stat label="Produk" value={agg.total} />
-            <Stat label="Avg Margin" value={agg.avgMargin != null ? `${agg.avgMargin.toFixed(0)}%` : '—'} cls={marginCls(agg.avgMargin)} />
-            <Stat label="Rugi" value={agg.losing} cls={agg.losing > 0 ? 'text-red-400' : 'text-ink-strong'} />
-            <Stat label="Belum set harga" value={agg.noPrice} cls={agg.noPrice > 0 ? 'text-amber-300' : 'text-ink-strong'} />
-          </div>
+      {/* Nama + tanggal */}
+      <div className="bg-surface border border-line/8 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-1">
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
+          <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Payday Sale Juli"
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Mulai</label>
+          <input type="date" value={startDate} onChange={e => setStart(e.target.value)}
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Selesai</label>
+          <input type="date" value={endDate} onChange={e => setEnd(e.target.value)} min={startDate || undefined}
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+        </div>
+      </div>
 
-          {/* Per produk */}
-          <div className="px-4 py-3 space-y-2">
-            {linked.length === 0 ? (
-              <p className="text-xs text-ink-faint py-2">Belum ada produk terkait. Klik edit untuk memilih produk.</p>
-            ) : linked.map(p => {
-              const pr = projectProduct(p)
+      {/* Agregat */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Produk" value={agg.products} />
+        <Stat label="Varian" value={agg.count} />
+        <Stat label="Avg Margin" value={agg.avg != null ? `${agg.avg.toFixed(0)}%` : '—'} cls={marginCls(agg.avg)} />
+        <Stat label="Varian Rugi" value={agg.losing} cls={agg.losing ? 'text-red-400' : 'text-ink-strong'} />
+      </div>
+
+      {/* Tabel produk + varian */}
+      <div className="bg-surface border border-line/8 rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line/8">
+          <p className="text-sm font-semibold text-ink-strong">Produk &amp; Harga Campaign</p>
+          <button onClick={() => setShowPicker(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Tambah Produk
+          </button>
+        </div>
+
+        {items.length === 0 ? (
+          <div className="text-center py-12">
+            <Package className="w-8 h-8 text-ink-faint mx-auto mb-2" />
+            <p className="text-sm text-ink-muted">Belum ada produk. Klik "Tambah Produk".</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-line/8">
+            {byProduct.map(([productId, its]) => {
+              const p = productMap[productId]
               return (
-                <div key={p.id} className="flex items-center gap-3 text-sm">
-                  {p.image && <img src={p.image} alt="" className="w-7 h-7 rounded-md object-cover border border-line/10 flex-shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-ink-strong truncate text-[13px]">{p.name}</p>
-                    <p className="text-[11px] text-ink-faint truncate">{PLATFORM_LABEL[p.platform] || p.platform}</p>
+                <div key={productId} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-[13px] font-semibold text-ink-strong truncate">
+                      {p ? p.name : '(produk dihapus)'} <span className="text-ink-faint font-normal">· {its.length} varian</span>
+                    </p>
+                    <button onClick={() => removeProduct(productId)} className="text-ink-faint hover:text-red-400 flex-shrink-0"><X className="w-4 h-4" /></button>
                   </div>
-                  {pr.hasCampaignPrice ? (
-                    <>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-[10px] text-ink-faint leading-none mb-0.5">Harga Campaign</p>
-                        <p className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(pr.campaignPrice)}</p>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0 w-[120px] justify-end">
-                        <span className={`text-[12px] font-semibold tabular-nums ${marginCls(pr.normalMargin)}`}>{pr.normalMargin != null ? `${pr.normalMargin.toFixed(1)}%` : '—'}</span>
-                        <ArrowRight className="w-3 h-3 text-ink-faint" />
-                        <span className={`text-[12px] font-semibold tabular-nums ${marginCls(pr.campMargin)}`}>{pr.campMargin != null ? `${pr.campMargin.toFixed(1)}%` : '—'}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-[11px] text-amber-300 flex-shrink-0">Belum set Harga Campaign</span>
-                  )}
+                  <div className="space-y-1.5">
+                    {its.map(it => {
+                      const m = itemMargin(it, productMap)
+                      const v = p ? productVariations(p)[it.varIdx] : null
+                      const normal = v ? (+v.jual || 0) : 0
+                      return (
+                        <div key={it.varIdx} className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[13px] text-ink truncate">{v?.name?.trim() || it.name || `Varian ${it.varIdx + 1}`}</p>
+                            <p className="text-[11px] text-ink-faint truncate">{it.sku || 'tanpa SKU'}{normal ? ` · normal ${fmt(normal)}` : ''}</p>
+                          </div>
+                          <div className="relative flex items-center flex-shrink-0 w-32">
+                            <span className="absolute left-2.5 text-[11px] text-ink-faint">Rp</span>
+                            <input type="number" min="0" value={it.price}
+                              onChange={e => setPrice(it.productId, it.varIdx, e.target.value)}
+                              placeholder="harga campaign"
+                              className="w-full bg-fill/5 border border-line/10 rounded-lg pl-8 pr-2 py-1.5 text-[13px] text-ink-strong tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+                          </div>
+                          <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )
             })}
-            {missing > 0 && (
-              <p className="text-[11px] text-ink-faint pt-1">{missing} produk terkait sudah dihapus.</p>
-            )}
           </div>
-        </div>
+        )}
+        <p className="text-[11px] text-ink-faint px-5 py-3 border-t border-line/8">
+          Harga campaign default dari "Harga Campaign" tiap varian (price list), bisa diubah khusus campaign ini. Margin dihitung dari HPP &amp; biaya varian.
+        </p>
+      </div>
+
+      {showPicker && (
+        <ProductPicker products={products} enrolledIds={enrolledIds}
+          onAdd={addProduct} onClose={() => setShowPicker(false)} />
       )}
     </div>
+  )
+}
+
+function ProductPicker({ products, enrolledIds, onAdd, onClose }) {
+  const [q, setQ] = useState('')
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    return s ? products.filter(p => p.name.toLowerCase().includes(s)) : products
+  }, [products, q])
+  return (
+    <Modal title="Tambah Produk ke Campaign" subtitle="Semua varian produk akan ikut (harga default dari price list)"
+      onClose={onClose} maxWidth="max-w-md">
+      <div className="p-5">
+        <div className="relative mb-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-faint" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari produk..." autoFocus
+            className="w-full bg-fill/5 border border-line/10 rounded-xl pl-9 pr-3 py-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+        </div>
+        <div className="border border-line/10 rounded-xl divide-y divide-line/8 max-h-72 overflow-auto">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-ink-faint text-center py-6 flex flex-col items-center gap-1"><Package className="w-4 h-4" />Tidak ada produk</p>
+          ) : filtered.map(p => {
+            const added = enrolledIds.has(p.id)
+            return (
+              <button key={p.id} onClick={() => !added && onAdd(p)} disabled={added}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left ${added ? 'opacity-50' : 'hover:bg-fill/5'}`}>
+                {p.image && <img src={p.image} alt="" className="w-7 h-7 rounded-md object-cover border border-line/10 flex-shrink-0" />}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] text-ink-strong truncate">{p.name}</p>
+                  <p className="text-[11px] text-ink-faint truncate">{PLATFORM_LABEL[p.platform] || p.platform} · {p.summary?.count || 1} varian</p>
+                </div>
+                {added ? <span className="text-[11px] text-green-400 flex-shrink-0">ditambah</span>
+                       : <Plus className="w-4 h-4 text-ink-faint flex-shrink-0" />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </Modal>
   )
 }
 
 function Stat({ label, value, cls = 'text-ink-strong' }) {
   return (
-    <div className="bg-surface px-3 py-2.5 text-center">
+    <div className="bg-surface border border-line/8 rounded-2xl px-4 py-3 text-center">
       <p className="text-[10px] text-ink-faint">{label}</p>
-      <p className={`text-sm font-bold tabular-nums ${cls}`}>{value}</p>
-    </div>
-  )
-}
-
-function CampaignModal({ initial, products, onSave, onClose }) {
-  const [name, setName]         = useState(initial.name ?? '')
-  const [startDate, setStart]   = useState(initial.startDate ?? '')
-  const [endDate, setEnd]       = useState(initial.endDate ?? '')
-  const [productIds, setIds]    = useState(initial.productIds ?? [])
-  const [q, setQ]               = useState('')
-  const [busy, setBusy]         = useState(false)
-
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    return s ? products.filter(p => p.name.toLowerCase().includes(s)) : products
-  }, [products, q])
-
-  function toggle(id) {
-    setIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
-  }
-
-  async function submit(e) {
-    e.preventDefault()
-    if (!name.trim() || busy) return
-    setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), startDate, endDate, productIds })
-    setBusy(false)
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <form onSubmit={submit} onClick={e => e.stopPropagation()}
-        className="bg-surface w-full max-w-md rounded-2xl border border-line/10 shadow-2xl flex flex-col max-h-[88vh]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line/8 flex-shrink-0">
-          <h2 className="font-semibold text-ink-strong">{initial.id ? 'Edit Campaign' : 'Campaign Baru'}</h2>
-          <button type="button" onClick={onClose} className="text-ink-muted hover:text-ink"><X className="w-5 h-5" /></button>
-        </div>
-
-        <div className="overflow-auto px-5 py-4 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
-            <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Payday Sale Juli"
-              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Mulai</label>
-              <input type="date" value={startDate} onChange={e => setStart(e.target.value)}
-                className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Selesai</label>
-              <input type="date" value={endDate} onChange={e => setEnd(e.target.value)} min={startDate || undefined}
-                className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">
-              Produk yang Ikut <span className="text-ink-faint font-normal">({productIds.length} dipilih)</span>
-            </label>
-            <div className="relative mb-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-faint" />
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari produk..."
-                className="w-full bg-fill/5 border border-line/10 rounded-xl pl-9 pr-3 py-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
-            </div>
-            <div className="border border-line/10 rounded-xl divide-y divide-line/8 max-h-48 overflow-auto">
-              {filtered.length === 0 ? (
-                <p className="text-xs text-ink-faint text-center py-6 flex flex-col items-center gap-1">
-                  <Package className="w-4 h-4" />{products.length === 0 ? 'Belum ada produk tersimpan' : 'Tidak ada produk cocok'}
-                </p>
-              ) : filtered.map(p => {
-                const hasCamp = !!(+p.state?.jualCampaign || 0)
-                return (
-                  <label key={p.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-fill/5">
-                    <input type="checkbox" checked={productIds.includes(p.id)} onChange={() => toggle(p.id)}
-                      className="accent-blue-600 w-4 h-4 flex-shrink-0" />
-                    {p.image && <img src={p.image} alt="" className="w-7 h-7 rounded-md object-cover border border-line/10 flex-shrink-0" />}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] text-ink-strong truncate">{p.name}</p>
-                      <p className="text-[11px] text-ink-faint truncate">
-                        {PLATFORM_LABEL[p.platform] || p.platform}
-                        {hasCamp ? ` · campaign ${fmt(+p.state.jualCampaign)}` : ' · belum set harga campaign'}
-                      </p>
-                    </div>
-                  </label>
-                )
-              })}
-            </div>
-            <p className="text-[11px] text-ink-faint mt-1.5">Harga campaign diatur per produk di Kalkulator (kolom "Harga Campaign").</p>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-line/8 flex-shrink-0">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-ink-muted border border-line/10 rounded-xl hover:border-line/20 hover:text-ink transition-colors">Batal</button>
-          <button type="submit" disabled={!name.trim() || busy}
-            className="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors">
-            {busy ? 'Menyimpan…' : 'Simpan'}
-          </button>
-        </div>
-      </form>
+      <p className={`text-lg font-bold tabular-nums ${cls}`}>{value}</p>
     </div>
   )
 }

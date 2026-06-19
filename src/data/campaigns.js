@@ -10,6 +10,7 @@ function rowToCampaign(r) {
     name: r.name,
     startDate: r.start_date || '',
     endDate: r.end_date || '',
+    items: Array.isArray(r.items) ? r.items : [],
     productIds: Array.isArray(r.product_ids) ? r.product_ids : [],
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -17,11 +18,15 @@ function rowToCampaign(r) {
 }
 
 function toRow(c) {
+  const items = Array.isArray(c.items) ? c.items : []
+  // product_ids lama = distinct productId dari items (backward-compat).
+  const productIds = [...new Set(items.map(it => it.productId).filter(Boolean))]
   return {
     name: c.name || 'Tanpa Nama',
     start_date: c.startDate || null,
     end_date: c.endDate || null,
-    product_ids: Array.isArray(c.productIds) ? c.productIds : [],
+    items,
+    product_ids: productIds.length ? productIds : (Array.isArray(c.productIds) ? c.productIds : []),
   }
 }
 

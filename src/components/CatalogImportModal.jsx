@@ -27,7 +27,7 @@ export default function CatalogImportModal({ onClose, onImported }) {
     try {
       const res = await ingestCatalogFile(file)
       if (res.products.length === 0) {
-        setError(`File ${PLATFORM_LABEL[res.source] || ''} terbaca, tapi tidak ada baris produk (mungkin template kosong).`)
+        setError(`File ${PLATFORM_LABEL[res.source] || ''} terbaca, tapi kosong (tidak ada baris produk — ini file template). Di Seller Center, PILIH produk dulu lalu download "Edit Massal / Kelola Harga" agar filenya berisi data.`)
       } else {
         setParsed(res)
       }
