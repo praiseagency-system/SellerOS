@@ -53,21 +53,27 @@ function monitorCampaign(campaign, storeLines, productMap) {
   const start = campaign.startDate ? new Date(campaign.startDate + 'T00:00:00').getTime() : -Infinity
   const end = campaign.endDate ? new Date(campaign.endDate + 'T23:59:59').getTime() : Infinity
   const inWin = storeLines.filter(l => l.ok && l.t >= start && l.t <= end)
-  const bySku = new Map()
+  const bySku = new Map()   // Seller SKU (k) → lines
+  const byKid = new Map()   // TikTok platform SKU ID (kid) → lines
   for (const l of inWin) {
-    const k = (l.k || '').toLowerCase().trim(); if (!k) continue
-    if (!bySku.has(k)) bySku.set(k, [])
-    bySku.get(k).push(l)
+    const k = (l.k || '').toLowerCase().trim()
+    if (k) { if (!bySku.has(k)) bySku.set(k, []); bySku.get(k).push(l) }
+    const kid = (l.kid || '').toLowerCase().trim()
+    if (kid) { if (!byKid.has(kid)) byKid.set(kid, []); byKid.get(kid).push(l) }
   }
   const items = (campaign.items || []).map(it => {
-    const lines = bySku.get((it.sku || '').toLowerCase().trim()) || []
+    // Match: try platform SKU ID (variationId from catalog) first — more precise,
+    // avoids false matches when two platforms share the same Seller SKU string.
+    const p = productMap[it.productId]
+    const variation = p ? productVariations(p)[it.varIdx] : null
+    const varId = (variation?.variationId || '').toLowerCase().trim()
+    const lines = (varId && byKid.get(varId)) || bySku.get((it.sku || '').toLowerCase().trim()) || []
     const units = lines.reduce((s, l) => s + l.q, 0)
     const gmv = lines.reduce((s, l) => s + l.r, 0)
     const actualPrice = units ? gmv / units : null
-    const p = productMap[it.productId]
     let actMargin = null, estProfit = null
     if (p && actualPrice) {
-      const fees = productFees(p); const v = productVariations(p)[it.varIdx]
+      const fees = productFees(p); const v = variation
       if (v) {
         const ac = computeCalc({ ...fees, hpp: v.hpp, jual: String(Math.round(actualPrice)) })
         actMargin = ac?.marginNoAd ?? null

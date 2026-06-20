@@ -99,6 +99,7 @@ export function normalizeSheet(aoa, sourceHint) {
     orderId: col(headers, 'Order ID'), status: col(headers, 'Order Status'),
     created: col(headers, 'Created Time'), payment: col(headers, 'Payment Method'),
     product: col(headers, 'Product Name'), sku: col(headers, 'Seller SKU'),
+    skuId: col(headers, 'SKU ID'),
     variant: col(headers, 'Variation'), qty: col(headers, 'Quantity', { exact: true }),
     lineTotal: col(headers, 'SKU Subtotal After Discount'), unit: col(headers, 'SKU Unit Original Price'),
     province: col(headers, 'Province'), city: col(headers, 'Regency and City'),
@@ -138,6 +139,7 @@ export function normalizeSheet(aoa, sourceHint) {
       hr: dt.getHours(),
       p: (get(r, C.product) ?? '').toString().trim() || '(Tanpa nama)',
       k: (get(r, C.sku) ?? '').toString().trim(),
+      kid: (get(r, C.skuId) ?? '').toString().trim(),  // TikTok: platform SKU ID (matches variationId from catalog)
       v: (get(r, C.variant) ?? '').toString().trim(),
       c: C.category >= 0 ? ((get(r, C.category) ?? '').toString().trim() || null) : null,
       q: qty,
