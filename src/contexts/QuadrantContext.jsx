@@ -14,7 +14,7 @@ export const PLATFORM_DEFAULTS = {
 
 export const PLATFORM_LABELS = {
   shopee: { name: 'Shopee',      traffic: 'Pengunjung' },
-  tiktok: { name: 'TikTok Shop', traffic: 'Klik Unik'  },
+  tiktok: { name: 'TikTok Shop', traffic: 'Impresi'   },
 }
 
 
