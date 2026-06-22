@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Upload,
 } from 'lucide-react'
+import { PlatformIcon } from '../components/PlatformIcon'
 import { listProducts, deleteProduct, duplicateProduct, saveProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
 import { productSummary, productVariations, productVariationsRaw, productFees } from '../utils/product'
@@ -20,6 +21,18 @@ const STATUS_CLS = {
   green:  { dot: 'bg-green-500',  text: 'text-green-400',  bg: 'bg-green-500/10',  border: 'border-green-500/25' },
 }
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
+const PLATFORM_BADGE = {
+  tiktok: 'bg-neutral-900 text-white border border-neutral-700',
+  shopee: 'bg-orange-500 text-white border border-orange-400',
+}
+function PlatformBadge({ platform }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md flex-shrink-0 ${PLATFORM_BADGE[platform] || PLATFORM_BADGE.tiktok}`}>
+      <PlatformIcon id={platform} className="w-3 h-3" />
+      {PLATFORM_LABEL[platform] || platform}
+    </span>
+  )
+}
 
 // Lampirkan metrik terhitung. Produk ber-varian → ringkasan lintas-varian, plus
 // `state`/`calc` dari varian representatif agar konsumen lama (Voucher/Campaign/
@@ -281,9 +294,12 @@ function ProductCard({ p, selected, onSelect, onShowDetail, onOpen, onDuplicate,
                 className="w-10 h-10 rounded-lg object-cover border border-line/10 flex-shrink-0" />
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <PlatformBadge platform={p.platform} />
+                <p className="text-sm font-semibold text-ink-strong truncate">{p.name}</p>
+              </div>
               <p className="text-[11px] text-ink-faint truncate">
-                {p.summary.count > 1 ? `${p.summary.count} varian · ` : (p.sku ? `${p.sku} · ` : '')}{PLATFORM_LABEL[p.platform] || p.platform}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
+                {p.summary.count > 1 ? `${p.summary.count} varian` : (p.sku || 'tanpa SKU')}{p.categoryLabel ? ` · ${p.categoryLabel}` : ''}
               </p>
             </div>
           </div>
