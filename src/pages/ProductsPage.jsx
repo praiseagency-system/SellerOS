@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Megaphone, Upload,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Upload,
 } from 'lucide-react'
 import { listProducts, deleteProduct, duplicateProduct, saveProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
@@ -8,7 +8,6 @@ import { productSummary, productVariations, productVariationsRaw, productFees } 
 import CalcBreakdown from '../components/CalcBreakdown'
 import RoasIntelligence from '../components/RoasIntelligence'
 import VoucherPanel from '../components/VoucherPanel'
-import CampaignPanel from '../components/CampaignPanel'
 import CatalogImportModal from '../components/CatalogImportModal'
 
 function fmt(n) {
@@ -40,7 +39,7 @@ function withMetrics(p) {
 
 export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const [products, setProducts] = useState([])
-  const [tab, setTab] = useState('produk') // 'produk' | 'voucher' | 'campaign'
+  const [tab, setTab] = useState('produk') // 'produk' | 'voucher'
   const [showCatalog, setShowCatalog] = useState(false)
 
   const [search, setSearch]   = useState('')
@@ -140,7 +139,6 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
         {[
           { id: 'produk', label: 'Produk', icon: Package },
           { id: 'voucher', label: 'Voucher', icon: Ticket },
-          { id: 'campaign', label: 'Campaign', icon: Megaphone },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -153,8 +151,6 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
 
       {tab === 'voucher' ? (
         <VoucherPanel products={products} />
-      ) : tab === 'campaign' ? (
-        <CampaignPanel products={products} />
       ) : (
       <>
       {/* Dashboard */}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
-  CalendarRange, AlertTriangle, ArrowLeft, Save,
+  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText,
 } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign } from '../data/campaigns'
@@ -10,6 +10,10 @@ import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
+const PLATFORM_CLS = {
+  tiktok: 'bg-gray-700/60 text-gray-300',
+  shopee: 'bg-orange-500/15 text-orange-300',
+}
 const fmt = n => (n == null || isNaN(n)) ? '—' : 'Rp' + Math.round(n).toLocaleString('id-ID')
 function marginCls(m) {
   if (m == null || isNaN(m)) return 'text-ink-faint'
@@ -173,10 +177,18 @@ export default function CampaignPanel({ products }) {
                       <Megaphone className="w-4 h-4 text-blue-500" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-ink-strong truncate">{c.name}</p>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <p className="text-sm font-semibold text-ink-strong truncate">{c.name}</p>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${PLATFORM_CLS[c.platform] || PLATFORM_CLS.tiktok}`}>
+                          {PLATFORM_LABEL[c.platform] || c.platform}
+                        </span>
+                      </div>
                       <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
                         <CalendarRange className="w-3 h-3" />{dateRange(c)} · {agg.products} produk · {agg.count} varian
                       </p>
+                      {c.description && (
+                        <p className="text-[11px] text-ink-faint truncate mt-0.5">{c.description}</p>
+                      )}
                     </div>
                   </button>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -253,12 +265,14 @@ export default function CampaignPanel({ products }) {
 }
 
 function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
-  const [name, setName]       = useState(initial.name ?? '')
-  const [startDate, setStart] = useState(initial.startDate ?? '')
-  const [endDate, setEnd]     = useState(initial.endDate ?? '')
-  const [items, setItems]     = useState(initial.items ?? [])
+  const [name, setName]           = useState(initial.name ?? '')
+  const [platform, setPlatform]   = useState(initial.platform ?? 'tiktok')
+  const [description, setDesc]    = useState(initial.description ?? '')
+  const [startDate, setStart]     = useState(initial.startDate ?? '')
+  const [endDate, setEnd]         = useState(initial.endDate ?? '')
+  const [items, setItems]         = useState(initial.items ?? [])
   const [showPicker, setShowPicker] = useState(false)
-  const [busy, setBusy]       = useState(false)
+  const [busy, setBusy]           = useState(false)
 
   // Item dikelompokkan per produk (urut sesuai produk).
   const byProduct = useMemo(() => {
@@ -290,7 +304,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), startDate, endDate, items })
+    await onSave({ id: initial.id, name: name.trim(), platform, description, startDate, endDate, items })
     setBusy(false)
   }
 
@@ -309,22 +323,51 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
         </div>
       </div>
 
-      {/* Nama + tanggal */}
-      <div className="bg-surface border border-line/8 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="md:col-span-1">
-          <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
-          <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Payday Sale Juli"
-            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+      {/* Nama + platform + tanggal */}
+      <div className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="md:col-span-1">
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
+            <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Payday Sale Juli"
+              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Mulai</label>
+            <input type="date" value={startDate} onChange={e => setStart(e.target.value)}
+              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Selesai</label>
+            <input type="date" value={endDate} onChange={e => setEnd(e.target.value)} min={startDate || undefined}
+              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          </div>
         </div>
+
+        {/* Platform */}
         <div>
-          <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Mulai</label>
-          <input type="date" value={startDate} onChange={e => setStart(e.target.value)}
-            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Platform</label>
+          <div className="flex gap-2">
+            {[['tiktok', 'TikTok'], ['shopee', 'Shopee']].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setPlatform(id)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                  platform === id
+                    ? id === 'tiktok' ? 'bg-gray-700 text-white border-gray-600' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+                    : 'border-line/10 text-ink-muted hover:border-line/20 hover:text-ink'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Deskripsi */}
         <div>
-          <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Selesai</label>
-          <input type="date" value={endDate} onChange={e => setEnd(e.target.value)} min={startDate || undefined}
-            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <FileText className="w-3.5 h-3.5 inline mr-1" />Deskripsi <span className="font-normal text-ink-faint">(opsional)</span>
+          </label>
+          <textarea value={description} onChange={e => setDesc(e.target.value)} rows={2}
+            placeholder="mis. Diskon 30% + gratis ongkir, berlaku untuk produk tas & dompet, min. pembelian Rp50.000"
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50 resize-none" />
         </div>
       </div>
 

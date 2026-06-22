@@ -8,6 +8,8 @@ function rowToCampaign(r) {
   return {
     id: r.id,
     name: r.name,
+    platform: r.platform || 'tiktok',
+    description: r.description || '',
     startDate: r.start_date || '',
     endDate: r.end_date || '',
     items: Array.isArray(r.items) ? r.items : [],
@@ -19,10 +21,11 @@ function rowToCampaign(r) {
 
 function toRow(c) {
   const items = Array.isArray(c.items) ? c.items : []
-  // product_ids lama = distinct productId dari items (backward-compat).
   const productIds = [...new Set(items.map(it => it.productId).filter(Boolean))]
   return {
     name: c.name || 'Tanpa Nama',
+    platform: c.platform || 'tiktok',
+    description: c.description || '',
     start_date: c.startDate || null,
     end_date: c.endDate || null,
     items,

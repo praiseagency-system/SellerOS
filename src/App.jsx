@@ -4,6 +4,7 @@ import QuadrantPage from './pages/QuadrantPage'
 import CalculatorPage from './pages/CalculatorPage'
 import ProductsPage from './pages/ProductsPage'
 import StorePerformancePage from './pages/StorePerformancePage'
+import CampaignPage from './pages/CampaignPage'
 import SettingsPage from './pages/SettingsPage'
 import { QuadrantProvider } from './contexts/QuadrantContext'
 import { useLang } from './contexts/LanguageContext'
@@ -13,7 +14,7 @@ import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
 import { listSessions } from './data/periods'
 
-const PAGE_KEYS = ['quadrant', 'calculator', 'products', 'performance', 'reports', 'ai']
+const PAGE_KEYS = ['quadrant', 'calculator', 'products', 'performance', 'campaign', 'reports', 'ai']
 // Halaman tanpa key i18n — judul ditetapkan manual.
 const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
@@ -154,8 +155,9 @@ function MainApp() {
           <ProductsPage onOpenProduct={openProduct} onNewProduct={newProduct} />
         )}
         {currentPage === 'performance' && <StorePerformancePage />}
+        {currentPage === 'campaign' && <CampaignPage />}
         {currentPage === 'settings' && <SettingsPage />}
-        {!['quadrant', 'calculator', 'products', 'performance', 'settings'].includes(currentPage) && (
+        {!['quadrant', 'calculator', 'products', 'performance', 'campaign', 'settings'].includes(currentPage) && (
           <div className="flex items-center justify-center min-h-[60vh]">
             <p className="text-ink-faint text-sm">{t('page.wip')}</p>
           </div>

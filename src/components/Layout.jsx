@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronRight, ChevronDown,
-  BarChart3, Sparkles, Info, Menu, Package
+  BarChart3, Sparkles, Info, Menu, Package, Megaphone
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -23,6 +23,7 @@ const NAV = [
       { id: 'calculator',  icon: Calculator },
       { id: 'products',    icon: Package },
       { id: 'performance', icon: TrendingUp },
+      { id: 'campaign',    icon: Megaphone },
       { id: 'reports',     icon: BarChart3,  soon: true },
     ],
   },
