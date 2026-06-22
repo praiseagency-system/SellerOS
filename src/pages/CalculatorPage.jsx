@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2 } from 'lucide-react'
+import { TrendingUp, ChevronDown, Truck, Save, X, AlertTriangle, ImagePlus, Trash2, Layers, Check } from 'lucide-react'
 import { PlatformIcon } from '../components/PlatformIcon'
 import CategoryPicker from '../components/CategoryPicker'
 import OngkirPicker from '../components/OngkirPicker'
@@ -121,6 +121,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
         }]
   )
   const [activeIdx, setActiveIdx] = useState(0)
+  const [showBulkModal, setShowBulkModal] = useState(false)
   const ai = Math.min(activeIdx, variations.length - 1)
   const av = variations[ai] || {}
   const setVarField = (field, val) => setVariations(vs => vs.map((v, i) => i === ai ? { ...v, [field]: val } : v))
@@ -128,6 +129,11 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
     if (variations.length <= 1) return
     setVariations(vs => vs.filter((_, i) => i !== idx))
     setActiveIdx(i => Math.max(0, (idx <= i ? i - 1 : i)))
+  }
+  // Set harga massal: terapkan field harga terisi ke varian terpilih.
+  function applyBulk(fields, targetIdxs) {
+    const set = new Set(targetIdxs)
+    setVariations(vs => vs.map((v, i) => set.has(i) ? { ...v, ...fields } : v))
   }
   const hpp = av.hpp ?? ''
   const hargaCoret = av.hargaCoret ?? ''
@@ -319,6 +325,10 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
                         className="text-ink-faint hover:text-red-400 ml-0.5">×</span>
                     </button>
                   ))}
+                  <button type="button" onClick={() => setShowBulkModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-dashed border-blue-600/30 text-blue-400 hover:bg-blue-600/10 transition-all ml-auto">
+                    <Layers className="w-3.5 h-3.5" /> Set Harga Massal
+                  </button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -749,6 +759,133 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
           onClose={() => setShowSaveModal(false)}
         />
       )}
+      {showBulkModal && (
+        <BulkPriceModal
+          variations={variations}
+          activeIdx={ai}
+          onApply={applyBulk}
+          onClose={() => setShowBulkModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Set harga massal — isi field yang ingin diubah, pilih varian target.
+// Field kosong = tidak diubah. Bisa salin cepat dari varian aktif.
+const BULK_FIELDS = [
+  { key: 'hpp',          label: 'HPP / Modal' },
+  { key: 'hargaCoret',   label: 'Harga Coret' },
+  { key: 'jual',         label: 'Harga Jual' },
+  { key: 'jualCampaign', label: 'Harga Campaign' },
+  { key: 'jualFlash',    label: 'Harga Flash Sale' },
+]
+function BulkPriceModal({ variations, activeIdx, onApply, onClose }) {
+  const [vals, setVals] = useState({ hpp: '', hargaCoret: '', jual: '', jualCampaign: '', jualFlash: '' })
+  const [targets, setTargets] = useState(() => new Set(variations.map((_, i) => i)))
+  const setVal = (k, v) => setVals(s => ({ ...s, [k]: v }))
+
+  const allSelected = targets.size === variations.length
+  function toggleTarget(i) {
+    setTargets(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n })
+  }
+  function toggleAll() {
+    setTargets(allSelected ? new Set() : new Set(variations.map((_, i) => i)))
+  }
+  function copyFromActive() {
+    const a = variations[activeIdx] || {}
+    setVals({
+      hpp: a.hpp ?? '', hargaCoret: a.hargaCoret ?? '', jual: a.jual ?? '',
+      jualCampaign: a.jualCampaign ?? '', jualFlash: a.jualFlash ?? '',
+    })
+  }
+
+  // Hanya field yang diisi (non-kosong) yang diterapkan.
+  const filled = Object.fromEntries(Object.entries(vals).filter(([, v]) => v !== '' && v != null))
+  const nFilled = Object.keys(filled).length
+  const canApply = nFilled > 0 && targets.size > 0
+
+  function submit() {
+    if (!canApply) return
+    onApply(filled, [...targets])
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface w-full max-w-lg rounded-2xl border border-line/10 shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line/8">
+          <div>
+            <h2 className="font-semibold text-ink-strong flex items-center gap-2"><Layers className="w-4 h-4 text-blue-400" /> Set Harga Massal</h2>
+            <p className="text-[11px] text-ink-faint mt-0.5">Isi field yang ingin diubah, kosongkan yang lain. Pilih varian target di bawah.</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-ink-muted hover:text-ink"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 overflow-y-auto">
+          {/* Field harga */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-ink-muted">Harga yang akan diset</p>
+              <button type="button" onClick={copyFromActive}
+                className="text-[11px] text-blue-400 hover:text-blue-300 font-medium">
+                Salin dari varian aktif
+              </button>
+            </div>
+            {BULK_FIELDS.map(f => (
+              <div key={f.key} className="flex items-center gap-3">
+                <label className="text-xs text-ink-muted w-32 flex-shrink-0">{f.label}</label>
+                <div className="relative flex items-center flex-1">
+                  <span className="absolute left-3 text-xs text-ink-faint select-none">Rp</span>
+                  <input type="number" min="0" value={vals[f.key]} onChange={e => setVal(f.key, e.target.value)}
+                    placeholder="biarkan kosong = tidak diubah"
+                    className="w-full bg-fill/5 border border-line/10 rounded-xl pl-10 pr-3 py-2 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Varian target */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-ink-muted">Terapkan ke varian ({targets.size}/{variations.length})</p>
+              <button type="button" onClick={toggleAll}
+                className="text-[11px] text-blue-400 hover:text-blue-300 font-medium">
+                {allSelected ? 'Kosongkan semua' : 'Pilih semua'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {variations.map((v, i) => {
+                const on = targets.has(i)
+                return (
+                  <button type="button" key={i} onClick={() => toggleTarget(i)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all text-left ${
+                      on ? 'bg-blue-600/15 text-blue-400 border-blue-600/30' : 'border-line/10 text-ink-muted hover:border-line/20'
+                    }`}>
+                    <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
+                      on ? 'bg-blue-600 border-blue-600' : 'border-line/25'
+                    }`}>
+                      {on && <Check className="w-3 h-3 text-white" />}
+                    </span>
+                    <span className="truncate">{v.name?.trim() || `Varian ${i + 1}`}{i === activeIdx ? ' (aktif)' : ''}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-line/8">
+          <p className="text-[11px] text-ink-faint">
+            {canApply ? `${nFilled} harga → ${targets.size} varian` : 'Isi minimal 1 harga & pilih 1 varian'}
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-ink-muted border border-line/10 rounded-xl hover:border-line/20 hover:text-ink transition-colors">Batal</button>
+            <button type="button" onClick={submit} disabled={!canApply}
+              className="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors">Terapkan</button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
