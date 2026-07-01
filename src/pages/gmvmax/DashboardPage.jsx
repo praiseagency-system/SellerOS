@@ -25,7 +25,7 @@ export default function DashboardPage({ onOpenUpload }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <TierCard tone="green" label="Bagus (Tinggi)" tier={tiers.bagus}
-          note={totals.potensiCount ? `${totals.potensiCount} di antaranya "Potensi" (spend receh)` : null} />
+          note={d.totals.potensiCount ? `${d.totals.potensiCount} di antaranya "Potensi" (spend receh)` : null} />
         <TierCard tone="amber" label="Sedang" tier={tiers.sedang} />
         <TierCard tone="red" label="Buruk (Rendah)" tier={tiers.buruk} />
       </div>
