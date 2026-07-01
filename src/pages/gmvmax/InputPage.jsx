@@ -1,14 +1,14 @@
 // Input Data — tabel mentah semua baris + filter, tombol Upload. Meniru
 // "Input Data Ads" Lacak.
 import { useState, useMemo } from 'react'
-import { UploadCloud, Search } from 'lucide-react'
+import { UploadCloud, Search, AtSign, Loader2 } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { RoasBadge, EmptyState, fmtRp, VideoIdLink } from '../../components/gmvmax/ui'
 
 const LIMIT = 300
 
 export default function InputPage({ onOpenUpload }) {
-  const { rows, thresholds, hasData } = useGmvMax()
+  const { rows, thresholds, hasData, missingAccountCount, enriching, enrichUsernames } = useGmvMax()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
   const [type, setType] = useState('')
@@ -39,11 +39,21 @@ export default function InputPage({ onOpenUpload }) {
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink-muted">Total {rows.length.toLocaleString('id-ID')} baris · Threshold ROAS: <span className="text-emerald-500 font-medium">{thresholds.roasGood}</span> / <span className="text-red-500 font-medium">{thresholds.roasBad}</span></p>
-        <button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium inline-flex items-center gap-2">
-          <UploadCloud className="w-4 h-4" /> Upload Data
-        </button>
+        <div className="flex items-center gap-2">
+          {(missingAccountCount > 0 || enriching) && (
+            <button onClick={() => enrichUsernames()} disabled={!!enriching}
+              className="px-3 py-2 rounded-lg text-sm border border-line/15 text-ink-muted hover:bg-fill/5 inline-flex items-center gap-2 disabled:opacity-70">
+              {enriching
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Scraping {enriching.done}/{enriching.total}…</>
+                : <><AtSign className="w-4 h-4" /> Lengkapi nama akun ({missingAccountCount})</>}
+            </button>
+          )}
+          <button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium inline-flex items-center gap-2">
+            <UploadCloud className="w-4 h-4" /> Upload Data
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">

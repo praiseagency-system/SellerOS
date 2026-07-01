@@ -6,6 +6,8 @@ import { parseGmvMaxFile } from '../utils/parseGmvMax'
 import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gmvmaxImports'
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
+import { loadVideoMeta, saveVideoMeta } from '../data/gmvmaxVideoMeta'
+import { enrichVideos } from '../utils/gmvmaxEnrich'
 import { DEFAULT_THRESHOLDS } from '../utils/gmvmaxClassify'
 import {
   rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, dashboardSummary,
@@ -20,6 +22,8 @@ export function GmvMaxProvider({ children }) {
   const [creatives, setCreatives] = useState([])
   const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS)
   const [notes, setNotes] = useState({})
+  const [meta, setMeta] = useState({})          // video_id → {username, authorName, status}
+  const [enriching, setEnriching] = useState(null) // {done,total} saat scraping akun
   const [period, setPeriod] = useState('all')   // 'all' | import.id
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -30,7 +34,10 @@ export function GmvMaxProvider({ children }) {
     setImports(imps)
     setThresholds(th)
     setNotes(nts)
-    setCreatives(await loadCreatives())
+    const cre = await loadCreatives()
+    setCreatives(cre)
+    const vids = cre.filter(c => c.creativeType === 'Video' && c.videoId).map(c => c.videoId)
+    setMeta(await loadVideoMeta(vids))
   }, [])
 
   useEffect(() => {
@@ -42,13 +49,30 @@ export function GmvMaxProvider({ children }) {
     return () => { active = false }
   }, [reload])
 
+  // Isi akun kosong dari cache meta (username hasil scraping oEmbed).
+  const creativesEnriched = useMemo(() => creatives.map(c => {
+    if (c.creativeType === 'Video' && c.videoId && !c.tiktokAccount) {
+      const m = meta[c.videoId]
+      const name = m?.authorName || m?.username
+      if (name) return { ...c, tiktokAccount: name, tiktokUsername: m.username }
+    }
+    return c
+  }), [creatives, meta])
+
+  const missingAccountCount = useMemo(
+    () => new Set(creativesEnriched
+      .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount
+        && meta[c.videoId]?.status !== 'notfound')
+      .map(c => c.videoId)).size,
+    [creativesEnriched, meta])
+
   // Baris kreatif sesuai periode terpilih.
   const rows = useMemo(() => {
-    if (period === 'all') return creatives
+    if (period === 'all') return creativesEnriched
     const imp = imports.find(i => i.id === period)
-    if (!imp) return creatives
-    return creatives.filter(c => c.periodName === imp.name)
-  }, [creatives, imports, period])
+    if (!imp) return creativesEnriched
+    return creativesEnriched.filter(c => c.periodName === imp.name)
+  }, [creativesEnriched, imports, period])
 
   const videos = useMemo(() => rollupVideos(rows, thresholds), [rows, thresholds])
   const campaigns = useMemo(() => rollupCampaigns(rows), [rows])
@@ -80,6 +104,32 @@ export function GmvMaxProvider({ children }) {
     finally { setBusy(false) }
   }
 
+  // Scrape username untuk video yang akunnya kosong (oEmbed publik) → cache Supabase.
+  async function enrichUsernames() {
+    const targets = [...new Set(creativesEnriched
+      .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount
+        && meta[c.videoId]?.status !== 'notfound')
+      .map(c => c.videoId))]
+    if (!targets.length) return { ok: true, filled: 0 }
+    setEnriching({ done: 0, total: targets.length })
+    try {
+      const results = await enrichVideos(targets, {
+        onProgress: (done, total) => setEnriching({ done, total }),
+      })
+      await saveVideoMeta(results)
+      setMeta(prev => {
+        const next = { ...prev }
+        for (const r of results) next[r.videoId] = { username: r.username, authorName: r.authorName, status: r.status }
+        return next
+      })
+      return { ok: true, filled: results.filter(r => r.status === 'ok').length }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    } finally {
+      setEnriching(null)
+    }
+  }
+
   async function updateThresholds(next) {
     await saveThresholds(next)
     setThresholds(next)
@@ -100,7 +150,8 @@ export function GmvMaxProvider({ children }) {
     videos, campaigns, creators, hooks, dashboard, insights,
     hasData: creatives.length > 0,
     loading, busy, error,
-    upload, removeImport, updateThresholds, setNote, clearNote,
+    missingAccountCount, enriching,
+    upload, removeImport, updateThresholds, setNote, clearNote, enrichUsernames,
     reload,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
