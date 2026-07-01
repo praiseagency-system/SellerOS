@@ -2,20 +2,26 @@
 // (access-control-allow-origin: * → aman dipanggil dari browser). Dipakai untuk
 // mengisi kolom AKUN yang kosong. Hasil di-cache agar tak fetch berulang.
 
+// Buang nama sampah dari oEmbed ("@", kosong, hanya simbol).
+function cleanName(s) {
+  const t = (s || '').trim()
+  if (!t || t === '@' || !/[\p{L}\p{N}]/u.test(t)) return null
+  return t
+}
+
 // Ambil author 1 video. Return { videoId, username, authorName, status }.
+// username = handle asli dari author_url (paling andal); authorName = display.
 export async function fetchAuthor(videoId, signal) {
   const url = `https://www.tiktok.com/oembed?url=https://www.tiktok.com/@x/video/${videoId}`
   try {
     const res = await fetch(url, { signal })
-    if (!res.ok) return { videoId, username: null, authorName: null, status: res.status === 404 ? 'notfound' : 'error' }
+    if (!res.ok) return { videoId, username: null, authorName: null, status: res.status >= 500 ? 'error' : 'notfound' }
     const d = await res.json()
-    const m = (d.author_url || '').match(/@([^/?#]+)/)
-    return {
-      videoId,
-      username: m ? m[1] : null,
-      authorName: d.author_name || null,
-      status: (m || d.author_name) ? 'ok' : 'notfound',
-    }
+    const m = (d.author_url || '').match(/tiktok\.com\/@([\w.-]+)/i)
+    const username = m ? m[1] : null
+    const authorName = cleanName(d.author_name)
+    // Tanpa handle & tanpa nama valid (mis. oEmbed balikin "@") = tak terselesaikan.
+    return { videoId, username, authorName, status: (username || authorName) ? 'ok' : 'notfound' }
   } catch (e) {
     if (e?.name === 'AbortError') throw e
     return { videoId, username: null, authorName: null, status: 'error' }

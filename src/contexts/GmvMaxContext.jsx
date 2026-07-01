@@ -49,20 +49,24 @@ export function GmvMaxProvider({ children }) {
     return () => { active = false }
   }, [reload])
 
-  // Isi akun kosong dari cache meta (username hasil scraping oEmbed).
+  // Isi akun kosong dari cache meta. Utamakan username (handle) yang selalu
+  // bersih; buang display name sampah ("@"/kosong).
   const creativesEnriched = useMemo(() => creatives.map(c => {
     if (c.creativeType === 'Video' && c.videoId && !c.tiktokAccount) {
       const m = meta[c.videoId]
-      const name = m?.authorName || m?.username
-      if (name) return { ...c, tiktokAccount: name, tiktokUsername: m.username }
+      const an = m?.authorName && m.authorName.trim() !== '@' ? m.authorName.trim() : null
+      const name = m?.username || an
+      if (name) return { ...c, tiktokAccount: name, tiktokUsername: m.username || null }
     }
     return c
   }), [creatives, meta])
 
+  // Hitung video yang masih perlu di-scrape: belum pernah, atau error (retry).
+  // Yang 'ok'/'notfound' tak dihitung lagi (sudah dicoba).
   const missingAccountCount = useMemo(
     () => new Set(creativesEnriched
       .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount
-        && meta[c.videoId]?.status !== 'notfound')
+        && (!meta[c.videoId] || meta[c.videoId].status === 'error'))
       .map(c => c.videoId)).size,
     [creativesEnriched, meta])
 
@@ -108,7 +112,7 @@ export function GmvMaxProvider({ children }) {
   async function enrichUsernames() {
     const targets = [...new Set(creativesEnriched
       .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount
-        && meta[c.videoId]?.status !== 'notfound')
+        && (!meta[c.videoId] || meta[c.videoId].status === 'error'))
       .map(c => c.videoId))]
     if (!targets.length) return { ok: true, filled: 0 }
     setEnriching({ done: 0, total: targets.length })
