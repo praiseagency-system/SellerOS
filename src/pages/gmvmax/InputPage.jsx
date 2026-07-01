@@ -72,10 +72,10 @@ export default function InputPage({ onOpenUpload }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/10">
-              <th className="py-2 pr-3 font-medium">STATUS</th>
+              <th className="py-2 pr-3 font-medium">VIDEO ID</th>
+              <th className="py-2 px-3 font-medium">STATUS</th>
               <th className="py-2 px-3 font-medium">TIPE</th>
               <th className="py-2 px-3 font-medium">AKUN</th>
-              <th className="py-2 px-3 font-medium">VIDEO ID</th>
               <th className="py-2 px-3 font-medium">KAMPANYE</th>
               <th className="py-2 px-3 font-medium text-right">COST</th>
               <th className="py-2 px-3 font-medium text-right">REVENUE</th>
@@ -86,10 +86,10 @@ export default function InputPage({ onOpenUpload }) {
           <tbody>
             {filtered.slice(0, LIMIT).map((r, i) => (
               <tr key={r.videoId ? r.videoId + i : i} className="border-b border-line/5 hover:bg-fill/5">
-                <td className="py-2 pr-3 text-ink-muted whitespace-nowrap">{r.status || '—'}</td>
+                <td className="py-2 pr-3">{r.creativeType === 'Video' ? <VideoIdLink videoId={r.videoId} account={r.tiktokAccount} /> : <span className="text-ink-faint">—</span>}</td>
+                <td className="py-2 px-3 text-ink-muted whitespace-nowrap">{r.status || '—'}</td>
                 <td className="py-2 px-3 text-ink-muted">{r.creativeType}</td>
                 <td className="py-2 px-3 text-ink-muted truncate max-w-[120px]">{r.tiktokAccount || '—'}</td>
-                <td className="py-2 px-3">{r.creativeType === 'Video' ? <VideoIdLink videoId={r.videoId} account={r.tiktokAccount} /> : <span className="text-ink-faint">—</span>}</td>
                 <td className="py-2 px-3 text-ink truncate max-w-[160px]">{r.campaignName}</td>
                 <td className="py-2 px-3 text-right text-ink-muted whitespace-nowrap">{fmtRp(r.cost)}</td>
                 <td className="py-2 px-3 text-right text-ink whitespace-nowrap">{fmtRp(r.grossRevenue)}</td>
