@@ -1,8 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
 // Komponen UI bersama modul GMV Max — memakai token tema (bg-surface, text-ink,
 // accent) agar selaras palet Praise. Gaya kartu/badge meniru dashboard Praise.
+import { ExternalLink } from 'lucide-react'
 import { fmtNum, fmtCompact } from '../../utils/quadrantUtils'
 import { roasBadge, STATUS_META } from '../../utils/gmvmaxClassify'
+
+// URL video TikTok dari video ID. TikTok me-resolve video dari ID-nya, jadi
+// handle di path boleh placeholder bila akun tak URL-safe (mis. ada emoji).
+export function tiktokVideoUrl(videoId, account) {
+  if (!videoId) return null
+  const safe = account && /^[a-zA-Z0-9_.]{2,24}$/.test(account) ? account : 'tiktok'
+  return `https://www.tiktok.com/@${safe}/video/${videoId}`
+}
 
 export const fmtRp = (n) => (n == null ? '—' : 'Rp ' + fmtNum(Math.round(n)))
 export const fmtRpC = (n) => (n == null ? '—' : 'Rp ' + fmtCompact(n))
@@ -90,14 +99,29 @@ export function EmptyState({ title, desc, action }) {
   )
 }
 
-// Judul + akun video (dipakai di banyak tabel/kartu).
+// Judul + akun + video ID yang bisa diklik (buka video di TikTok).
 export function VideoLabel({ title, account, videoId, compact }) {
+  const url = tiktokVideoUrl(videoId, account)
   return (
     <div className="min-w-0">
       <p className={`font-medium text-ink truncate ${compact ? 'text-sm' : ''}`}>
         {title || '…' + String(videoId || '').slice(-6)}
       </p>
-      <p className="text-xs text-ink-faint truncate">{account || 'Akun toko'}</p>
+      <div className="flex items-center gap-1.5 text-xs text-ink-faint min-w-0">
+        <span className="truncate">{account || 'Akun toko'}</span>
+        {url && (
+          <>
+            <span aria-hidden>·</span>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              title="Buka video di TikTok"
+              className="inline-flex items-center gap-0.5 text-accent hover:underline shrink-0 max-w-[9rem]">
+              <span className="truncate">{videoId}</span>
+              <ExternalLink className="w-3 h-3 shrink-0" />
+            </a>
+          </>
+        )}
+      </div>
     </div>
   )
 }

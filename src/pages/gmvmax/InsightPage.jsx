@@ -1,8 +1,9 @@
 // AI Insight — rule-based (bukan model AI eksternal). 3 sub-tab:
 // Insight (kartu Scale/Watch/Kill), Action Plan, Winning Framework.
 import { useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { EmptyState, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
+import { EmptyState, fmtRpC, fmtRoasX, tiktokVideoUrl } from '../../components/gmvmax/ui'
 
 const TABS = [
   { id: 'insight', label: 'Insight' },
@@ -69,8 +70,20 @@ function Card({ c }) {
   return (
     <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm flex flex-col gap-2 hover-lift">
       <span className={`self-start text-xs font-bold px-2 py-0.5 rounded-md border ${badge.cls}`}>{badge.text}</span>
-      <p className="text-sm font-semibold text-ink leading-snug line-clamp-2">{c.title}</p>
-      <p className="text-xs text-ink-faint">{c.account}</p>
+      <a href={tiktokVideoUrl(c.videoId, c.account)} target="_blank" rel="noopener noreferrer"
+        className="text-sm font-semibold text-ink leading-snug line-clamp-2 hover:text-accent hover:underline">
+        {c.title}
+      </a>
+      <p className="text-xs text-ink-faint flex items-center gap-1 min-w-0">
+        <span className="truncate">{c.account}</span>
+        {c.videoId && (
+          <a href={tiktokVideoUrl(c.videoId, c.account)} target="_blank" rel="noopener noreferrer"
+            title="Buka video di TikTok"
+            className="inline-flex items-center gap-0.5 text-accent hover:underline shrink-0">
+            · {c.videoId} <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+      </p>
       <div className="flex items-end justify-between mt-1">
         <span className="text-2xl font-bold text-ink-strong">{fmtRoasX(c.roas)}</span>
         <div className="text-right text-xs text-ink-faint">
