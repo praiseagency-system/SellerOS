@@ -180,7 +180,7 @@ export function GmvMaxProvider({ children }) {
   }
 
   const value = {
-    imports, creatives, rows, thresholds, notes,
+    imports, creatives, rows, thresholds, notes, productNames,
     period, setPeriod,
     videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
     hasData: creatives.length > 0,

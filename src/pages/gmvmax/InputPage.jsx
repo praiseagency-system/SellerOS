@@ -8,7 +8,7 @@ import { RoasBadge, EmptyState, fmtRp, VideoIdLink } from '../../components/gmvm
 const LIMIT = 300
 
 export default function InputPage({ onOpenUpload }) {
-  const { rows, thresholds, hasData, missingAccountCount, enriching, enrichUsernames } = useGmvMax()
+  const { rows, thresholds, hasData, missingAccountCount, enriching, enrichUsernames, productNames } = useGmvMax()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
   const [type, setType] = useState('')
@@ -87,6 +87,7 @@ export default function InputPage({ onOpenUpload }) {
               <th className="py-2 px-3 font-medium">TIPE</th>
               <th className="py-2 px-3 font-medium">AKUN</th>
               <th className="py-2 px-3 font-medium">KAMPANYE</th>
+              <th className="py-2 px-3 font-medium">PRODUK</th>
               <th className="py-2 px-3 font-medium text-right">COST</th>
               <th className="py-2 px-3 font-medium text-right">REVENUE</th>
               <th className="py-2 px-3 font-medium text-right">ROAS</th>
@@ -101,6 +102,14 @@ export default function InputPage({ onOpenUpload }) {
                 <td className="py-2 px-3 text-ink-muted">{r.creativeType}</td>
                 <td className="py-2 px-3 text-ink-muted truncate max-w-[120px]">{r.tiktokAccount || '—'}</td>
                 <td className="py-2 px-3 text-ink truncate max-w-[160px]">{r.campaignName}</td>
+                <td className="py-2 px-3 max-w-[170px]">
+                  {r.productId
+                    ? (productNames[r.productId]
+                        ? <><p className="text-ink truncate">{productNames[r.productId]}</p>
+                            <p className="text-xs text-ink-faint font-mono truncate">{r.productId}</p></>
+                        : <span className="font-mono text-ink-muted text-xs block truncate">{r.productId}</span>)
+                    : <span className="text-ink-faint">—</span>}
+                </td>
                 <td className="py-2 px-3 text-right text-ink-muted whitespace-nowrap">{fmtRp(r.cost)}</td>
                 <td className="py-2 px-3 text-right text-ink whitespace-nowrap">{fmtRp(r.grossRevenue)}</td>
                 <td className="py-2 px-3 text-right"><RoasBadge roas={r.roas} thresholds={thresholds} showLabel={false} /></td>
