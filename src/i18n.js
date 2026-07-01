@@ -3,6 +3,14 @@
 export const TRANSLATIONS = {
   id: {
     // Sidebar
+    'nav.GMV MAX ADS': 'GMV MAX ADS',
+    'nav.gmv_dashboard.label': 'Dashboard',
+    'nav.gmv_overview.label': 'Video Overview',
+    'nav.gmv_check.label': 'Video Check',
+    'nav.gmv_creator.label': 'Creator',
+    'nav.gmv_insight.label': 'AI Insight',
+    'nav.gmv_input.label': 'Input Data',
+    'nav.gmv_history.label': 'Riwayat Upload',
     'nav.KUADRAN TRAFFIC': 'KUADRAN TRAFFIC',
     'nav.ANALISIS CERDAS': 'ANALISIS CERDAS',
     'nav.AI TOOLS': 'AI TOOLS',
@@ -99,6 +107,14 @@ export const TRANSLATIONS = {
   },
   en: {
     // Sidebar
+    'nav.GMV MAX ADS': 'GMV MAX ADS',
+    'nav.gmv_dashboard.label': 'Dashboard',
+    'nav.gmv_overview.label': 'Video Overview',
+    'nav.gmv_check.label': 'Video Check',
+    'nav.gmv_creator.label': 'Creator',
+    'nav.gmv_insight.label': 'AI Insight',
+    'nav.gmv_input.label': 'Input Data',
+    'nav.gmv_history.label': 'Riwayat Upload',
     'nav.KUADRAN TRAFFIC': 'TRAFFIC QUADRANT',
     'nav.ANALISIS CERDAS': 'SMART ANALYSIS',
     'nav.AI TOOLS': 'AI TOOLS',

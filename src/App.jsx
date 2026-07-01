@@ -6,6 +6,8 @@ import ProductsPage from './pages/ProductsPage'
 import StorePerformancePage from './pages/StorePerformancePage'
 import CampaignPage from './pages/CampaignPage'
 import SettingsPage from './pages/SettingsPage'
+import GmvMaxModule from './pages/gmvmax/GmvMaxModule'
+import { GmvMaxProvider } from './contexts/GmvMaxContext'
 import { QuadrantProvider } from './contexts/QuadrantContext'
 import { useLang } from './contexts/LanguageContext'
 import { useAuth } from './contexts/AuthContext'
@@ -18,6 +20,13 @@ const PAGE_KEYS = ['quadrant', 'calculator', 'products', 'performance', 'campaig
 // Halaman tanpa key i18n — judul ditetapkan manual.
 const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
+  gmv_dashboard: { title: 'GMV Max Ads', subtitle: 'Ringkasan performa GMV MAX' },
+  gmv_overview:  { title: 'Video Overview', subtitle: 'Performa video per periode & lifetime' },
+  gmv_check:     { title: 'Video Check', subtitle: 'Saring video per kondisi ROAS & spending' },
+  gmv_creator:   { title: 'Creator', subtitle: 'Leaderboard kreator per performa' },
+  gmv_insight:   { title: 'AI Insight', subtitle: 'Rekomendasi otomatis berbasis data' },
+  gmv_input:     { title: 'Input Data', subtitle: 'Upload & tabel mentah GMV Max' },
+  gmv_history:   { title: 'Riwayat Upload', subtitle: 'Periode tersimpan' },
 }
 
 // Gate auth: cek sesi dulu, tampilkan login bila belum masuk.
@@ -157,7 +166,13 @@ function MainApp() {
         {currentPage === 'performance' && <StorePerformancePage />}
         {currentPage === 'campaign' && <CampaignPage />}
         {currentPage === 'settings' && <SettingsPage />}
-        {!['quadrant', 'calculator', 'products', 'performance', 'campaign', 'settings'].includes(currentPage) && (
+        {currentPage.startsWith('gmv_') && (
+          <GmvMaxProvider key="gmv">
+            <GmvMaxModule page={currentPage} />
+          </GmvMaxProvider>
+        )}
+        {!currentPage.startsWith('gmv_') &&
+          !['quadrant', 'calculator', 'products', 'performance', 'campaign', 'settings'].includes(currentPage) && (
           <div className="flex items-center justify-center min-h-[60vh]">
             <p className="text-ink-faint text-sm">{t('page.wip')}</p>
           </div>

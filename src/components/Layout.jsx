@@ -2,7 +2,8 @@ import { useState } from 'react'
 import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronRight, ChevronDown,
-  BarChart3, Sparkles, Info, Menu, Package, Megaphone
+  BarChart3, Sparkles, Info, Menu, Package, Megaphone,
+  LayoutDashboard, PlaySquare, ListChecks, Users, Upload, History
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -11,6 +12,18 @@ import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
 
 const NAV = [
+  {
+    section: 'GMV MAX ADS',
+    items: [
+      { id: 'gmv_dashboard', icon: LayoutDashboard },
+      { id: 'gmv_overview',  icon: PlaySquare },
+      { id: 'gmv_check',     icon: ListChecks },
+      { id: 'gmv_creator',   icon: Users },
+      { id: 'gmv_insight',   icon: Sparkles },
+      { id: 'gmv_input',     icon: Upload },
+      { id: 'gmv_history',   icon: History },
+    ],
+  },
   {
     section: 'KUADRAN TRAFFIC',
     items: [
@@ -230,7 +243,7 @@ export default function Layout({
           </div>
           <HeaderControls
             onNavigate={onNavigate}
-            showPeriod={!['import', 'calculator', 'products', 'performance', 'settings'].includes(currentPage)} />
+            showPeriod={!currentPage.startsWith('gmv_') && !['import', 'calculator', 'products', 'performance', 'settings'].includes(currentPage)} />
         </header>
 
         {/* Page content */}
