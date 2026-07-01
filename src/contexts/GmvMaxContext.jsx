@@ -38,9 +38,13 @@ export function GmvMaxProvider({ children }) {
     setImports(imps)
     setThresholds(th)
     setNotes(nts)
-    // Peta nama produk dari menu Produk (kode_produk = Product ID TikTok).
+    // Peta nama produk dari menu Produk. Product ID TikTok bisa di `kode_produk`
+    // (produk dari data performa) ATAU `catalog.productCode` (hasil Import Katalog).
     const nameMap = {}
-    for (const p of prods) if (p.kode_produk) nameMap[String(p.kode_produk)] = p.name
+    for (const p of prods) {
+      const code = p.kode_produk || p.catalog?.productCode
+      if (code) nameMap[String(code).trim()] = p.name
+    }
     setProductNames(nameMap)
     const cre = await loadCreatives()
     setCreatives(cre)
