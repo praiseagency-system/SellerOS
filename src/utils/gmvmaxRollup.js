@@ -117,6 +117,25 @@ export function rollupCampaigns(rows) {
   })).sort((a, b) => (b.card.revenue + b.video.revenue) - (a.card.revenue + a.video.revenue))
 }
 
+// ─── Per produk (semua creative; kunci product_id ↔ kode_produk menu Produk) ──
+export function rollupProducts(rows) {
+  const byId = new Map()
+  for (const r of rows) {
+    const key = r.productId || '__none__'
+    if (!byId.has(key)) byId.set(key, { productId: r.productId || null, _agg: blankAgg(), videos: new Set(), campaigns: new Set() })
+    const p = byId.get(key)
+    addInto(p._agg, r)
+    if (r.creativeType === 'Video' && r.videoId) p.videos.add(r.videoId)
+    if (r.campaignName) p.campaigns.add(r.campaignName)
+  }
+  return [...byId.values()].map(p => ({
+    productId: p.productId,
+    videoCount: p.videos.size,
+    campaigns: [...p.campaigns],
+    ...finalize(p._agg),
+  })).sort((a, b) => b.revenue - a.revenue)
+}
+
 // ─── Per kreator (video only; null → "Akun toko") ────────────────────────────
 export function rollupCreators(rows, thresholds = DEFAULT_THRESHOLDS) {
   const videos = rows.filter(r => r.creativeType === 'Video')

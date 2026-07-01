@@ -8,6 +8,7 @@ import DashboardPage from './DashboardPage'
 import OverviewPage from './OverviewPage'
 import CheckPage from './CheckPage'
 import CreatorPage from './CreatorPage'
+import ProductPage from './ProductPage'
 import InsightPage from './InsightPage'
 import InputPage from './InputPage'
 import HistoryPage from './HistoryPage'
@@ -17,6 +18,7 @@ const PAGES = {
   gmv_overview: OverviewPage,
   gmv_check: CheckPage,
   gmv_creator: CreatorPage,
+  gmv_product: ProductPage,
   gmv_insight: InsightPage,
   gmv_input: InputPage,
   gmv_history: HistoryPage,

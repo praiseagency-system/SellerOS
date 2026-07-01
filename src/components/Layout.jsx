@@ -19,6 +19,7 @@ const NAV = [
       { id: 'gmv_overview',  icon: PlaySquare },
       { id: 'gmv_check',     icon: ListChecks },
       { id: 'gmv_creator',   icon: Users },
+      { id: 'gmv_product',   icon: Package },
       { id: 'gmv_insight',   icon: Sparkles },
       { id: 'gmv_input',     icon: Upload },
       { id: 'gmv_history',   icon: History },

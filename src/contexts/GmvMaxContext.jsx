@@ -7,10 +7,11 @@ import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gm
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
 import { loadVideoMeta, saveVideoMeta } from '../data/gmvmaxVideoMeta'
+import { listProducts } from '../data/calcProducts'
 import { enrichVideos } from '../utils/gmvmaxEnrich'
 import { DEFAULT_THRESHOLDS } from '../utils/gmvmaxClassify'
 import {
-  rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, dashboardSummary,
+  rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, rollupProducts, dashboardSummary,
 } from '../utils/gmvmaxRollup'
 import { insightCards, actionPlan, winningFramework } from '../utils/gmvmaxInsights'
 
@@ -22,6 +23,7 @@ export function GmvMaxProvider({ children }) {
   const [creatives, setCreatives] = useState([])
   const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS)
   const [notes, setNotes] = useState({})
+  const [productNames, setProductNames] = useState({}) // kode_produk → nama (menu Produk)
   const [meta, setMeta] = useState({})          // video_id → {username, authorName, status}
   const [enriching, setEnriching] = useState(null) // {done,total} saat scraping akun
   const [period, setPeriod] = useState('all')   // 'all' | import.id
@@ -30,10 +32,16 @@ export function GmvMaxProvider({ children }) {
   const [error, setError] = useState(null)
 
   const reload = useCallback(async () => {
-    const [imps, th, nts] = await Promise.all([listImports(), getThresholds(), listNotes()])
+    const [imps, th, nts, prods] = await Promise.all([
+      listImports(), getThresholds(), listNotes(), listProducts().catch(() => []),
+    ])
     setImports(imps)
     setThresholds(th)
     setNotes(nts)
+    // Peta nama produk dari menu Produk (kode_produk = Product ID TikTok).
+    const nameMap = {}
+    for (const p of prods) if (p.kode_produk) nameMap[String(p.kode_produk)] = p.name
+    setProductNames(nameMap)
     const cre = await loadCreatives()
     setCreatives(cre)
     const vids = cre.filter(c => c.creativeType === 'Video' && c.videoId).map(c => c.videoId)
@@ -82,6 +90,9 @@ export function GmvMaxProvider({ children }) {
   const campaigns = useMemo(() => rollupCampaigns(rows), [rows])
   const creators = useMemo(() => rollupCreators(rows, thresholds), [rows, thresholds])
   const hooks = useMemo(() => rollupHooks(rows, thresholds), [rows, thresholds])
+  const products = useMemo(() => rollupProducts(rows).map(p => ({
+    ...p, name: (p.productId && productNames[p.productId]) || null,
+  })), [rows, productNames])
   const dashboard = useMemo(() => dashboardSummary(videos, thresholds), [videos, thresholds])
 
   // Total per tipe creative (Video vs Product card vs semua) untuk headline
@@ -167,7 +178,7 @@ export function GmvMaxProvider({ children }) {
   const value = {
     imports, creatives, rows, thresholds, notes,
     period, setPeriod,
-    videos, campaigns, creators, hooks, dashboard, typeTotals, insights,
+    videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
     hasData: creatives.length > 0,
     loading, busy, error,
     missingAccountCount, enriching,

@@ -24,6 +24,7 @@ const PAGE_META = {
   gmv_overview:  { title: 'Video Overview', subtitle: 'Performa video per periode & lifetime' },
   gmv_check:     { title: 'Video Check', subtitle: 'Saring video per kondisi ROAS & spending' },
   gmv_creator:   { title: 'Creator', subtitle: 'Leaderboard kreator per performa' },
+  gmv_product:   { title: 'Performa Produk', subtitle: 'Rollup GMV Max per produk (nama dari menu Produk)' },
   gmv_insight:   { title: 'AI Insight', subtitle: 'Rekomendasi otomatis berbasis data' },
   gmv_input:     { title: 'Input Data', subtitle: 'Upload & tabel mentah GMV Max' },
   gmv_history:   { title: 'Riwayat Upload', subtitle: 'Periode tersimpan' },
