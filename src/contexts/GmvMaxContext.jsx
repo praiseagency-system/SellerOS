@@ -83,6 +83,22 @@ export function GmvMaxProvider({ children }) {
   const creators = useMemo(() => rollupCreators(rows, thresholds), [rows, thresholds])
   const hooks = useMemo(() => rollupHooks(rows, thresholds), [rows, thresholds])
   const dashboard = useMemo(() => dashboardSummary(videos, thresholds), [videos, thresholds])
+
+  // Total per tipe creative (Video vs Product card vs semua) untuk headline
+  // Dashboard — transparan, tak menyembunyikan revenue Product card.
+  const typeTotals = useMemo(() => {
+    const z = () => ({ cost: 0, revenue: 0, orders: 0 })
+    const v = z(), c = z()
+    for (const r of rows) {
+      const t = r.creativeType === 'Product card' ? c : v
+      t.cost += r.cost || 0
+      t.revenue += r.grossRevenue || 0
+      t.orders += r.skuOrders || 0
+    }
+    const roas = o => (o.cost > 0 ? o.revenue / o.cost : null)
+    const all = { cost: v.cost + c.cost, revenue: v.revenue + c.revenue, orders: v.orders + c.orders }
+    return { video: { ...v, roas: roas(v) }, card: { ...c, roas: roas(c) }, all: { ...all, roas: roas(all) } }
+  }, [rows])
   const insights = useMemo(() => ({
     cards: insightCards(videos, thresholds),
     plan: actionPlan(videos, thresholds),
@@ -151,7 +167,7 @@ export function GmvMaxProvider({ children }) {
   const value = {
     imports, creatives, rows, thresholds, notes,
     period, setPeriod,
-    videos, campaigns, creators, hooks, dashboard, insights,
+    videos, campaigns, creators, hooks, dashboard, typeTotals, insights,
     hasData: creatives.length > 0,
     loading, busy, error,
     missingAccountCount, enriching,

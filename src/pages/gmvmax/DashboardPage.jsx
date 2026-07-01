@@ -5,19 +5,22 @@ import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { StatCard, SectionTitle, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
 
 export default function DashboardPage({ onOpenUpload }) {
-  const { dashboard: d, hasData } = useGmvMax()
+  const { dashboard: d, typeTotals: tt, hasData } = useGmvMax()
   if (!hasData) return <EmptyState title="Belum ada data GMV Max"
     desc="Upload file export creative TikTok Shop untuk mulai melacak performa."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
 
-  const { totals, tiers } = d
+  const { tiers } = d
+  const brk = (get) => `Video ${fmtRpC(get(tt.video))} · Card ${fmtRpC(get(tt.card))}`
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard icon={TrendingUp} tone="green" label="Total Revenue" value={fmtRp(totals.revenue)}
-          sub={`ROAS ${fmtRoasX(totals.roas)} · ${totals.videoCount} video ber-spend`} />
-        <StatCard icon={Wallet} tone="red" label="Total Cost" value={fmtRp(totals.cost)} />
-        <StatCard icon={ShoppingCart} tone="violet" label="Total Orders" value={totals.orders.toLocaleString('id-ID')} />
+        <StatCard icon={TrendingUp} tone="green" label="Total Revenue" value={fmtRp(tt.all.revenue)}
+          sub={`ROAS ${fmtRoasX(tt.all.roas)} · ${brk(o => o.revenue)}`} />
+        <StatCard icon={Wallet} tone="red" label="Total Cost" value={fmtRp(tt.all.cost)}
+          sub={brk(o => o.cost)} />
+        <StatCard icon={ShoppingCart} tone="violet" label="Total Orders" value={tt.all.orders.toLocaleString('id-ID')}
+          sub={`Video ${tt.video.orders.toLocaleString('id-ID')} · Card ${tt.card.orders.toLocaleString('id-ID')}`} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
