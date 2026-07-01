@@ -1,7 +1,7 @@
 // Tabel video GMV Max — dipakai Video Overview & Video Check. Kolom standar +
 // opsi kolom Aksi (rekomendasi) & tombol Catatan.
 import { StickyNote } from 'lucide-react'
-import { RoasBadge, StatusBadge, VideoLabel, fmtRp } from './ui'
+import { RoasBadge, StatusBadge, VideoLabel, VideoIdLink, fmtRp } from './ui'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
 
 const ACTION_TEXT = {
@@ -20,6 +20,7 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, sho
         <thead>
           <tr className="text-left text-xs text-ink-faint border-b border-line/10">
             <th className="py-2.5 pr-3 font-medium">VIDEO</th>
+            <th className="py-2.5 px-3 font-medium">VIDEO ID</th>
             {showStatus && <th className="py-2.5 px-3 font-medium">STATUS</th>}
             {showHook && <th className="py-2.5 px-3 font-medium">HOOK</th>}
             <th className="py-2.5 px-3 font-medium text-right">COST</th>
@@ -36,6 +37,7 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, sho
             return (
               <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">
                 <td className="py-2.5 pr-3 max-w-xs"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></td>
+                <td className="py-2.5 px-3"><VideoIdLink videoId={v.videoId} account={v.account} /></td>
                 {showStatus && <td className="py-2.5 px-3"><StatusBadge status={v.status} /></td>}
                 {showHook && <td className="py-2.5 px-3 text-ink-muted capitalize">{v.hook}</td>}
                 <td className="py-2.5 px-3 text-right text-ink-muted whitespace-nowrap">{fmtRp(v.lifetime.cost)}</td>

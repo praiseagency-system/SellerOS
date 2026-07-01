@@ -99,29 +99,32 @@ export function EmptyState({ title, desc, action }) {
   )
 }
 
-// Judul + akun + video ID yang bisa diklik (buka video di TikTok).
-export function VideoLabel({ title, account, videoId, compact }) {
+// Judul + akun video. Opsi linkVideo → judul jadi tautan buka video di TikTok
+// (dipakai di list/kartu yang tak punya kolom ID terpisah).
+export function VideoLabel({ title, account, videoId, compact, linkVideo }) {
+  const label = title || '…' + String(videoId || '').slice(-6)
+  const cls = `font-medium text-ink truncate ${compact ? 'text-sm' : ''}`
   const url = tiktokVideoUrl(videoId, account)
   return (
     <div className="min-w-0">
-      <p className={`font-medium text-ink truncate ${compact ? 'text-sm' : ''}`}>
-        {title || '…' + String(videoId || '').slice(-6)}
-      </p>
-      <div className="flex items-center gap-1.5 text-xs text-ink-faint min-w-0">
-        <span className="truncate">{account || 'Akun toko'}</span>
-        {url && (
-          <>
-            <span aria-hidden>·</span>
-            <a href={url} target="_blank" rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              title="Buka video di TikTok"
-              className="inline-flex items-center gap-0.5 text-accent hover:underline shrink-0 max-w-[9rem]">
-              <span className="truncate">{videoId}</span>
-              <ExternalLink className="w-3 h-3 shrink-0" />
-            </a>
-          </>
-        )}
-      </div>
+      {linkVideo && url
+        ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+            title="Buka video di TikTok" className={`${cls} block hover:text-accent hover:underline`}>{label}</a>
+        : <p className={cls}>{label}</p>}
+      <p className="text-xs text-ink-faint truncate">{account || 'Akun toko'}</p>
     </div>
+  )
+}
+
+// Tautan video ID yang bisa diklik — untuk kolom "VIDEO ID" tersendiri.
+export function VideoIdLink({ videoId, account, full }) {
+  if (!videoId) return <span className="text-ink-faint">—</span>
+  return (
+    <a href={tiktokVideoUrl(videoId, account)} target="_blank" rel="noopener noreferrer"
+      onClick={e => e.stopPropagation()} title={`Buka video ${videoId} di TikTok`}
+      className="inline-flex items-center gap-1 text-accent hover:underline font-mono text-xs">
+      <span className={full ? '' : 'truncate max-w-[7rem]'}>{videoId}</span>
+      <ExternalLink className="w-3 h-3 shrink-0" />
+    </a>
   )
 }

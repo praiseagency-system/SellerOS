@@ -62,7 +62,7 @@ function TopList({ tone, title, items }) {
           {items.map((v, i) => (
             <li key={v.videoId} className="flex items-center gap-3">
               <span className="text-xs text-ink-faint w-4">{i + 1}.</span>
-              <div className="flex-1 min-w-0"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></div>
+              <div className="flex-1 min-w-0"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact linkVideo /></div>
               <div className="text-right flex-shrink-0">
                 <p className="text-sm font-semibold text-ink">{fmtRoasX(v.lifetime.roas)}</p>
                 <p className="text-xs text-ink-faint">{fmtRpC(v.lifetime.revenue)}</p>

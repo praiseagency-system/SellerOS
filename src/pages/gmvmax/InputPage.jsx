@@ -1,9 +1,9 @@
 // Input Data — tabel mentah semua baris + filter, tombol Upload. Meniru
 // "Input Data Ads" Lacak.
 import { useState, useMemo } from 'react'
-import { UploadCloud, Search, ExternalLink } from 'lucide-react'
+import { UploadCloud, Search } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { RoasBadge, EmptyState, fmtRp, tiktokVideoUrl } from '../../components/gmvmax/ui'
+import { RoasBadge, EmptyState, fmtRp, VideoIdLink } from '../../components/gmvmax/ui'
 
 const LIMIT = 300
 
@@ -75,6 +75,7 @@ export default function InputPage({ onOpenUpload }) {
               <th className="py-2 pr-3 font-medium">STATUS</th>
               <th className="py-2 px-3 font-medium">TIPE</th>
               <th className="py-2 px-3 font-medium">AKUN</th>
+              <th className="py-2 px-3 font-medium">VIDEO ID</th>
               <th className="py-2 px-3 font-medium">KAMPANYE</th>
               <th className="py-2 px-3 font-medium text-right">COST</th>
               <th className="py-2 px-3 font-medium text-right">REVENUE</th>
@@ -87,16 +88,8 @@ export default function InputPage({ onOpenUpload }) {
               <tr key={r.videoId ? r.videoId + i : i} className="border-b border-line/5 hover:bg-fill/5">
                 <td className="py-2 pr-3 text-ink-muted whitespace-nowrap">{r.status || '—'}</td>
                 <td className="py-2 px-3 text-ink-muted">{r.creativeType}</td>
-                <td className="py-2 px-3 max-w-[140px]">
-                  {r.creativeType === 'Video' && r.videoId ? (
-                    <a href={tiktokVideoUrl(r.videoId, r.tiktokAccount)} target="_blank" rel="noopener noreferrer"
-                      title={`Buka video ${r.videoId}`}
-                      className="inline-flex items-center gap-0.5 text-accent hover:underline truncate max-w-full">
-                      <span className="truncate">{r.tiktokAccount || r.videoId}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0" />
-                    </a>
-                  ) : <span className="text-ink-muted">{r.tiktokAccount || '—'}</span>}
-                </td>
+                <td className="py-2 px-3 text-ink-muted truncate max-w-[120px]">{r.tiktokAccount || '—'}</td>
+                <td className="py-2 px-3">{r.creativeType === 'Video' ? <VideoIdLink videoId={r.videoId} account={r.tiktokAccount} /> : <span className="text-ink-faint">—</span>}</td>
                 <td className="py-2 px-3 text-ink truncate max-w-[160px]">{r.campaignName}</td>
                 <td className="py-2 px-3 text-right text-ink-muted whitespace-nowrap">{fmtRp(r.cost)}</td>
                 <td className="py-2 px-3 text-right text-ink whitespace-nowrap">{fmtRp(r.grossRevenue)}</td>
