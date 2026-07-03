@@ -2,24 +2,31 @@
 // 3 kartu total + 3 kartu tier + 3 top-list.
 import { Wallet, TrendingUp, ShoppingCart } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { StatCard, SectionTitle, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
+import { StatCard, DeltaBadge, SectionTitle, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
 
 export default function DashboardPage({ onOpenUpload }) {
-  const { dashboard: d, typeTotals: tt, hasData } = useGmvMax()
+  const { dashboard: d, typeTotals: tt, hasData, prev, periodName } = useGmvMax()
   if (!hasData) return <EmptyState title="Belum ada data GMV Max"
     desc="Upload file export creative TikTok Shop untuk mulai melacak performa."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
 
   const { tiers } = d
+  const pt = prev?.typeTotals
   const brk = (get) => `Video ${fmtRpC(get(tt.video))} · Card ${fmtRpC(get(tt.card))}`
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
+      {periodName && prev && (
+        <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard icon={TrendingUp} tone="green" label="Total Revenue" value={fmtRp(tt.all.revenue)}
+          delta={<DeltaBadge cur={tt.all.revenue} prev={pt?.all.revenue} fmt={fmtRpC} />}
           sub={`ROAS ${fmtRoasX(tt.all.roas)} · ${brk(o => o.revenue)}`} />
         <StatCard icon={Wallet} tone="red" label="Total Cost" value={fmtRp(tt.all.cost)}
+          delta={<DeltaBadge cur={tt.all.cost} prev={pt?.all.cost} fmt={fmtRpC} goodDown />}
           sub={brk(o => o.cost)} />
         <StatCard icon={ShoppingCart} tone="violet" label="Total Orders" value={tt.all.orders.toLocaleString('id-ID')}
+          delta={<DeltaBadge cur={tt.all.orders} prev={pt?.all.orders} />}
           sub={`Video ${tt.video.orders.toLocaleString('id-ID')} · Card ${tt.card.orders.toLocaleString('id-ID')}`} />
       </div>
 

@@ -1,22 +1,37 @@
 // Creator — leaderboard kreator (rollup video per akun). Bar revenue gaya
 // "Top 10 Affiliate" Praise. Video tanpa kreator digrup "Akun toko".
 import { useState, useMemo } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Users, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { RoasBadge, EmptyState, fmtRp, fmtRpC } from '../../components/gmvmax/ui'
+import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
+
+const n = (v) => v.toLocaleString('id-ID')
+const creatorBase = (arr) => arr.filter(c => c.cost > 0 || c.revenue > 0)
+function sumCreators(arr) {
+  const s = { kreator: arr.length, video: 0, cost: 0, revenue: 0, orders: 0, roas: null }
+  for (const c of arr) {
+    s.video += c.videoCount || 0
+    s.cost += c.cost || 0
+    s.revenue += c.revenue || 0
+    s.orders += c.orders || 0
+  }
+  s.roas = s.cost > 0 ? s.revenue / s.cost : null
+  return s
+}
 
 export default function CreatorPage({ onOpenUpload }) {
-  const { creators, thresholds, hasData } = useGmvMax()
+  const { creators, thresholds, hasData, prev, periodName } = useGmvMax()
   const [q, setQ] = useState('')
 
+  const base = useMemo(() => creatorBase(creators), [creators])
   const list = useMemo(() => {
-    let l = creators.filter(c => c.cost > 0 || c.revenue > 0)
-    if (q.trim()) {
-      const s = q.toLowerCase()
-      l = l.filter(c => (c.account || 'akun toko').toLowerCase().includes(s))
-    }
-    return l
-  }, [creators, q])
+    if (!q.trim()) return base
+    const s = q.toLowerCase()
+    return base.filter(c => (c.account || 'akun toko').toLowerCase().includes(s))
+  }, [base, q])
+
+  const sum = useMemo(() => sumCreators(base), [base])
+  const prevSum = useMemo(() => (prev ? sumCreators(creatorBase(prev.creators)) : null), [prev])
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -26,6 +41,24 @@ export default function CreatorPage({ onOpenUpload }) {
 
   return (
     <div className="p-6 space-y-4 max-w-5xl mx-auto">
+      {periodName && prev && (
+        <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard icon={Users} tone="violet" label="Total Kreator" value={n(sum.kreator)}
+          delta={<DeltaBadge cur={sum.kreator} prev={prevSum?.kreator} />} />
+        <StatCard icon={Clapperboard} tone="blue" label="Total Video" value={n(sum.video)}
+          delta={<DeltaBadge cur={sum.video} prev={prevSum?.video} />} />
+        <StatCard icon={Wallet} tone="amber" label="Total Cost" value={fmtRpC(sum.cost)}
+          delta={<DeltaBadge cur={sum.cost} prev={prevSum?.cost} fmt={fmtRpC} goodDown />} />
+        <StatCard icon={TrendingUp} tone="green" label="Revenue (GMV)" value={fmtRpC(sum.revenue)}
+          delta={<DeltaBadge cur={sum.revenue} prev={prevSum?.revenue} fmt={fmtRpC} />} />
+        <StatCard icon={Target} tone="blue" label="ROAS" value={fmtRoasX(sum.roas)}
+          delta={<DeltaBadge cur={sum.roas} prev={prevSum?.roas} fmt={(v) => v.toFixed(1) + 'x'} />} />
+        <StatCard icon={ShoppingCart} tone="blue" label="Total Orders" value={n(sum.orders)}
+          delta={<DeltaBadge cur={sum.orders} prev={prevSum?.orders} />} />
+      </div>
+
       <div className="relative">
         <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari kreator…"

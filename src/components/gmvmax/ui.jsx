@@ -46,8 +46,34 @@ export function StatusBadge({ status }) {
   )
 }
 
-// Kartu statistik gaya Praise: ikon-tile berwarna + label + angka besar.
-export function StatCard({ icon: Icon, label, value, sub, tone = 'blue' }) {
+// Rincian status pengiriman per produk: 3 pill (Delivering/In queue/Learning),
+// sembunyikan yang nol. `counts` = { delivering, in_queue, learning }.
+const DELIVERY_META = {
+  delivering: { label: 'Delivering', tone: 'green' },
+  in_queue:   { label: 'In queue',   tone: 'amber' },
+  learning:   { label: 'Learning',   tone: 'blue' },
+}
+export function DeliveryPills({ counts }) {
+  const keys = counts ? ['delivering', 'in_queue', 'learning'].filter(k => (counts[k] || 0) > 0) : []
+  if (!keys.length) return <span className="text-ink-faint text-xs">—</span>
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      {keys.map(k => {
+        const m = DELIVERY_META[k]
+        return (
+          <span key={k} title={m.label}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold ${TONE[m.tone]}`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+            {counts[k]} <span className="font-medium opacity-70">{m.label}</span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+// Kartu statistik gaya Praise: ikon-tile berwarna + label + angka besar + delta.
+export function StatCard({ icon: Icon, label, value, sub, delta, tone = 'blue' }) {
   return (
     <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
       <div className="flex items-center gap-2.5 mb-2">
@@ -59,8 +85,26 @@ export function StatCard({ icon: Icon, label, value, sub, tone = 'blue' }) {
         <span className="text-xs font-medium text-ink-muted uppercase tracking-wide">{label}</span>
       </div>
       <p className="text-2xl font-bold text-ink-strong">{value}</p>
+      {delta && <div className="mt-1">{delta}</div>}
       {sub && <p className="text-xs text-ink-faint mt-1">{sub}</p>}
     </div>
+  )
+}
+
+// Delta vs periode sebelumnya (bulan lalu), gaya Monitoring Praise:
+// ▲ hijau (naik = baik) · ▼ merah (turun) · → Sama. `goodDown` membalik warna
+// untuk metrik yang "naik = buruk" (mis. Cost). prev null → tak dirender.
+export function DeltaBadge({ cur, prev, fmt = (v) => v.toLocaleString('id-ID'), goodDown = false, percent = true }) {
+  if (prev == null || cur == null) return null
+  const diff = cur - prev
+  if (Math.abs(diff) < 1e-9) return <span className="text-xs font-medium text-ink-faint">→ Sama</span>
+  const up = diff > 0
+  const good = goodDown ? !up : up
+  const pct = prev !== 0 ? Math.abs(diff / prev) * 100 : null
+  return (
+    <span className={`text-xs font-medium ${good ? 'text-emerald-500' : 'text-red-500'}`}>
+      {up ? '▲' : '▼'} {fmt(Math.abs(diff))}{percent && pct != null ? ` (${pct.toFixed(1)}%)` : ''}
+    </span>
   )
 }
 

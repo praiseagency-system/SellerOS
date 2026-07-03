@@ -18,6 +18,22 @@ import { insightCards, actionPlan, winningFramework } from '../utils/gmvmaxInsig
 const Ctx = createContext(null)
 export function useGmvMax() { return useContext(Ctx) }
 
+// Total per tipe creative (Video vs Product card vs semua) untuk sekumpulan
+// baris. Dipakai headline Dashboard + delta bulan-lalu (periode sebelumnya).
+function typeTotalsOf(rows) {
+  const z = () => ({ cost: 0, revenue: 0, orders: 0 })
+  const v = z(), c = z()
+  for (const r of rows) {
+    const t = r.creativeType === 'Product card' ? c : v
+    t.cost += r.cost || 0
+    t.revenue += r.grossRevenue || 0
+    t.orders += r.skuOrders || 0
+  }
+  const roas = o => (o.cost > 0 ? o.revenue / o.cost : null)
+  const all = { cost: v.cost + c.cost, revenue: v.revenue + c.revenue, orders: v.orders + c.orders }
+  return { video: { ...v, roas: roas(v) }, card: { ...c, roas: roas(c) }, all: { ...all, roas: roas(all) } }
+}
+
 export function GmvMaxProvider({ children }) {
   const [imports, setImports] = useState([])
   const [creatives, setCreatives] = useState([])
@@ -101,19 +117,31 @@ export function GmvMaxProvider({ children }) {
 
   // Total per tipe creative (Video vs Product card vs semua) untuk headline
   // Dashboard — transparan, tak menyembunyikan revenue Product card.
-  const typeTotals = useMemo(() => {
-    const z = () => ({ cost: 0, revenue: 0, orders: 0 })
-    const v = z(), c = z()
-    for (const r of rows) {
-      const t = r.creativeType === 'Product card' ? c : v
-      t.cost += r.cost || 0
-      t.revenue += r.grossRevenue || 0
-      t.orders += r.skuOrders || 0
+  const typeTotals = useMemo(() => typeTotalsOf(rows), [rows])
+
+  // ── Delta vs bulan lalu ────────────────────────────────────────────────────
+  // Periode sebelumnya = import satu tingkat lebih tua dari yang dipilih.
+  // `imports` urut terbaru dulu, jadi indeks+1 = bulan sebelumnya. Hanya aktif
+  // saat periode spesifik dipilih & ada yang lebih tua (bukan "Semua periode").
+  const prevMeta = useMemo(() => {
+    if (period === 'all') return null
+    const idx = imports.findIndex(i => i.id === period)
+    return idx >= 0 && idx + 1 < imports.length ? imports[idx + 1] : null
+  }, [imports, period])
+  const prevRows = useMemo(
+    () => (prevMeta ? creativesEnriched.filter(c => c.periodName === prevMeta.name) : null),
+    [creativesEnriched, prevMeta])
+  const prev = useMemo(() => {
+    if (!prevRows) return null
+    return {
+      name: prevMeta.name,
+      videos: rollupVideos(prevRows, thresholds),
+      creators: rollupCreators(prevRows, thresholds),
+      products: rollupProducts(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
+      typeTotals: typeTotalsOf(prevRows),
     }
-    const roas = o => (o.cost > 0 ? o.revenue / o.cost : null)
-    const all = { cost: v.cost + c.cost, revenue: v.revenue + c.revenue, orders: v.orders + c.orders }
-    return { video: { ...v, roas: roas(v) }, card: { ...c, roas: roas(c) }, all: { ...all, roas: roas(all) } }
-  }, [rows])
+  }, [prevRows, prevMeta, thresholds, productNames])
+  const periodName = period === 'all' ? null : (imports.find(i => i.id === period)?.name || null)
   const insights = useMemo(() => ({
     cards: insightCards(videos, thresholds),
     plan: actionPlan(videos, thresholds),
@@ -181,7 +209,7 @@ export function GmvMaxProvider({ children }) {
 
   const value = {
     imports, creatives, rows, thresholds, notes, productNames,
-    period, setPeriod,
+    period, setPeriod, periodName, prev,
     videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
     hasData: creatives.length > 0,
     loading, busy, error,

@@ -9,6 +9,27 @@ import { videoStatus, qualityTier, DEFAULT_THRESHOLDS } from './gmvmaxClassify'
 
 const NO_CREATOR = '__toko__' // kunci grup untuk video tanpa kreator
 
+// Status pengiriman (delivery) GMV Max dari kolom "Status" → 3 bucket yang
+// dipantau tim: Delivering (tayang), In queue (antre), Learning (belajar).
+// Sisanya (Not active, Unavailable, Not delivering, dst.) masuk 'other' & tak
+// ditampilkan. Satu video bisa punya banyak baris/status lintas periode →
+// pakai status periode terbaru; bila periode sama, menang yang paling "aktif".
+const DELIVERY_RANK = { delivering: 3, learning: 2, in_queue: 1, other: 0 }
+export function normDeliveryStatus(s) {
+  const t = (s || '').toLowerCase().trim()
+  if (!t || t === '-' || t === 'n/a') return null
+  if (t.includes('learning')) return 'learning'
+  if (t.includes('queue')) return 'in_queue'
+  if (t === 'delivering' || (t.includes('deliver') && !t.includes('not'))) return 'delivering'
+  return 'other'
+}
+const deliveryRank = (c) => (c == null ? -1 : (DELIVERY_RANK[c] ?? 0))
+function tallyDelivery(vidStatus) {
+  const c = { delivering: 0, in_queue: 0, learning: 0, other: 0 }
+  for (const v of vidStatus.values()) if (v.canon) c[v.canon] = (c[v.canon] || 0) + 1
+  return c
+}
+
 function blankAgg() {
   return { cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
            vr2s: 0, vr6s: 0, vr25: 0, vr50: 0, vr75: 0, vr100: 0, _n: 0 }
@@ -122,15 +143,24 @@ export function rollupProducts(rows) {
   const byId = new Map()
   for (const r of rows) {
     const key = r.productId || '__none__'
-    if (!byId.has(key)) byId.set(key, { productId: r.productId || null, _agg: blankAgg(), videos: new Set(), campaigns: new Set() })
+    if (!byId.has(key)) byId.set(key, { productId: r.productId || null, _agg: blankAgg(), videos: new Set(), campaigns: new Set(), _vidStatus: new Map() })
     const p = byId.get(key)
     addInto(p._agg, r)
-    if (r.creativeType === 'Video' && r.videoId) p.videos.add(r.videoId)
+    if (r.creativeType === 'Video' && r.videoId) {
+      p.videos.add(r.videoId)
+      const canon = normDeliveryStatus(r.status)
+      const per = periodOf(r)
+      const cur = p._vidStatus.get(r.videoId)
+      if (!cur || per > cur.period || (per === cur.period && deliveryRank(canon) > deliveryRank(cur.canon))) {
+        p._vidStatus.set(r.videoId, { period: per, canon })
+      }
+    }
     if (r.campaignName) p.campaigns.add(r.campaignName)
   }
   return [...byId.values()].map(p => ({
     productId: p.productId,
     videoCount: p.videos.size,
+    statusCounts: tallyDelivery(p._vidStatus),
     campaigns: [...p.campaigns],
     ...finalize(p._agg),
   })).sort((a, b) => b.revenue - a.revenue)

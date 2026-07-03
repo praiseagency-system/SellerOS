@@ -1,8 +1,8 @@
 // Video Overview — semua video ditrack, filter tier + status, cari, Export CSV.
 import { useState, useMemo } from 'react'
-import { Download, Search } from 'lucide-react'
+import { Download, Search, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart, Rocket } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { Pill, EmptyState } from '../../components/gmvmax/ui'
+import { Pill, EmptyState, StatCard, DeltaBadge, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import VideoTable from '../../components/gmvmax/VideoTable'
 import { NoteModal } from '../../components/gmvmax/modals'
 import { exportVideosCsv } from '../../utils/gmvmaxCsv'
@@ -14,11 +14,30 @@ const SEGMENTS = [
   { id: 'kill', label: 'Kill', tone: 'red' },
 ]
 
+const n = (v) => v.toLocaleString('id-ID')
+const videoBase = (arr) => arr.filter(v => v.lifetime.cost > 0 || v.lifetime.revenue > 0)
+function sumVideos(arr) {
+  const s = { video: arr.length, cost: 0, revenue: 0, orders: 0, roas: null, scale: 0, watch: 0, kill: 0 }
+  for (const v of arr) {
+    s.cost += v.lifetime.cost || 0
+    s.revenue += v.lifetime.revenue || 0
+    s.orders += v.lifetime.orders || 0
+    if (v.status === 'scale') s.scale++
+    else if (v.status === 'watch') s.watch++
+    else if (v.status === 'kill') s.kill++
+  }
+  s.roas = s.cost > 0 ? s.revenue / s.cost : null
+  return s
+}
+
 export default function OverviewPage({ onOpenUpload }) {
-  const { videos, thresholds, notes, hasData } = useGmvMax()
+  const { videos, thresholds, notes, hasData, prev, periodName } = useGmvMax()
   const [seg, setSeg] = useState('all')
   const [q, setQ] = useState('')
   const [noteVideo, setNoteVideo] = useState(null)
+
+  const sum = useMemo(() => sumVideos(videoBase(videos)), [videos])
+  const prevSum = useMemo(() => (prev ? sumVideos(videoBase(prev.videos)) : null), [prev])
 
   const filtered = useMemo(() => {
     let list = videos.filter(v => v.lifetime.cost > 0 || v.lifetime.revenue > 0)
@@ -43,6 +62,23 @@ export default function OverviewPage({ onOpenUpload }) {
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
+      {periodName && prev && (
+        <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard icon={Clapperboard} tone="blue" label="Total Video" value={n(sum.video)}
+          delta={<DeltaBadge cur={sum.video} prev={prevSum?.video} />} />
+        <StatCard icon={Wallet} tone="amber" label="Total Cost" value={fmtRpC(sum.cost)}
+          delta={<DeltaBadge cur={sum.cost} prev={prevSum?.cost} fmt={fmtRpC} goodDown />} />
+        <StatCard icon={TrendingUp} tone="green" label="Revenue (GMV)" value={fmtRpC(sum.revenue)}
+          delta={<DeltaBadge cur={sum.revenue} prev={prevSum?.revenue} fmt={fmtRpC} />} />
+        <StatCard icon={Target} tone="blue" label="ROAS" value={fmtRoasX(sum.roas)}
+          delta={<DeltaBadge cur={sum.roas} prev={prevSum?.roas} fmt={(v) => v.toFixed(1) + 'x'} />} />
+        <StatCard icon={ShoppingCart} tone="blue" label="Total Orders" value={n(sum.orders)}
+          delta={<DeltaBadge cur={sum.orders} prev={prevSum?.orders} />} />
+        <StatCard icon={Rocket} tone="green" label="Scale" value={n(sum.scale)} sub={`${n(sum.watch)} watch · ${n(sum.kill)} kill`}
+          delta={<DeltaBadge cur={sum.scale} prev={prevSum?.scale} />} />
+      </div>
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="flex flex-wrap gap-1.5">
           {SEGMENTS.map(s => (
