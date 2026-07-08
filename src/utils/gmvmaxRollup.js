@@ -82,10 +82,18 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
         productId: r.productId || null,
         campaign: r.campaignName || '',
         timePosted: r.timePosted || null,
+        _delRank: -2,               // rank status pengiriman "paling aktif"
+        _delRaw: null,              // teks status mentah (mis. "Delivering", "Excluded")
         _life: blankAgg(),
         _periods: new Map(),
       }
       byId.set(r.videoId, v)
+    }
+    // Status pengiriman video = status baris paling "aktif" (delivering > learning
+    // > in_queue > lainnya spt Excluded/Not active). Simpan teks mentahnya.
+    if (r.status) {
+      const rank = deliveryRank(normDeliveryStatus(r.status))
+      if (rank > v._delRank) { v._delRank = rank; v._delRaw = r.status }
     }
     addInto(v._life, r)
     const p = periodOf(r)
@@ -104,6 +112,7 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
     return {
       videoId: v.videoId, title: v.title, account: v.account, hook: v.hook,
       productId: v.productId, campaign: v.campaign, timePosted: v.timePosted,
+      delivery: v._delRaw, deliveryCanon: normDeliveryStatus(v._delRaw),
       lifetime, periods, trend, status,
       tier: qualityTier(lifetime.roas, thresholds),
     }

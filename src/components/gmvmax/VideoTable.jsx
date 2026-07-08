@@ -1,7 +1,7 @@
 // Tabel video GMV Max — dipakai Video Overview & Video Check. Kolom standar +
 // opsi kolom Aksi (rekomendasi) & tombol Catatan.
 import { StickyNote } from 'lucide-react'
-import { RoasBadge, StatusBadge, VideoLabel, VideoIdLink, fmtRp } from './ui'
+import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp } from './ui'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
 
 const ACTION_TEXT = {
@@ -12,7 +12,7 @@ const ACTION_TEXT = {
   inactive: '—',
 }
 
-export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showCampaign = false, showProduct = false }) {
+export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showDelivery = false, showCampaign = false, showProduct = false }) {
   if (!videos.length) return <p className="text-sm text-ink-faint py-10 text-center">Tidak ada video yang cocok.</p>
   return (
     <div className="overflow-x-auto">
@@ -21,7 +21,8 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
           <tr className="text-left text-xs text-ink-faint border-b border-line/10">
             <th className="py-2.5 pr-3 font-medium">VIDEO</th>
             <th className="py-2.5 px-3 font-medium">VIDEO ID</th>
-            {showStatus && <th className="py-2.5 px-3 font-medium">STATUS</th>}
+            {showDelivery && <th className="py-2.5 px-3 font-medium">STATUS</th>}
+            {showStatus && <th className="py-2.5 px-3 font-medium">TIER</th>}
             {showCampaign && <th className="py-2.5 px-3 font-medium">KAMPANYE</th>}
             {showProduct && <th className="py-2.5 px-3 font-medium">PRODUK</th>}
             {showHook && <th className="py-2.5 px-3 font-medium">HOOK</th>}
@@ -40,6 +41,7 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
               <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">
                 <td className="py-2.5 pr-3 max-w-xs"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></td>
                 <td className="py-2.5 px-3"><VideoIdLink videoId={v.videoId} account={v.account} /></td>
+                {showDelivery && <td className="py-2.5 px-3"><DeliveryBadge delivery={v.delivery} /></td>}
                 {showStatus && <td className="py-2.5 px-3"><StatusBadge status={v.status} /></td>}
                 {showCampaign && (
                   <td className="py-2.5 px-3 text-ink-muted max-w-[10rem]">

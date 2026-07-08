@@ -36,6 +36,23 @@ export function RoasBadge({ roas, thresholds, showLabel = true }) {
   )
 }
 
+// Badge status PENGIRIMAN TikTok mentah (Delivering/Excluded/Learning/…).
+// Beda dari StatusBadge (yang = tier penilaian Scale/Watch/Kill).
+export function DeliveryBadge({ delivery }) {
+  if (!delivery) return <span className="text-ink-faint text-xs">—</span>
+  const t = delivery.toLowerCase()
+  const tone = t.includes('deliver') && !t.includes('not') ? 'green'
+    : t.includes('learning') ? 'blue'
+    : t.includes('queue') ? 'amber'
+    : t.includes('exclud') ? 'red'
+    : 'muted'
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold ${TONE[tone]}`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />{delivery}
+    </span>
+  )
+}
+
 // Badge status lifecycle (Scale/Active/Watch/Kill/Nonaktif).
 export function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.inactive
