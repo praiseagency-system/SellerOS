@@ -164,7 +164,9 @@ export function GmvMaxProvider({ children }) {
         if (!active) return
         setCreatives(cre)
         const vids = cre.filter(c => c.creativeType === 'Video' && c.videoId).map(c => c.videoId)
-        setMeta(await loadVideoMeta(vids))
+        const loaded = await loadVideoMeta(vids)
+        // Merge (bukan replace) agar hasil scraping otomatis tak tertimpa.
+        if (active) setMeta(prev => ({ ...prev, ...loaded }))
       } catch (e) { if (active) setError(e.message) }
     })()
     return () => { active = false }
@@ -287,6 +289,12 @@ export function GmvMaxProvider({ children }) {
       await reload()
       // Lompat ke snapshot yang baru diunggah (jadi paling baru → period=null).
       setPeriod(null)
+      // Auto-scrape nama akun untuk video baru yang akunnya kosong — jalan di
+      // latar belakang (tak memblok), progresnya tampil via `enriching`.
+      const targets = parsed.rows
+        .filter(r => r.creativeType === 'Video' && r.videoId && !r.tiktokAccount)
+        .map(r => r.videoId)
+      runEnrich(targets).catch(() => {})
       return { ok: true, meta: parsed.meta }
     } catch (e) {
       setError(e.message)
@@ -303,11 +311,14 @@ export function GmvMaxProvider({ children }) {
     } finally { setBusy(false) }
   }
 
-  async function enrichUsernames() {
-    const targets = [...new Set(creativesEnriched
-      .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount
-        && (!meta[c.videoId] || meta[c.videoId].status === 'error'))
-      .map(c => c.videoId))]
+  // Scrape username via oEmbed publik untuk kumpulan videoId → cache Supabase.
+  // Cek cache DB dulu agar tak mengulang yang sudah 'ok'/'notfound'.
+  async function runEnrich(candidateIds) {
+    const cand = [...new Set((candidateIds || []).filter(Boolean))]
+    if (!cand.length) return { ok: true, filled: 0 }
+    const cached = await loadVideoMeta(cand).catch(() => ({}))
+    if (Object.keys(cached).length) setMeta(prev => ({ ...prev, ...cached }))
+    const targets = cand.filter(id => !cached[id] || cached[id].status === 'error')
     if (!targets.length) return { ok: true, filled: 0 }
     setEnriching({ done: 0, total: targets.length })
     try {
@@ -326,6 +337,13 @@ export function GmvMaxProvider({ children }) {
     } finally {
       setEnriching(null)
     }
+  }
+
+  // Tombol manual: scrape yang akunnya masih kosong di view sekarang.
+  function enrichUsernames() {
+    return runEnrich(creativesEnriched
+      .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount)
+      .map(c => c.videoId))
   }
 
   async function updateThresholds(next) {

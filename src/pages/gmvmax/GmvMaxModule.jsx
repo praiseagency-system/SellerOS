@@ -56,7 +56,7 @@ export default function GmvMaxModule({ page }) {
 
   return (
     <div>
-      {hasData && (
+      {hasData && page !== 'gmv_input' && (
         <div className="flex items-center justify-between gap-3 px-6 pt-4">
           <div className="flex items-center gap-2 flex-wrap">
             <select value={selectValue} onChange={e => setPeriod(e.target.value)}

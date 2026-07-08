@@ -1,131 +1,96 @@
-// Input Data — tabel mentah semua baris + filter, tombol Upload. Meniru
-// "Input Data Ads" Lacak.
-import { useState, useMemo } from 'react'
-import { UploadCloud, Search, AtSign, Loader2, History } from 'lucide-react'
+// Import Data — halaman upload bersih (drag & drop + panduan export). Nama akun
+// discrape otomatis di latar belakang setelah upload. Riwayat upload via toggle.
+import { useState, useRef } from 'react'
+import { UploadCloud, Loader2, History, BookOpen, CheckCircle2 } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { RoasBadge, EmptyState, fmtRp, VideoIdLink } from '../../components/gmvmax/ui'
 import { UploadHistoryModal } from '../../components/gmvmax/modals'
+import { fmtRp } from '../../components/gmvmax/ui'
 
-const LIMIT = 300
-
-export default function InputPage({ onOpenUpload }) {
-  const { rows, imports, thresholds, hasData, missingAccountCount, enriching, enrichUsernames, productNames } = useGmvMax()
-  const [q, setQ] = useState('')
+export default function InputPage() {
+  const { imports, upload, busy, enriching } = useGmvMax()
   const [showHistory, setShowHistory] = useState(false)
-  const [status, setStatus] = useState('')
-  const [type, setType] = useState('')
-  const [roasMin, setRoasMin] = useState('')
-  const [costMax, setCostMax] = useState('')
+  const [result, setResult] = useState(null)
+  const [err, setErr] = useState(null)
+  const [drag, setDrag] = useState(false)
+  const inputRef = useRef(null)
 
-  const statuses = useMemo(() => [...new Set(rows.map(r => r.status).filter(Boolean))], [rows])
-
-  const filtered = useMemo(() => {
-    return rows.filter(r => {
-      if (status && r.status !== status) return false
-      if (type && r.creativeType !== type) return false
-      if (roasMin && (r.roas ?? -1) < Number(roasMin)) return false
-      if (costMax && (r.cost ?? 0) > Number(costMax)) return false
-      if (q.trim()) {
-        const s = q.toLowerCase()
-        if (!((r.campaignName || '').toLowerCase().includes(s)
-          || (r.videoTitle || '').toLowerCase().includes(s)
-          || (r.tiktokAccount || '').toLowerCase().includes(s))) return false
-      }
-      return true
-    }).sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0))
-  }, [rows, status, type, roasMin, costMax, q])
-
-  if (!hasData) return <EmptyState title="Belum ada data GMV Max"
-    desc="Upload file export creative TikTok Shop untuk mulai."
-    action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium inline-flex items-center gap-2"><UploadCloud className="w-4 h-4" /> Upload Data</button>} />
+  async function handleFile(file) {
+    if (!file) return
+    setErr(null); setResult(null)
+    const r = await upload(file)
+    if (r.ok) setResult(r.meta); else setErr(r.error)
+  }
+  function onDrop(e) {
+    e.preventDefault(); setDrag(false)
+    handleFile(e.dataTransfer.files?.[0])
+  }
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-ink-muted">Total {rows.length.toLocaleString('id-ID')} baris · Threshold ROAS: <span className="text-emerald-500 font-medium">{thresholds.roasGood}</span> / <span className="text-red-500 font-medium">{thresholds.roasBad}</span></p>
-        <div className="flex items-center gap-2">
-          {(missingAccountCount > 0 || enriching) && (
-            <button onClick={() => enrichUsernames()} disabled={!!enriching}
-              className="px-3 py-2 rounded-lg text-sm border border-line/15 text-ink-muted hover:bg-fill/5 inline-flex items-center gap-2 disabled:opacity-70">
-              {enriching
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Scraping {enriching.done}/{enriching.total}…</>
-                : <><AtSign className="w-4 h-4" /> Lengkapi nama akun ({missingAccountCount})</>}
-            </button>
-          )}
-          <button onClick={() => setShowHistory(true)}
-            className="px-3 py-2 rounded-lg text-sm border border-line/15 text-ink-muted hover:bg-fill/5 inline-flex items-center gap-2">
-            <History className="w-4 h-4" /> Riwayat upload ({imports.length})
-          </button>
-          <button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium inline-flex items-center gap-2">
-            <UploadCloud className="w-4 h-4" /> Upload Data
-          </button>
-        </div>
+    <div className="p-6 max-w-2xl mx-auto space-y-5">
+      <div className="flex justify-end">
+        <button onClick={() => setShowHistory(true)}
+          className="px-3 py-1.5 rounded-lg text-sm border border-line/15 text-ink-muted hover:bg-fill/5 inline-flex items-center gap-2">
+          <History className="w-4 h-4" /> Riwayat ({imports.length})
+        </button>
       </div>
+
+      <div className="bg-surface rounded-2xl border border-line/10 p-6 shadow-sm">
+        <p className="text-sm font-medium text-ink mb-3">File Data</p>
+        <div
+          onClick={() => !busy && inputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); setDrag(true) }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          className={`border-2 border-dashed rounded-xl py-12 flex flex-col items-center gap-2 cursor-pointer transition-colors
+            ${drag ? 'border-accent bg-accent/5' : 'border-line/20 hover:border-accent/50'} ${busy ? 'opacity-70 cursor-wait' : ''}`}
+        >
+          {busy
+            ? <><Loader2 className="w-7 h-7 text-accent animate-spin" /><span className="text-sm text-ink-muted">Memproses…</span></>
+            : <>
+                <UploadCloud className="w-7 h-7 text-ink-faint" />
+                <span className="text-sm text-ink-muted">Drag &amp; drop, atau <span className="text-accent font-medium">Pilih File</span></span>
+                <span className="text-xs text-ink-faint">Export "creative data for product campaigns" TikTok Shop GMV Max (.xlsx)</span>
+              </>}
+        </div>
+        <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
+          onChange={e => handleFile(e.target.files?.[0])} />
+
+        {enriching && (
+          <p className="mt-3 text-xs text-ink-muted inline-flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Melengkapi nama akun otomatis… {enriching.done}/{enriching.total}
+          </p>
+        )}
+        {err && <p className="mt-3 text-sm text-red-500">{err}</p>}
+        {result && (
+          <div className="mt-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3">
+            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" /> Berhasil diimpor — {result.name}
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs text-ink-muted">
+              <span><span className="text-ink-faint">Baris: </span>{result.rowCount}</span>
+              <span><span className="text-ink-faint">Video: </span>{result.videoCount}</span>
+              <span><span className="text-ink-faint">Cost: </span>{fmtRp(result.totals?.cost)}</span>
+              <span><span className="text-ink-faint">Revenue: </span>{fmtRp(result.totals?.revenue)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-surface/60 rounded-2xl border border-line/10 p-5">
+        <p className="text-sm font-semibold text-ink inline-flex items-center gap-2 mb-3">
+          <BookOpen className="w-4 h-4 text-accent" /> Cara export dari TikTok
+        </p>
+        <ol className="text-sm text-ink-muted space-y-1.5 list-decimal list-inside">
+          <li>Buka TikTok Seller Center → GMV Max / iklan.</li>
+          <li>Pilih rentang <span className="text-ink">1 s/d hari ini</span> (bulan berjalan) untuk snapshot harian.</li>
+          <li>Export "creative data for product campaigns".</li>
+          <li>Download file .xlsx.</li>
+          <li>Upload file di form di atas.</li>
+        </ol>
+        <p className="text-xs text-ink-faint mt-3">Nama akun kreator otomatis dilengkapi setelah upload — tak perlu klik apa pun.</p>
+      </div>
+
       {showHistory && <UploadHistoryModal onClose={() => setShowHistory(false)} />}
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        <div className="relative col-span-2 md:col-span-1">
-          <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari…"
-            className="w-full pl-9 pr-2 py-2 rounded-lg bg-surface border border-line/10 text-sm text-ink" />
-        </div>
-        <select value={status} onChange={e => setStatus(e.target.value)} className="px-2 py-2 rounded-lg bg-surface border border-line/10 text-sm text-ink">
-          <option value="">Semua status</option>
-          {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={type} onChange={e => setType(e.target.value)} className="px-2 py-2 rounded-lg bg-surface border border-line/10 text-sm text-ink">
-          <option value="">Semua tipe</option>
-          <option value="Video">Video</option>
-          <option value="Product card">Product card</option>
-        </select>
-        <input value={roasMin} onChange={e => setRoasMin(e.target.value)} type="number" placeholder="ROAS min"
-          className="px-2 py-2 rounded-lg bg-surface border border-line/10 text-sm text-ink" />
-        <input value={costMax} onChange={e => setCostMax(e.target.value)} type="number" placeholder="Cost max"
-          className="px-2 py-2 rounded-lg bg-surface border border-line/10 text-sm text-ink" />
-      </div>
-
-      <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm overflow-x-auto">
-        <p className="text-xs text-ink-faint mb-2">{filtered.length.toLocaleString('id-ID')} baris {filtered.length > LIMIT && `(menampilkan ${LIMIT})`}</p>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-ink-faint border-b border-line/10">
-              <th className="py-2 pr-3 font-medium">VIDEO ID</th>
-              <th className="py-2 px-3 font-medium">STATUS</th>
-              <th className="py-2 px-3 font-medium">TIPE</th>
-              <th className="py-2 px-3 font-medium">AKUN</th>
-              <th className="py-2 px-3 font-medium">KAMPANYE</th>
-              <th className="py-2 px-3 font-medium">PRODUK</th>
-              <th className="py-2 px-3 font-medium text-right">COST</th>
-              <th className="py-2 px-3 font-medium text-right">REVENUE</th>
-              <th className="py-2 px-3 font-medium text-right">ROAS</th>
-              <th className="py-2 pl-3 font-medium text-right">ORDERS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.slice(0, LIMIT).map((r, i) => (
-              <tr key={r.videoId ? r.videoId + i : i} className="border-b border-line/5 hover:bg-fill/5">
-                <td className="py-2 pr-3">{r.creativeType === 'Video' ? <VideoIdLink videoId={r.videoId} account={r.tiktokAccount} /> : <span className="text-ink-faint">—</span>}</td>
-                <td className="py-2 px-3 text-ink-muted whitespace-nowrap">{r.status || '—'}</td>
-                <td className="py-2 px-3 text-ink-muted">{r.creativeType}</td>
-                <td className="py-2 px-3 text-ink-muted truncate max-w-[120px]">{r.tiktokAccount || '—'}</td>
-                <td className="py-2 px-3 text-ink truncate max-w-[160px]">{r.campaignName}</td>
-                <td className="py-2 px-3 max-w-[170px]">
-                  {r.productId
-                    ? (productNames[r.productId]
-                        ? <><p className="text-ink truncate">{productNames[r.productId]}</p>
-                            <p className="text-xs text-ink-faint font-mono truncate">{r.productId}</p></>
-                        : <span className="font-mono text-ink-muted text-xs block truncate">{r.productId}</span>)
-                    : <span className="text-ink-faint">—</span>}
-                </td>
-                <td className="py-2 px-3 text-right text-ink-muted whitespace-nowrap">{fmtRp(r.cost)}</td>
-                <td className="py-2 px-3 text-right text-ink whitespace-nowrap">{fmtRp(r.grossRevenue)}</td>
-                <td className="py-2 px-3 text-right"><RoasBadge roas={r.roas} thresholds={thresholds} showLabel={false} /></td>
-                <td className="py-2 pl-3 text-right text-ink-muted">{r.skuOrders || 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   )
 }
