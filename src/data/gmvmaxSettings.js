@@ -19,6 +19,8 @@ export async function getThresholds() {
     roasBad: Number(data.roas_bad),
     roasGreat: Number(data.roas_great),
     spendFloor: Number(data.spend_floor),
+    // Fallback ke default bila kolom belum ada (migration 0016 belum jalan).
+    killFloor: data.kill_floor != null ? Number(data.kill_floor) : DEFAULT_THRESHOLDS.killFloor,
   }
 }
 
@@ -31,6 +33,7 @@ export async function saveThresholds(t) {
     roas_bad: t.roasBad,
     roas_great: t.roasGreat,
     spend_floor: t.spendFloor,
+    kill_floor: t.killFloor,
     updated_at: new Date().toISOString(),
   })
   if (error) throw error

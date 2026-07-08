@@ -10,6 +10,7 @@ export const DEFAULT_THRESHOLDS = {
   roasBad: 4,        // <  bad   → Buruk (Rendah)
   roasGreat: 8,      // >= great → Sangat Bagus
   spendFloor: 50000, // lantai spend agar ROAS dihitung "terbukti"
+  killFloor: 30000,  // lantai spend agar layak di-Kill (di bawah ini = Watch)
 }
 
 // Tier kualitas untuk pewarnaan (Dashboard/Overview/badge).
@@ -40,7 +41,9 @@ export function roasBadge(roas, t = DEFAULT_THRESHOLDS) {
 export function videoStatus({ roas, cost, trend = null }, t = DEFAULT_THRESHOLDS) {
   if (!cost) return 'inactive'                             // tak pernah dibelanjakan
   if (roas == null) return 'active'
-  if (roas < 1) return 'kill'                              // rugi terbukti
+  // Rugi (ROAS < 1): hanya Kill bila spend sudah cukup (≥ killFloor). Di bawah
+  // lantai = spend receh, belum cukup data → Watch, bukan Kill.
+  if (roas < 1) return cost >= (t.killFloor ?? 0) ? 'kill' : 'watch'
   if (roas >= t.roasGood && cost < t.spendFloor) return 'watch' // potensi (spend receh)
   if (roas >= t.roasGood) return trend === 'down' ? 'watch' : 'scale'
   if (roas >= t.roasBad) return trend === 'down' ? 'watch' : 'active'

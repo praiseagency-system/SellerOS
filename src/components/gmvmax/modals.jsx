@@ -147,6 +147,7 @@ export function ThresholdModal({ onClose }) {
         <Field label="Bagus / Tinggi (≥)" hint="Ambang hijau" value={t.roasGood} onChange={v => set('roasGood', v)} />
         <Field label="Buruk / Rendah (<)" hint="Di bawah ini = merah" value={t.roasBad} onChange={v => set('roasBad', v)} />
         <Field label="Lantai Spend (Rp)" hint="ROAS tinggi di bawah ini = Potensi, bukan Scale" value={t.spendFloor} step={10000} onChange={v => set('spendFloor', v)} />
+        <Field label="Lantai Kill (Rp)" hint="ROAS rugi tapi spend di bawah ini = Watch, bukan Kill" value={t.killFloor} step={10000} onChange={v => set('killFloor', v)} />
       </div>
     </Overlay>
   )
