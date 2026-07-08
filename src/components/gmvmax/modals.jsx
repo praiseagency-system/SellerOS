@@ -1,8 +1,8 @@
 // Modal modul GMV Max: Upload data, Atur Threshold, Note/Log per video.
 import { useState, useRef } from 'react'
-import { X, UploadCloud, Loader2, Sliders, FileSpreadsheet } from 'lucide-react'
+import { X, UploadCloud, Loader2, Sliders, FileSpreadsheet, History, Calendar, Trash2 } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { fmtRp } from './ui'
+import { fmtRp, fmtRoasX } from './ui'
 
 function Overlay({ title, icon: Icon, onClose, children, footer }) {
   return (
@@ -79,6 +79,48 @@ export function UploadModal({ onClose }) {
 const Info = ({ label, value }) => (
   <div><span className="text-ink-faint">{label}: </span><span className="text-ink font-medium">{value}</span></div>
 )
+
+// ─── Riwayat Upload ──────────────────────────────────────────────────────────
+// Daftar snapshot yang sudah di-upload + hapus. Dibuka dari toggle di Import Data.
+export function UploadHistoryModal({ onClose }) {
+  const { imports, removeImport, busy } = useGmvMax()
+  const [confirmId, setConfirmId] = useState(null)
+  return (
+    <Overlay title="Riwayat upload" icon={History} onClose={onClose}>
+      {imports.length === 0 ? (
+        <p className="text-sm text-ink-faint py-6 text-center">Belum ada upload.</p>
+      ) : (
+        <ul className="space-y-2 max-h-[24rem] overflow-y-auto">
+          {imports.map(imp => (
+            <li key={imp.id} className="flex items-center gap-3 bg-surface2 rounded-xl border border-line/10 p-3">
+              <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center flex-shrink-0">
+                <Calendar className="w-4 h-4" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-ink text-sm">{imp.name}</p>
+                <p className="text-xs text-ink-faint truncate">
+                  {imp.start_date && imp.end_date ? `${imp.start_date} — ${imp.end_date} · ` : ''}{imp.source_filename}
+                </p>
+              </div>
+              <div className="text-right text-xs flex-shrink-0 hidden sm:block">
+                <p className="text-ink">{fmtRp(imp.totals?.revenue)}</p>
+                <p className="text-ink-faint">ROAS {fmtRoasX(imp.totals?.roas)}</p>
+              </div>
+              {confirmId === imp.id ? (
+                <div className="flex gap-1 flex-shrink-0">
+                  <button disabled={busy} onClick={() => removeImport(imp.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-xs">Hapus</button>
+                  <button onClick={() => setConfirmId(null)} className="px-2 py-1 rounded-lg text-ink-muted text-xs">Batal</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmId(imp.id)} className="text-ink-faint hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Overlay>
+  )
+}
 
 // ─── Threshold ───────────────────────────────────────────────────────────────
 export function ThresholdModal({ onClose }) {

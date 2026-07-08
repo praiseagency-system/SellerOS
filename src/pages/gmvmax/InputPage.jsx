@@ -1,15 +1,17 @@
 // Input Data — tabel mentah semua baris + filter, tombol Upload. Meniru
 // "Input Data Ads" Lacak.
 import { useState, useMemo } from 'react'
-import { UploadCloud, Search, AtSign, Loader2 } from 'lucide-react'
+import { UploadCloud, Search, AtSign, Loader2, History } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { RoasBadge, EmptyState, fmtRp, VideoIdLink } from '../../components/gmvmax/ui'
+import { UploadHistoryModal } from '../../components/gmvmax/modals'
 
 const LIMIT = 300
 
 export default function InputPage({ onOpenUpload }) {
-  const { rows, thresholds, hasData, missingAccountCount, enriching, enrichUsernames, productNames } = useGmvMax()
+  const { rows, imports, thresholds, hasData, missingAccountCount, enriching, enrichUsernames, productNames } = useGmvMax()
   const [q, setQ] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
   const [status, setStatus] = useState('')
   const [type, setType] = useState('')
   const [roasMin, setRoasMin] = useState('')
@@ -50,11 +52,16 @@ export default function InputPage({ onOpenUpload }) {
                 : <><AtSign className="w-4 h-4" /> Lengkapi nama akun ({missingAccountCount})</>}
             </button>
           )}
+          <button onClick={() => setShowHistory(true)}
+            className="px-3 py-2 rounded-lg text-sm border border-line/15 text-ink-muted hover:bg-fill/5 inline-flex items-center gap-2">
+            <History className="w-4 h-4" /> Riwayat upload ({imports.length})
+          </button>
           <button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium inline-flex items-center gap-2">
             <UploadCloud className="w-4 h-4" /> Upload Data
           </button>
         </div>
       </div>
+      {showHistory && <UploadHistoryModal onClose={() => setShowHistory(false)} />}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div className="relative col-span-2 md:col-span-1">

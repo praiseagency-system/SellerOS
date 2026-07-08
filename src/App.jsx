@@ -21,14 +21,13 @@ const PAGE_KEYS = ['quadrant', 'calculator', 'products', 'performance', 'campaig
 const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
   gmv_dashboard: { title: 'GMV Max Ads', subtitle: 'Ringkasan performa GMV MAX' },
-  gmv_overview:  { title: 'Video', subtitle: 'Semua video: filter status/kandidat scale + rekomendasi aksi' },
+  gmv_overview:  { title: 'Performa Video', subtitle: 'Semua video: filter status/kandidat scale + rekomendasi aksi' },
   gmv_creator:   { title: 'Creator', subtitle: 'Leaderboard kreator per performa' },
   gmv_product:   { title: 'Performa Produk', subtitle: 'Rollup GMV Max per produk (nama dari menu Produk)' },
   gmv_insight:   { title: 'AI Insight', subtitle: 'Rekomendasi otomatis berbasis data' },
   gmv_boost:     { title: 'Boost Center', subtitle: 'Rekomendasi & pipeline kode boost video jempolan' },
   gmv_log:       { title: 'Log Optimasi', subtitle: 'Jurnal tindakan optimasi ber-timestamp' },
-  gmv_input:     { title: 'Input Data', subtitle: 'Upload & tabel mentah GMV Max' },
-  gmv_history:   { title: 'Riwayat Upload', subtitle: 'Periode tersimpan' },
+  gmv_input:     { title: 'Import Data', subtitle: 'Upload, tabel mentah & riwayat upload GMV Max' },
 }
 
 // Gate auth: cek sesi dulu, tampilkan login bila belum masuk.

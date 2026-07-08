@@ -3,7 +3,7 @@ import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronRight, ChevronDown,
   BarChart3, Sparkles, Info, Menu, Package, Megaphone,
-  LayoutDashboard, PlaySquare, Users, Upload, History, ClipboardList, Rocket
+  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -16,14 +16,15 @@ const NAV = [
     section: 'GMV MAX ADS',
     items: [
       { id: 'gmv_dashboard', icon: LayoutDashboard },
-      { id: 'gmv_overview',  icon: PlaySquare },
-      { id: 'gmv_creator',   icon: Users },
-      { id: 'gmv_product',   icon: Package },
+      { id: 'gmv_monitoring', icon: LineChart, children: [
+        { id: 'gmv_input',    icon: Upload },
+        { id: 'gmv_overview', icon: PlaySquare },
+        { id: 'gmv_product',  icon: Package },
+        { id: 'gmv_creator',  icon: Users },
+      ] },
       { id: 'gmv_insight',   icon: Sparkles },
       { id: 'gmv_boost',     icon: Rocket },
       { id: 'gmv_log',       icon: ClipboardList },
-      { id: 'gmv_input',     icon: Upload },
-      { id: 'gmv_history',   icon: History },
     ],
   },
   {
@@ -83,8 +84,40 @@ function NavItem({ item, active, onClick, t }) {
   )
 }
 
+// Item induk yang punya anak (submenu collapsible), mis. Monitoring. Saat
+// sidebar diciutkan (ikon saja), anak dirender rata tanpa induk.
+function NavParent({ item, t, currentPage, collapsed, open, onToggle, onNavigate }) {
+  const childActive = item.children.some(c => c.id === currentPage)
+  if (collapsed) {
+    return item.children.map(c => (
+      <NavItem key={c.id} item={c} t={t} active={currentPage === c.id} onClick={onNavigate} />
+    ))
+  }
+  const expanded = open || childActive
+  return (
+    <div>
+      <button onClick={onToggle}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all
+          ${childActive ? 'text-blue-500' : 'text-ink-muted hover:bg-fill/5 hover:text-ink'}`}
+      >
+        <item.icon className={`w-4 h-4 flex-shrink-0 ${childActive ? 'text-blue-500' : ''}`} />
+        <span className="flex-1 text-sm font-medium truncate">{t(`nav.${item.id}.label`)}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-ink-faint transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`} />
+      </button>
+      {expanded && (
+        <div className="ml-4 pl-3 border-l border-line/10 space-y-0.5 mt-0.5">
+          {item.children.map(c => (
+            <NavItem key={c.id} item={c} t={t} active={currentPage === c.id} onClick={onNavigate} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SidebarContent({
-  sidebarOpen, setSidebarOpen, openSections, toggleSection, currentPage, onNavigate,
+  sidebarOpen, setSidebarOpen, openSections, toggleSection, openSubs, toggleSub,
+  currentPage, onNavigate,
   workspaces, currentWorkspace, onSwitchWorkspace, onWorkspaceChange, setMobileOpen, t,
 }) {
   return (
@@ -119,15 +152,25 @@ function SidebarContent({
               ) : null}
               {(isOpen || !sidebarOpen) && (
                 <div className="space-y-0.5">
-                  {group.items.map(item => (
-                    <NavItem
-                      key={item.id}
-                      item={item}
-                      t={t}
-                      active={currentPage === item.id}
-                      onClick={id => { onNavigate(id); setMobileOpen(false) }}
-                    />
-                  ))}
+                  {group.items.map(item => item.children
+                    ? <NavParent
+                        key={item.id}
+                        item={item}
+                        t={t}
+                        currentPage={currentPage}
+                        collapsed={!sidebarOpen}
+                        open={openSubs[item.id] ?? true}
+                        onToggle={() => toggleSub(item.id)}
+                        onNavigate={id => { onNavigate(id); setMobileOpen(false) }}
+                      />
+                    : <NavItem
+                        key={item.id}
+                        item={item}
+                        t={t}
+                        active={currentPage === item.id}
+                        onClick={id => { onNavigate(id); setMobileOpen(false) }}
+                      />
+                  )}
                 </div>
               )}
             </div>
@@ -167,10 +210,14 @@ export default function Layout({
   const [openSections, setOpenSections] = useState(() =>
     NAV.reduce((acc, g) => ({ ...acc, [g.section]: true }), {})
   )
+  const [openSubs, setOpenSubs] = useState({ gmv_monitoring: true })
   const { t } = useLang()
 
   function toggleSection(section) {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }))
+  }
+  function toggleSub(id) {
+    setOpenSubs(prev => ({ ...prev, [id]: !(prev[id] ?? true) }))
   }
   const { sessions, showHistory, setShowHistory, refreshSessions, loadSession } = useQuadrant()
 
@@ -193,6 +240,8 @@ export default function Layout({
           setSidebarOpen={setSidebarOpen}
           openSections={openSections}
           toggleSection={toggleSection}
+          openSubs={openSubs}
+          toggleSub={toggleSub}
           currentPage={currentPage}
           onNavigate={onNavigate}
           workspaces={workspaces}

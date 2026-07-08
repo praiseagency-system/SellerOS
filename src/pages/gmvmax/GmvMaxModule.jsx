@@ -11,7 +11,6 @@ import ProductPage from './ProductPage'
 import InsightPage from './InsightPage'
 import BoostPage from './BoostPage'
 import InputPage from './InputPage'
-import HistoryPage from './HistoryPage'
 import LogPage from './LogPage'
 
 const PAGES = {
@@ -23,7 +22,6 @@ const PAGES = {
   gmv_boost: BoostPage,
   gmv_log: LogPage,
   gmv_input: InputPage,
-  gmv_history: HistoryPage,
 }
 
 // Kelompokkan snapshot per bulan untuk optgroup (mis. "Juli 2026").
