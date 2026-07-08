@@ -43,11 +43,17 @@ export default function OverviewPage({ onOpenUpload }) {
   const { videos, thresholds, notes, productNames, hasData, prev, periodName } = useGmvMax()
   const [seg, setSeg] = useState('all')
   const [q, setQ] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all') // status pengiriman TikTok
   const [noteVideo, setNoteVideo] = useState(null)
   const [showThreshold, setShowThreshold] = useState(false)
 
   const sum = useMemo(() => sumVideos(videoBase(videos)), [videos])
   const prevSum = useMemo(() => (prev ? sumVideos(videoBase(prev.videos)) : null), [prev])
+
+  // Daftar status pengiriman yang benar-benar ada di data (untuk isi dropdown).
+  const statusOptions = useMemo(
+    () => [...new Set(videos.map(v => v.delivery).filter(Boolean))].sort(),
+    [videos])
 
   const filtered = useMemo(() => {
     let list
@@ -58,13 +64,14 @@ export default function OverviewPage({ onOpenUpload }) {
       if (seg !== 'all') list = list.filter(v => v.status === seg)
       list = list.sort((a, b) => b.lifetime.revenue - a.lifetime.revenue)
     }
+    if (statusFilter !== 'all') list = list.filter(v => v.delivery === statusFilter)
     if (q.trim()) {
       const s = q.toLowerCase()
       list = list.filter(v => (v.title || '').toLowerCase().includes(s)
         || (v.account || '').toLowerCase().includes(s) || (v.videoId || '').includes(s))
     }
     return list
-  }, [videos, seg, q, thresholds])
+  }, [videos, seg, q, statusFilter, thresholds])
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -120,10 +127,18 @@ export default function OverviewPage({ onOpenUpload }) {
         </p>
       )}
 
-      <div className="relative">
-        <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari video ID, judul, atau akun…"
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-line/10 text-sm text-ink" />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari video ID, judul, atau akun…"
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-line/10 text-sm text-ink" />
+        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          title="Filter status pengiriman"
+          className="px-3 py-2.5 rounded-xl bg-surface border border-line/10 text-sm text-ink max-w-[12rem]">
+          <option value="all">Semua status</option>
+          {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
