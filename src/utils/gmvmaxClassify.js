@@ -41,13 +41,13 @@ export function roasBadge(roas, t = DEFAULT_THRESHOLDS) {
 export function videoStatus({ roas, cost, trend = null }, t = DEFAULT_THRESHOLDS) {
   if (!cost) return 'inactive'                             // tak pernah dibelanjakan
   if (roas == null) return 'active'
-  // Rugi (ROAS < 1): hanya Kill bila spend sudah cukup (≥ killFloor). Di bawah
-  // lantai = spend receh, belum cukup data → Watch, bukan Kill.
-  if (roas < 1) return cost >= (t.killFloor ?? 0) ? 'kill' : 'watch'
+  // Di bawah ambang Buruk/Rendah (roasBad): wajib Kill BILA spend sudah cukup
+  // (≥ killFloor). Bila spend masih di bawah lantai = spend receh, belum cukup
+  // data → Watch dulu, bukan Kill.
+  if (roas < t.roasBad) return cost >= (t.killFloor ?? 0) ? 'kill' : 'watch'
   if (roas >= t.roasGood && cost < t.spendFloor) return 'watch' // potensi (spend receh)
   if (roas >= t.roasGood) return trend === 'down' ? 'watch' : 'scale'
-  if (roas >= t.roasBad) return trend === 'down' ? 'watch' : 'active'
-  return 'watch'                                           // 1 <= roas < bad
+  return trend === 'down' ? 'watch' : 'active'             // roasBad ≤ roas < roasGood
 }
 
 // Metadata tampilan status.
@@ -55,7 +55,7 @@ export const STATUS_META = {
   scale:    { label: 'Scale',    tone: 'green',  icon: '★', desc: 'ROAS tinggi & spend sehat — naikkan budget.' },
   active:   { label: 'Active',   tone: 'blue',   icon: '✓', desc: 'Performa sehat — pertahankan.' },
   watch:    { label: 'Watch',    tone: 'amber',  icon: '⚠', desc: 'Perlu dipantau / tes scaling / refresh.' },
-  kill:     { label: 'Kill',     tone: 'red',    icon: '✕', desc: 'Rugi — matikan & realokasi budget.' },
+  kill:     { label: 'Kill',     tone: 'red',    icon: '✕', desc: 'ROAS di bawah ambang buruk & spend cukup — matikan & realokasi.' },
   inactive: { label: 'Nonaktif', tone: 'muted',  icon: '·', desc: 'Tidak dibelanjakan pada periode ini.' },
 }
 
