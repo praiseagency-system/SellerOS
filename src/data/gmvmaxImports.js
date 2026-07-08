@@ -1,6 +1,8 @@
 // Lapisan data GMV Max — Supabase (gmvmax_imports & gmvmax_creatives).
-// Tiap upload = 1 row import + N row creatives (CASCADE). Identitas periode =
-// (workspace + name); re-upload periode sama → ganti snapshot. RLS per pemilik.
+// Tiap upload = 1 SNAPSHOT harian (1 row import + N row creatives, CASCADE).
+// Identitas snapshot = (workspace + snapshot_date); re-upload tanggal sama →
+// ganti snapshot (perbaikan). Banyak snapshot boleh hidup dalam 1 bulan. RLS
+// per pemilik.
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
 
@@ -14,7 +16,7 @@ export async function listImports() {
     .from('gmvmax_imports')
     .select('*')
     .eq('workspace_id', wsId)
-    .order('period_month', { ascending: false, nullsFirst: false })
+    .order('snapshot_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
   if (error) throw error
   return data || []
@@ -50,10 +52,12 @@ export async function saveImport(parsed, settings = null) {
   if (!wsId) throw new Error('Workspace tidak aktif.')
   const { meta, rows } = parsed
   const name = meta.name || meta.filename || 'Import'
+  const snapshotDate = meta.snapshotDate || meta.endDate || null
 
-  // Ganti snapshot periode sama (creatives ikut via CASCADE).
-  await supabase.from('gmvmax_imports').delete()
-    .eq('workspace_id', wsId).eq('name', name)
+  // Ganti snapshot tanggal sama (creatives ikut via CASCADE). Kalau tanggal tak
+  // terbaca dari nama file, jatuh ke identitas lama (name) agar tetap idempoten.
+  const del = supabase.from('gmvmax_imports').delete().eq('workspace_id', wsId)
+  await (snapshotDate ? del.eq('snapshot_date', snapshotDate) : del.eq('name', name))
 
   const { data: imp, error } = await supabase
     .from('gmvmax_imports')
@@ -61,6 +65,7 @@ export async function saveImport(parsed, settings = null) {
       workspace_id: wsId,
       name,
       period_month: meta.periodMonth,
+      snapshot_date: snapshotDate,
       start_date: meta.startDate,
       end_date: meta.endDate,
       currency: meta.currency || 'IDR',

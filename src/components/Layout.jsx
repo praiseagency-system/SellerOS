@@ -3,7 +3,7 @@ import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronRight, ChevronDown,
   BarChart3, Sparkles, Info, Menu, Package, Megaphone,
-  LayoutDashboard, PlaySquare, ListChecks, Users, Upload, History
+  LayoutDashboard, PlaySquare, Users, Upload, History, ClipboardList, Rocket
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -17,10 +17,11 @@ const NAV = [
     items: [
       { id: 'gmv_dashboard', icon: LayoutDashboard },
       { id: 'gmv_overview',  icon: PlaySquare },
-      { id: 'gmv_check',     icon: ListChecks },
       { id: 'gmv_creator',   icon: Users },
       { id: 'gmv_product',   icon: Package },
       { id: 'gmv_insight',   icon: Sparkles },
+      { id: 'gmv_boost',     icon: Rocket },
+      { id: 'gmv_log',       icon: ClipboardList },
       { id: 'gmv_input',     icon: Upload },
       { id: 'gmv_history',   icon: History },
     ],

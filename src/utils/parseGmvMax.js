@@ -76,21 +76,35 @@ export function deriveHook(title) {
   return 'lainnya'
 }
 
-// ─── Periode dari nama file ──────────────────────────────────────────────────
-// "creative data ... 2026-06-01 00 ~ 2026-06-30 12.xlsx"
-//   → { startDate:'2026-06-01', endDate:'2026-06-30', periodMonth:'2026-06-01', name:'Jun 2026' }
+// ─── Periode / snapshot dari nama file ───────────────────────────────────────
+// Model SNAPSHOT HARIAN: tiap file = potret kumulatif (MTD) "sampai" tanggal
+// akhir rentang. `snapshotDate` = tanggal akhir (as-of); `name` = label tanggal
+// harian ("8 Jul 2026"); `periodMonth` tetap dipakai untuk mengelompokkan bulan.
+// "creative data ... 2026-07-01 00 ~ 2026-07-08 12.xlsx"
+//   → { startDate:'2026-07-01', endDate:'2026-07-08', snapshotDate:'2026-07-08',
+//       periodMonth:'2026-07-01', name:'8 Jul 2026' }
 const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 
+// 'YYYY-MM-DD' → '8 Jul 2026'. Non-tanggal → null.
+export function fmtSnapshotLabel(isoDate) {
+  if (!isoDate) return null
+  const m = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return null
+  const [, y, mo, d] = m
+  return `${+d} ${MONTHS_ID[(+mo) - 1]} ${y}`
+}
+
 export function parsePeriodFromFilename(filename) {
-  const out = { startDate: null, endDate: null, periodMonth: null, name: null }
+  const out = { startDate: null, endDate: null, snapshotDate: null, periodMonth: null, name: null }
   if (!filename) return out
   const dates = (filename.match(/\d{4}-\d{2}-\d{2}/g) || [])
   if (dates.length >= 1) {
     out.startDate = dates[0]
     out.endDate = dates[dates.length - 1]
+    out.snapshotDate = out.endDate           // as-of = tanggal akhir rentang
     const [y, m] = dates[0].split('-')
     out.periodMonth = `${y}-${m}-01`
-    out.name = `${MONTHS_ID[(+m) - 1]} ${y}`
+    out.name = fmtSnapshotLabel(out.snapshotDate)
   }
   return out
 }

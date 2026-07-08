@@ -1,21 +1,30 @@
-// Video Overview — semua video ditrack, filter tier + status, cari, Export CSV.
+// Halaman Video (gabungan Overview + Check lama) — daftar semua video dengan
+// KPI, filter status + preset diagnostik ("Kandidat Scale"), kolom rekomendasi
+// AKSI, Atur Threshold, dan Export CSV. Satu tempat untuk memantau & memutuskan.
 import { useState, useMemo } from 'react'
-import { Download, Search, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart, Rocket } from 'lucide-react'
+import { Download, Search, Sliders, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart, Rocket } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { Pill, EmptyState, StatCard, DeltaBadge, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import VideoTable from '../../components/gmvmax/VideoTable'
-import { NoteModal } from '../../components/gmvmax/modals'
+import { NoteModal, ThresholdModal } from '../../components/gmvmax/modals'
 import { exportVideosCsv } from '../../utils/gmvmaxCsv'
 
+// Segmen menggabungkan tier status (Scale/Watch/Kill) + preset diagnostik unik
+// "Kandidat Scale" (ROAS tinggi tapi spend masih di bawah lantai — layak dites
+// naik budget). Preset "Top"/"ROAS Rendah" lama = setara Scale/Kill.
 const SEGMENTS = [
   { id: 'all', label: 'Semua', tone: 'blue' },
   { id: 'scale', label: 'Scale', tone: 'green' },
+  { id: 'candidate', label: 'Kandidat Scale', tone: 'violet' },
   { id: 'watch', label: 'Watch / Potensi', tone: 'amber' },
   { id: 'kill', label: 'Kill', tone: 'red' },
 ]
 
 const n = (v) => v.toLocaleString('id-ID')
 const videoBase = (arr) => arr.filter(v => v.lifetime.cost > 0 || v.lifetime.revenue > 0)
+// Kandidat Scale: ROAS ≥ ambang bagus tapi spend < lantai (belum diberi budget).
+const isCandidate = (v, th) => (v.lifetime.roas ?? 0) >= th.roasGood && v.lifetime.cost > 0 && v.lifetime.cost < th.spendFloor
+
 function sumVideos(arr) {
   const s = { video: arr.length, cost: 0, revenue: 0, orders: 0, roas: null, scale: 0, watch: 0, kill: 0 }
   for (const v of arr) {
@@ -35,27 +44,34 @@ export default function OverviewPage({ onOpenUpload }) {
   const [seg, setSeg] = useState('all')
   const [q, setQ] = useState('')
   const [noteVideo, setNoteVideo] = useState(null)
+  const [showThreshold, setShowThreshold] = useState(false)
 
   const sum = useMemo(() => sumVideos(videoBase(videos)), [videos])
   const prevSum = useMemo(() => (prev ? sumVideos(videoBase(prev.videos)) : null), [prev])
 
   const filtered = useMemo(() => {
-    let list = videos.filter(v => v.lifetime.cost > 0 || v.lifetime.revenue > 0)
-    if (seg !== 'all') list = list.filter(v => v.status === seg)
+    let list
+    if (seg === 'candidate') {
+      list = videos.filter(v => isCandidate(v, thresholds)).sort((a, b) => (b.lifetime.roas ?? 0) - (a.lifetime.roas ?? 0))
+    } else {
+      list = videoBase(videos)
+      if (seg !== 'all') list = list.filter(v => v.status === seg)
+      list = list.sort((a, b) => b.lifetime.revenue - a.lifetime.revenue)
+    }
     if (q.trim()) {
       const s = q.toLowerCase()
       list = list.filter(v => (v.title || '').toLowerCase().includes(s)
         || (v.account || '').toLowerCase().includes(s) || (v.videoId || '').includes(s))
     }
-    return list.sort((a, b) => b.lifetime.revenue - a.lifetime.revenue)
-  }, [videos, seg, q])
+    return list
+  }, [videos, seg, q, thresholds])
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
 
   const counts = SEGMENTS.reduce((acc, s) => {
-    acc[s.id] = s.id === 'all'
-      ? videos.filter(v => v.lifetime.cost > 0 || v.lifetime.revenue > 0).length
+    acc[s.id] = s.id === 'all' ? videoBase(videos).length
+      : s.id === 'candidate' ? videos.filter(v => isCandidate(v, thresholds)).length
       : videos.filter(v => v.status === s.id).length
     return acc
   }, {})
@@ -79,17 +95,30 @@ export default function OverviewPage({ onOpenUpload }) {
         <StatCard icon={Rocket} tone="green" label="Scale" value={n(sum.scale)} sub={`${n(sum.watch)} watch · ${n(sum.kill)} kill`}
           delta={<DeltaBadge cur={sum.scale} prev={prevSum?.scale} />} />
       </div>
+
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="flex flex-wrap gap-1.5">
           {SEGMENTS.map(s => (
             <Pill key={s.id} active={seg === s.id} tone={s.tone} count={counts[s.id]} onClick={() => setSeg(s.id)}>{s.label}</Pill>
           ))}
         </div>
-        <button onClick={() => exportVideosCsv(filtered)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-ink-muted hover:bg-fill/5 border border-line/10">
-          <Download className="w-4 h-4" /> Export CSV
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setShowThreshold(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-ink-muted hover:bg-fill/5 border border-line/10">
+            <Sliders className="w-4 h-4" /> Atur Threshold
+          </button>
+          <button onClick={() => exportVideosCsv(filtered)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-ink-muted hover:bg-fill/5 border border-line/10">
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
+        </div>
       </div>
+
+      {seg === 'candidate' && (
+        <p className="text-xs text-ink-faint -mt-1">
+          ROAS tinggi tapi spend masih di bawah lantai ({fmtRpC(thresholds.spendFloor)}) — kandidat kuat untuk dinaikkan budget-nya.
+        </p>
+      )}
 
       <div className="relative">
         <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
@@ -98,10 +127,12 @@ export default function OverviewPage({ onOpenUpload }) {
       </div>
 
       <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
-        <VideoTable videos={filtered} thresholds={thresholds} notes={notes} onNote={setNoteVideo} showHook showStatus />
+        <p className="text-xs text-ink-faint mb-2">{filtered.length} video</p>
+        <VideoTable videos={filtered} thresholds={thresholds} notes={notes} onNote={setNoteVideo} showStatus showAction />
       </div>
 
       {noteVideo && <NoteModal video={noteVideo} onClose={() => setNoteVideo(null)} />}
+      {showThreshold && <ThresholdModal onClose={() => setShowThreshold(false)} />}
     </div>
   )
 }

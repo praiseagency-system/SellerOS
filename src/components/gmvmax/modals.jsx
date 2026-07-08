@@ -55,6 +55,11 @@ export function UploadModal({ onClose }) {
           </button>
           <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => handleFile(e.target.files?.[0])} />
+          <p className="text-xs text-ink-faint mt-3 leading-relaxed">
+            <span className="text-ink-muted font-medium">Tips harian:</span> export rentang <b>1 s/d hari ini</b> bulan
+            berjalan, lalu upload sekali sehari. Tiap upload jadi snapshot bertanggal — tool otomatis menghitung angka
+            harian & tren. Upload ulang tanggal sama akan menimpa (memperbaiki).
+          </p>
           {err && <p className="text-xs text-red-500 mt-3">{err}</p>}
         </>
       ) : (
@@ -117,27 +122,45 @@ function Field({ label, hint, value, onChange, step = 0.5 }) {
 
 // ─── Note/Log ────────────────────────────────────────────────────────────────
 const ACTIONS = ['', 'Scale', 'Boost', 'Refresh', 'Watch', 'Kill']
+const ACTION_TONE = {
+  Scale: 'bg-emerald-500/15 text-emerald-500', Boost: 'bg-violet-500/15 text-violet-500',
+  Refresh: 'bg-blue-500/15 text-blue-500', Watch: 'bg-amber-500/15 text-amber-500',
+  Kill: 'bg-red-500/15 text-red-500',
+}
+const fmtLogDate = (iso) => new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
 export function NoteModal({ video, onClose }) {
-  const { notes, setNote, clearNote } = useGmvMax()
+  const { notes, setNote, clearNote, actionLog, logAction, removeActionLog } = useGmvMax()
   const existing = notes[video.videoId]
   const [body, setBody] = useState(existing?.body || '')
   const [actionTag, setActionTag] = useState(existing?.action_tag || '')
   const [saving, setSaving] = useState(false)
 
+  const history = actionLog.filter(e => e.video_id === video.videoId)
+
   async function save() {
     setSaving(true)
-    try { await setNote(video.videoId, { body, actionTag: actionTag || null }); onClose() }
-    finally { setSaving(false) }
+    try {
+      await setNote(video.videoId, { body, actionTag: actionTag || null })
+      // Rekam ke Log Optimasi (append) hanya bila ada isi.
+      if (actionTag || body.trim()) {
+        await logAction({
+          videoId: video.videoId, videoTitle: video.title, tiktokAccount: video.account,
+          actionTag: actionTag || null, body: body.trim() || null, roas: video.lifetime?.roas ?? null,
+        })
+      }
+      onClose()
+    } finally { setSaving(false) }
   }
 
   return (
     <Overlay title="Catatan / Log Video" onClose={onClose}
       footer={<>
         {existing && <button onClick={async () => { await clearNote(video.videoId); onClose() }}
-          className="px-4 py-2 rounded-lg text-red-500 text-sm mr-auto">Hapus</button>}
+          className="px-4 py-2 rounded-lg text-red-500 text-sm mr-auto">Hapus catatan aktif</button>}
         <button onClick={onClose} className="px-4 py-2 rounded-lg text-ink-muted text-sm">Batal</button>
         <button onClick={save} disabled={saving} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">
-          {saving ? 'Menyimpan…' : 'Simpan'}
+          {saving ? 'Menyimpan…' : 'Simpan & catat'}
         </button>
       </>}>
       <p className="text-sm text-ink-muted mb-3 truncate">{video.title || video.videoId}</p>
@@ -150,10 +173,35 @@ export function NoteModal({ video, onClose }) {
       </label>
       <label className="block">
         <span className="text-sm font-medium text-ink">Catatan</span>
-        <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
+        <textarea value={body} onChange={e => setBody(e.target.value)} rows={3}
           placeholder="mis. Naikkan budget 30%, brief kreator reshoot hook before-after…"
           className="mt-1 w-full px-3 py-2 rounded-lg bg-surface2 border border-line/15 text-ink text-sm resize-none" />
       </label>
+
+      {history.length > 0 && (
+        <div className="mt-4 border-t border-line/10 pt-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-ink-faint mb-2">Riwayat optimasi</p>
+          <ul className="space-y-2 max-h-44 overflow-y-auto">
+            {history.map(e => (
+              <li key={e.id} className="flex items-start gap-2 text-sm group">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {e.action_tag && <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${ACTION_TONE[e.action_tag] || 'bg-fill/10 text-ink-faint'}`}>{e.action_tag}</span>}
+                    <span className="text-xs text-ink-faint">{fmtLogDate(e.created_at)}</span>
+                    {e.roas != null && <span className="text-xs text-ink-faint">· ROAS {(+e.roas).toFixed(1)}x</span>}
+                  </div>
+                  {e.body && <p className="text-ink-muted text-xs mt-0.5">{e.body}</p>}
+                </div>
+                <button onClick={() => removeActionLog(e.id)}
+                  className="text-ink-faint hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Hapus entri">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Overlay>
   )
 }

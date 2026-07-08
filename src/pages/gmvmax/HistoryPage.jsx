@@ -1,4 +1,5 @@
-// Riwayat Upload — daftar import per periode + hapus. Multi-periode.
+// Riwayat Upload — daftar snapshot harian + hapus. Tiap snapshot = potret
+// kumulatif (MTD) sampai tanggalnya.
 import { useState } from 'react'
 import { Trash2, Calendar, UploadCloud } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
@@ -9,7 +10,7 @@ export default function HistoryPage({ onOpenUpload }) {
   const [confirmId, setConfirmId] = useState(null)
 
   if (!hasData) return <EmptyState title="Belum ada riwayat upload"
-    desc="Setiap file yang kamu upload tersimpan sebagai periode dan bisa dibandingkan antar-bulan."
+    desc="Tiap file tersimpan sebagai snapshot harian (kumulatif s/d tanggalnya). Upload sekali sehari untuk melihat tren & angka harian."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium inline-flex items-center gap-2"><UploadCloud className="w-4 h-4" /> Upload Data</button>} />
 
   return (

@@ -1,11 +1,11 @@
 // Dashboard GMV Max — ringkasan performa (video-only), meniru layout Lacak:
-// 3 kartu total + 3 kartu tier + 3 top-list.
-import { Wallet, TrendingUp, ShoppingCart } from 'lucide-react'
+// strip "Hari ini" + grafik tren + 3 kartu total + 3 kartu tier + 3 top-list.
+import { Wallet, TrendingUp, ShoppingCart, CalendarDays } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { StatCard, DeltaBadge, SectionTitle, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
+import { StatCard, DeltaBadge, SectionTitle, TrendBars, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
 
 export default function DashboardPage({ onOpenUpload }) {
-  const { dashboard: d, typeTotals: tt, hasData, prev, periodName } = useGmvMax()
+  const { dashboard: d, typeTotals: tt, hasData, prev, periodName, dailyDelta: dd, trend, period } = useGmvMax()
   if (!hasData) return <EmptyState title="Belum ada data GMV Max"
     desc="Upload file export creative TikTok Shop untuk mulai melacak performa."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -15,9 +15,22 @@ export default function DashboardPage({ onOpenUpload }) {
   const brk = (get) => `Video ${fmtRpC(get(tt.video))} · Card ${fmtRpC(get(tt.card))}`
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
-      {periodName && prev && (
-        <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
+      {periodName && (
+        <p className="text-sm text-ink-muted -mb-1">
+          {period === 'all' ? periodName : <>Snapshot s/d <span className="text-ink font-medium">{periodName}</span></>}
+          {prev && <span className="text-ink-faint"> · dibanding {prev.name}</span>}
+        </p>
       )}
+
+      {dd && (dd.cost > 0 || dd.revenue > 0) && <DailyStrip dd={dd} />}
+      {period !== 'all' && trend.length > 1 && (
+        <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
+          <SectionTitle right={<Legend />}>Tren harian bulan ini</SectionTitle>
+          <TrendBars series={trend} />
+          <p className="text-xs text-ink-faint mt-2">Angka per hari = selisih tiap snapshot (spend & revenue yang bertambah hari itu).</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard icon={TrendingUp} tone="green" label="Total Revenue" value={fmtRp(tt.all.revenue)}
           delta={<DeltaBadge cur={tt.all.revenue} prev={pt?.all.revenue} fmt={fmtRpC} />}
@@ -42,6 +55,50 @@ export default function DashboardPage({ onOpenUpload }) {
         <TopList tone="amber" title="Top Sedang" items={tiers.sedang.top} />
         <TopList tone="red" title="Buruk Terburuk" items={tiers.buruk.top} />
       </div>
+    </div>
+  )
+}
+
+// Strip angka incremental "hari ini" (selisih snapshot terpilih − sebelumnya).
+function DailyStrip({ dd }) {
+  const neg = v => v < 0
+  return (
+    <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="w-7 h-7 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
+          <CalendarDays className="w-4 h-4" />
+        </span>
+        <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">
+          {dd.firstOfMonth ? `${dd.windowLabel} · sejak awal bulan` : dd.windowLabel}
+        </span>
+        {!dd.firstOfMonth && dd.prevName
+          ? <span className="text-xs text-ink-faint">{dd.label} vs {dd.prevName}</span>
+          : <span className="text-xs text-ink-faint">s/d {dd.label}</span>}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Cell label="Revenue" value={fmtRp(dd.revenue)} tone={neg(dd.revenue) ? 'red' : 'green'} />
+        <Cell label="Cost" value={fmtRp(dd.cost)} tone="red" />
+        <Cell label="Orders" value={dd.orders.toLocaleString('id-ID')} tone="violet" />
+        <Cell label="ROAS" value={fmtRoasX(dd.roas)} tone={dd.roas == null ? 'muted' : 'ink'} />
+      </div>
+    </div>
+  )
+}
+const CELL_TONE = { green: 'text-emerald-500', red: 'text-red-500', violet: 'text-violet-500', ink: 'text-ink-strong', muted: 'text-ink-faint' }
+function Cell({ label, value, tone = 'ink' }) {
+  return (
+    <div>
+      <p className="text-xs text-ink-faint mb-0.5">{label}</p>
+      <p className={`text-lg font-bold ${CELL_TONE[tone]}`}>{value}</p>
+    </div>
+  )
+}
+
+function Legend() {
+  return (
+    <div className="flex items-center gap-3 text-xs text-ink-faint">
+      <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Revenue</span>
+      <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> Cost</span>
     </div>
   )
 }

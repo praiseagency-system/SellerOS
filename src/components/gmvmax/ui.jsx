@@ -133,6 +133,41 @@ export function SectionTitle({ children, tone = 'ink', right }) {
   )
 }
 
+// Grafik batang tren harian (incremental): revenue (hijau) vs cost (merah) per
+// snapshot. Batang terakhir disorot. Scroll horizontal bila hari banyak.
+export function TrendBars({ series, height = 128 }) {
+  if (!series || series.length === 0) return null
+  const max = Math.max(1, ...series.map(d => Math.max(d.revenue || 0, d.cost || 0)))
+  const n = series.length
+  const step = 26, gap = 6, bw = (step - gap) / 2
+  const w = n * step
+  const pad = 16                         // ruang label tanggal di bawah
+  const yOf = v => (height - pad) - (Math.max(0, v) / max) * (height - pad - 6)
+  const day = iso => (iso ? String(+iso.slice(8, 10)) : '')
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${w} ${height}`} width={w} height={height}
+        className="block" style={{ minWidth: Math.min(w, 280) }} preserveAspectRatio="xMinYMin meet">
+        {series.map((d, i) => {
+          const x = i * step
+          const last = i === n - 1
+          return (
+            <g key={d.date || i}>
+              <title>{`${d.label}\nRevenue ${fmtRpC(d.revenue)} · Cost ${fmtRpC(d.cost)} · ROAS ${fmtRoasX(d.roas)}`}</title>
+              <rect x={x + gap / 2} width={bw} y={yOf(d.revenue)} height={(height - pad) - yOf(d.revenue)}
+                rx="1.5" fill="currentColor" className="text-emerald-500" opacity={last ? 1 : 0.8} />
+              <rect x={x + gap / 2 + bw} width={bw} y={yOf(d.cost)} height={(height - pad) - yOf(d.cost)}
+                rx="1.5" fill="currentColor" className="text-red-500" opacity={last ? 0.95 : 0.65} />
+              <text x={x + step / 2} y={height - 4} textAnchor="middle" fontSize="8"
+                fill="currentColor" className={last ? 'text-ink font-semibold' : 'text-ink-faint'}>{day(d.date)}</text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 export function EmptyState({ title, desc, action }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
