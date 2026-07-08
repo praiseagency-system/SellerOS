@@ -12,7 +12,7 @@ const ACTION_TEXT = {
   inactive: '—',
 }
 
-export default function VideoTable({ videos, thresholds, notes = {}, onNote, showAction = false, showHook = false, showStatus = true }) {
+export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showCampaign = false, showProduct = false }) {
   if (!videos.length) return <p className="text-sm text-ink-faint py-10 text-center">Tidak ada video yang cocok.</p>
   return (
     <div className="overflow-x-auto">
@@ -22,6 +22,8 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, sho
             <th className="py-2.5 pr-3 font-medium">VIDEO</th>
             <th className="py-2.5 px-3 font-medium">VIDEO ID</th>
             {showStatus && <th className="py-2.5 px-3 font-medium">STATUS</th>}
+            {showCampaign && <th className="py-2.5 px-3 font-medium">KAMPANYE</th>}
+            {showProduct && <th className="py-2.5 px-3 font-medium">PRODUK</th>}
             {showHook && <th className="py-2.5 px-3 font-medium">HOOK</th>}
             <th className="py-2.5 px-3 font-medium text-right">COST</th>
             <th className="py-2.5 px-3 font-medium text-right">REVENUE</th>
@@ -39,6 +41,20 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, sho
                 <td className="py-2.5 pr-3 max-w-xs"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></td>
                 <td className="py-2.5 px-3"><VideoIdLink videoId={v.videoId} account={v.account} /></td>
                 {showStatus && <td className="py-2.5 px-3"><StatusBadge status={v.status} /></td>}
+                {showCampaign && (
+                  <td className="py-2.5 px-3 text-ink-muted max-w-[10rem]">
+                    <span className="block truncate" title={v.campaign || ''}>{v.campaign || '—'}</span>
+                  </td>
+                )}
+                {showProduct && (
+                  <td className="py-2.5 px-3 text-ink-muted max-w-[12rem]">
+                    {v.productId
+                      ? <span className="block truncate" title={(productNames[v.productId] || '') + ' · ' + v.productId}>
+                          {productNames[v.productId] || <span className="font-mono text-xs">{v.productId}</span>}
+                        </span>
+                      : '—'}
+                  </td>
+                )}
                 {showHook && <td className="py-2.5 px-3 text-ink-muted capitalize">{v.hook}</td>}
                 <td className="py-2.5 px-3 text-right text-ink-muted whitespace-nowrap">{fmtRp(v.lifetime.cost)}</td>
                 <td className="py-2.5 px-3 text-right text-ink whitespace-nowrap">{fmtRp(v.lifetime.revenue)}</td>

@@ -40,7 +40,7 @@ function sumVideos(arr) {
 }
 
 export default function OverviewPage({ onOpenUpload }) {
-  const { videos, thresholds, notes, hasData, prev, periodName } = useGmvMax()
+  const { videos, thresholds, notes, productNames, hasData, prev, periodName } = useGmvMax()
   const [seg, setSeg] = useState('all')
   const [q, setQ] = useState('')
   const [noteVideo, setNoteVideo] = useState(null)
@@ -128,7 +128,8 @@ export default function OverviewPage({ onOpenUpload }) {
 
       <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
         <p className="text-xs text-ink-faint mb-2">{filtered.length} video</p>
-        <VideoTable videos={filtered} thresholds={thresholds} notes={notes} onNote={setNoteVideo} showStatus showAction />
+        <VideoTable videos={filtered} thresholds={thresholds} notes={notes} productNames={productNames}
+          onNote={setNoteVideo} showStatus showCampaign showProduct showAction />
       </div>
 
       {noteVideo && <NoteModal video={noteVideo} onClose={() => setNoteVideo(null)} />}
