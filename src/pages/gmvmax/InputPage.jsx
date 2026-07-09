@@ -82,12 +82,12 @@ export default function InputPage() {
         </p>
         <ol className="text-sm text-ink-muted space-y-1.5 list-decimal list-inside">
           <li>Buka TikTok Seller Center → GMV Max / iklan.</li>
-          <li>Pilih rentang <span className="text-ink">1 s/d hari ini</span> (bulan berjalan) untuk snapshot harian.</li>
+          <li>Pilih rentang <span className="text-ink">1 hari</span> (mis. kemarin atau hari ini) — tiap file = 1 hari.</li>
           <li>Export "creative data for product campaigns".</li>
           <li>Download file .xlsx.</li>
           <li>Upload file di form di atas.</li>
         </ol>
-        <p className="text-xs text-ink-faint mt-3">Nama akun kreator otomatis dilengkapi setelah upload — tak perlu klik apa pun.</p>
+        <p className="text-xs text-ink-faint mt-3">Tanggal dibaca otomatis dari nama file. Nama akun kreator juga otomatis dilengkapi setelah upload — tak perlu klik apa pun.</p>
       </div>
 
       {showHistory && <UploadHistoryModal onClose={() => setShowHistory(false)} />}

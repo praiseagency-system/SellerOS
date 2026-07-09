@@ -1,13 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
-// Context modul GMV Max — model SNAPSHOT HARIAN (MTD).
-// Tiap upload = 1 snapshot kumulatif bertanggal. Context memuat daftar snapshot
-// (ringkas) sekali, lalu memuat baris creatives HANYA untuk snapshot yang sedang
-// dilihat (+ snapshot pembanding harian) agar hemat memori. Angka "hari ini" =
-// selisih snapshot terpilih − snapshot sebelumnya di bulan yang sama; tren =
-// deret selisih harian dari `totals` ringkas tiap snapshot.
+// Context modul GMV Max — model SINGLE-DAY (additive).
+// Tiap upload = 1 snapshot berisi angka HARI ITU (bukan kumulatif). Angka hari =
+// isi file langsung; total bulan / window = JUMLAH hari. Pemilihan: pilih BULAN
+// (+ "Semua"), lalu window (Hari ini / 3 / 7 hari / Bulan ini) menentukan berapa
+// hari terakhir yang diagregasi untuk semua tabel. Tren = angka per-hari langsung
+// (dari `totals` ringkas tiap snapshot, tanpa selisih). Creatives dimuat hanya
+// untuk hari-hari dalam window (+ pembanding) agar hemat memori.
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
 import { parseGmvMaxFile } from '../utils/parseGmvMax'
-import { listImports, loadCreatives, saveImport, deleteImport, pruneOldSnapshots } from '../data/gmvmaxImports'
+import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gmvmaxImports'
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
 import { listActionLog, addActionLog, deleteActionLog } from '../data/gmvmaxActionLog'
@@ -24,8 +25,7 @@ import { insightCards, actionPlan, winningFramework } from '../utils/gmvmaxInsig
 const Ctx = createContext(null)
 export function useGmvMax() { return useContext(Ctx) }
 
-// Total per tipe creative (Video vs Product card vs semua) untuk sekumpulan
-// baris. Dipakai headline Dashboard + delta harian (snapshot sebelumnya).
+// Total per tipe creative (Video vs Product card vs semua) untuk sekumpulan baris.
 function typeTotalsOf(rows) {
   const z = () => ({ cost: 0, revenue: 0, orders: 0 })
   const v = z(), c = z()
@@ -40,43 +40,47 @@ function typeTotalsOf(rows) {
   return { video: { ...v, roas: roas(v) }, card: { ...c, roas: roas(c) }, all: { ...all, roas: roas(all) } }
 }
 
-// Kunci bulan sebuah snapshot (untuk pengelompokan).
-const monthKey = i => i.period_month || (i.snapshot_date ? i.snapshot_date.slice(0, 7) : i.name)
+const MONTHS_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+const monthKey = i => (i.period_month || i.snapshot_date || '').slice(0, 7)
 const sd = i => i.snapshot_date || ''
-
-// 'YYYY-MM-DD' dikurangi n hari → 'YYYY-MM-DD'.
-function daysBefore(iso, n) {
-  const d = new Date(iso + 'T00:00:00Z')
-  d.setUTCDate(d.getUTCDate() - n)
-  return d.toISOString().slice(0, 10)
+function monthLabel(mk) {
+  const m = mk && mk.match(/^(\d{4})-(\d{2})/)
+  return m ? `${MONTHS_FULL[+m[2] - 1]} ${m[1]}` : (mk || '—')
 }
+function prevMonthOf(mk) {
+  const m = mk && mk.match(/^(\d{4})-(\d{2})/)
+  if (!m) return null
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, 1))
+  d.setUTCMonth(d.getUTCMonth() - 1)
+  return d.toISOString().slice(0, 7)
+}
+const windowLabelOf = w => (w === 'month' ? 'Bulan ini' : w === 1 ? 'Hari ini' : `${w} hari terakhir`)
 
-// Pilihan jendela perbandingan (hari). 'month' = sejak awal bulan berjalan.
+// Window agregasi: berapa hari terakhir yang dijumlahkan. 'month' = semua hari.
 export const WINDOWS = [
   { d: 1, label: 'Hari ini', short: '1h' },
   { d: 3, label: '3 hari', short: '3h' },
   { d: 7, label: '7 hari', short: '7h' },
-  { d: 30, label: '30 hari', short: '30h' },
+  { d: 'month', label: 'Bulan ini', short: 'Bln' },
 ]
 
 export function GmvMaxProvider({ children }) {
-  const [imports, setImports] = useState([])   // snapshot (ringkas, tanpa creatives)
+  const [imports, setImports] = useState([])   // snapshot harian (ringkas, tanpa creatives)
   const [creatives, setCreatives] = useState([])
   const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS)
   const [notes, setNotes] = useState({})
-  const [actionLog, setActionLog] = useState([]) // jurnal optimasi (append)
-  const [boost, setBoost] = useState({})         // video_id → entri boost pipeline
-  const [productNames, setProductNames] = useState({}) // kode_produk → nama (menu Produk)
-  const [meta, setMeta] = useState({})          // video_id → {username, authorName, status}
-  const [enriching, setEnriching] = useState(null) // {done,total} saat scraping akun
-  const [period, setPeriod] = useState(null)    // null=terbaru | 'all' | import.id
-  const [windowDays, setWindowDays] = useState(1) // jendela perbandingan (1/3/7/30 hari)
+  const [actionLog, setActionLog] = useState([])
+  const [boost, setBoost] = useState({})
+  const [productNames, setProductNames] = useState({})
+  const [meta, setMeta] = useState({})
+  const [enriching, setEnriching] = useState(null)
+  const [period, setPeriod] = useState(null)    // null=bulan terbaru | 'all' | monthKey
+  const [windowDays, setWindowDays] = useState('month') // 1 | 3 | 7 | 'month'
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  // Muat metadata ringan (snapshot + threshold + notes + nama produk). TIDAK
-  // memuat creatives di sini — itu ditangani efek terpisah per snapshot terpilih.
   const reload = useCallback(async () => {
     const [imps, th, nts, log, bst, prods] = await Promise.all([
       listImports(), getThresholds(), listNotes(), listActionLog().catch(() => []),
@@ -104,57 +108,44 @@ export function GmvMaxProvider({ children }) {
     return () => { active = false }
   }, [reload])
 
-  // ── Snapshot & pemilihan ────────────────────────────────────────────────────
-  // Snapshot terbaru per bulan — dipakai tampilan "Semua (per bulan)" agar tidak
-  // menjumlahkan snapshot kumulatif dalam bulan yang sama (double-count).
-  const latestPerMonth = useMemo(() => {
-    const best = new Map()
-    for (const i of imports) {
-      const k = monthKey(i)
-      const cur = best.get(k)
-      if (!cur || sd(i) > sd(cur)) best.set(k, i)
-    }
-    return [...best.values()]
+  // ── Bulan & window ──────────────────────────────────────────────────────────
+  const months = useMemo(() => {
+    const map = new Map()
+    for (const i of imports) { const k = monthKey(i); if (k && !map.has(k)) map.set(k, { key: k, label: monthLabel(k) }) }
+    return [...map.values()].sort((a, b) => (a.key < b.key ? 1 : -1))
   }, [imports])
 
-  // Snapshot yang sedang dilihat (null period → snapshot terbaru).
-  const selectedImport = useMemo(() => {
-    if (period === 'all') return null
-    if (period == null) return imports[0] || null
-    return imports.find(i => i.id === period) || imports[0] || null
-  }, [imports, period])
+  const selectedMonth = period === 'all' ? null
+    : (period && period !== 'all' ? period : (months[0]?.key || null))
 
-  // Snapshot pembanding sesuai jendela: snapshot terbaru yang tanggalnya ≤
-  // (tanggal terpilih − windowDays), dalam bulan yang sama. Bila target jatuh
-  // sebelum awal bulan (jendela melewati batas bulan) → null = baseline nol =
-  // "sejak awal bulan" (angka MTD penuh). windowDays=1 → sama seperti "kemarin".
-  const prevSnapshot = useMemo(() => {
-    if (period === 'all' || !selectedImport || !selectedImport.snapshot_date) return null
-    const pm = monthKey(selectedImport), s = sd(selectedImport)
-    const target = daysBefore(s, windowDays)
-    if (target.slice(0, 7) !== s.slice(0, 7)) return null   // lewat batas bulan
-    let best = null
-    for (const i of imports) {
-      if (i.id === selectedImport.id || monthKey(i) !== pm || !i.snapshot_date) continue
-      if (sd(i) > target) continue
-      if (!best || sd(i) > sd(best)) best = i
+  // Hari (snapshot) dalam scope terpilih, urut tanggal naik.
+  const scopeDays = useMemo(() => imports
+    .filter(i => i.snapshot_date && (period === 'all' || monthKey(i) === selectedMonth))
+    .sort((a, b) => (sd(a) < sd(b) ? -1 : 1)), [imports, period, selectedMonth])
+
+  // Hari dalam window (N terakhir; 'month' = semua hari scope).
+  const windowDaysSnaps = useMemo(
+    () => (windowDays === 'month' ? scopeDays : scopeDays.slice(-windowDays)),
+    [scopeDays, windowDays])
+
+  // Hari pembanding: blok N hari sebelum window; untuk 'month' = bulan sebelumnya.
+  const prevDaysSnaps = useMemo(() => {
+    if (windowDays === 'month') {
+      if (period === 'all' || !selectedMonth) return []
+      const pm = prevMonthOf(selectedMonth)
+      return imports.filter(i => i.snapshot_date && monthKey(i) === pm).sort((a, b) => (sd(a) < sd(b) ? -1 : 1))
     }
-    return best
-  }, [imports, selectedImport, period, windowDays])
+    return scopeDays.slice(-2 * windowDays, -windowDays)
+  }, [scopeDays, windowDays, imports, period, selectedMonth])
 
-  // Snapshot yang creatives-nya perlu dimuat untuk view saat ini.
   const neededIds = useMemo(() => {
-    const ids = new Set()
-    if (period === 'all') latestPerMonth.forEach(i => ids.add(i.id))
-    else if (selectedImport) {
-      ids.add(selectedImport.id)
-      if (prevSnapshot) ids.add(prevSnapshot.id)
-    }
-    return [...ids].sort()
-  }, [period, latestPerMonth, selectedImport, prevSnapshot])
-
-  // Muat creatives (+ video meta) hanya untuk snapshot yang dibutuhkan.
+    const s = new Set()
+    windowDaysSnaps.forEach(i => s.add(i.id))
+    prevDaysSnaps.forEach(i => s.add(i.id))
+    return [...s].sort()
+  }, [windowDaysSnaps, prevDaysSnaps])
   const neededKey = neededIds.join(',')
+
   useEffect(() => {
     let active = true
     ;(async () => {
@@ -165,7 +156,6 @@ export function GmvMaxProvider({ children }) {
         setCreatives(cre)
         const vids = cre.filter(c => c.creativeType === 'Video' && c.videoId).map(c => c.videoId)
         const loaded = await loadVideoMeta(vids)
-        // Merge (bukan replace) agar hasil scraping otomatis tak tertimpa.
         if (active) setMeta(prev => ({ ...prev, ...loaded }))
       } catch (e) { if (active) setError(e.message) }
     })()
@@ -173,7 +163,6 @@ export function GmvMaxProvider({ children }) {
   }, [neededKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Turunan ─────────────────────────────────────────────────────────────────
-  // Isi akun kosong dari cache meta. Utamakan username (handle) yang bersih.
   const creativesEnriched = useMemo(() => creatives.map(c => {
     if (c.creativeType === 'Video' && c.videoId && !c.tiktokAccount) {
       const m = meta[c.videoId]
@@ -191,16 +180,13 @@ export function GmvMaxProvider({ children }) {
       .map(c => c.videoId)).size,
     [creativesEnriched, meta])
 
-  // Baris kreatif sesuai view: snapshot terpilih, atau (all) gabungan snapshot
-  // terbaru per bulan — keduanya sudah termuat di `creativesEnriched`.
-  const rows = useMemo(() => {
-    if (period === 'all') {
-      const names = new Set(latestPerMonth.map(i => i.name))
-      return creativesEnriched.filter(c => names.has(c.periodName))
-    }
-    if (!selectedImport) return creativesEnriched
-    return creativesEnriched.filter(c => c.periodName === selectedImport.name)
-  }, [creativesEnriched, period, selectedImport, latestPerMonth])
+  const winNames = useMemo(() => new Set(windowDaysSnaps.map(i => i.name)), [windowDaysSnaps])
+  const prevNames = useMemo(() => new Set(prevDaysSnaps.map(i => i.name)), [prevDaysSnaps])
+
+  // Baris = gabungan creatives semua hari dalam window (dijumlahkan oleh rollup).
+  const rows = useMemo(
+    () => creativesEnriched.filter(c => winNames.has(c.periodName)),
+    [creativesEnriched, winNames])
 
   const videos = useMemo(() => rollupVideos(rows, thresholds), [rows, thresholds])
   const campaigns = useMemo(() => rollupCampaigns(rows), [rows])
@@ -212,69 +198,53 @@ export function GmvMaxProvider({ children }) {
   const dashboard = useMemo(() => dashboardSummary(videos, thresholds), [videos, thresholds])
   const typeTotals = useMemo(() => typeTotalsOf(rows), [rows])
 
-  // ── Delta harian (vs snapshot sebelumnya, sebulan) ──────────────────────────
+  // Pembanding (window sebelumnya / bulan lalu) untuk delta di kartu & halaman.
   const prevRows = useMemo(
-    () => (prevSnapshot ? creativesEnriched.filter(c => c.periodName === prevSnapshot.name) : null),
-    [creativesEnriched, prevSnapshot])
+    () => (prevDaysSnaps.length ? creativesEnriched.filter(c => prevNames.has(c.periodName)) : null),
+    [creativesEnriched, prevNames, prevDaysSnaps])
+  const prevLabel = windowDays === 'month'
+    ? (selectedMonth ? monthLabel(prevMonthOf(selectedMonth)) : null)
+    : `${windowDays} hari sebelumnya`
   const prev = useMemo(() => {
-    if (!prevSnapshot || !prevRows) return null
+    if (!prevRows || !prevRows.length) return null
     return {
-      name: prevSnapshot.name,
+      name: prevLabel,
       videos: rollupVideos(prevRows, thresholds),
       creators: rollupCreators(prevRows, thresholds),
       products: rollupProducts(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
       typeTotals: typeTotalsOf(prevRows),
     }
-  }, [prevRows, prevSnapshot, thresholds, productNames])
+  }, [prevRows, prevLabel, thresholds, productNames])
 
-  // Angka incremental untuk jendela terpilih = snapshot terpilih − pembanding.
-  // Bila pembanding null (jendela melewati awal bulan) → pertumbuhan sejak awal
-  // bulan (MTD penuh).
+  // Strip "Hari ini" = angka hari TERAKHIR di scope (langsung dari totals-nya).
   const dailyDelta = useMemo(() => {
-    if (period === 'all' || !selectedImport) return null
-    const cur = typeTotals.all
-    const base = prev?.typeTotals?.all || { cost: 0, revenue: 0, orders: 0 }
-    const cost = (cur.cost || 0) - (base.cost || 0)
-    const revenue = (cur.revenue || 0) - (base.revenue || 0)
-    const orders = (cur.orders || 0) - (base.orders || 0)
-    const w = WINDOWS.find(x => x.d === windowDays) || WINDOWS[0]
+    if (period === 'all' || !scopeDays.length) return null
+    const today = scopeDays[scopeDays.length - 1]
+    const prevDay = scopeDays[scopeDays.length - 2]
+    const t = today.totals || {}
     return {
-      cost, revenue, orders,
-      roas: cost > 0 ? revenue / cost : null,
-      window: windowDays,
-      windowLabel: w.d === 1 ? 'Hari ini' : `${w.d} hari terakhir`,
-      firstOfMonth: !prevSnapshot,          // baseline nol = sejak awal bulan
-      prevName: prevSnapshot?.name || null,
-      date: selectedImport.snapshot_date,
-      label: selectedImport.name,
+      cost: t.cost || 0, revenue: t.revenue || 0, orders: t.orders || 0,
+      roas: t.cost > 0 ? t.revenue / t.cost : null,
+      windowLabel: 'Hari ini',
+      firstOfMonth: !prevDay,
+      prevName: prevDay?.name || null,
+      label: today.name,
+      date: today.snapshot_date,
     }
-  }, [period, selectedImport, prevSnapshot, typeTotals, prev, windowDays])
+  }, [scopeDays, period])
 
-  // Tren harian (incremental) sepanjang bulan snapshot terpilih — dari `totals`
-  // ringkas tiap snapshot, jadi tak perlu memuat semua creatives.
-  const trend = useMemo(() => {
-    if (period === 'all' || !selectedImport) return []
-    const pm = monthKey(selectedImport), upto = sd(selectedImport)
-    const snaps = imports
-      .filter(i => monthKey(i) === pm && i.snapshot_date && sd(i) <= upto)
-      .sort((a, b) => (sd(a) < sd(b) ? -1 : 1))
-    const out = []
-    let prevT = null
-    for (const s of snaps) {
-      const t = s.totals || {}
-      const cost = (t.cost || 0) - (prevT ? (prevT.cost || 0) : 0)
-      const revenue = (t.revenue || 0) - (prevT ? (prevT.revenue || 0) : 0)
-      out.push({
-        date: s.snapshot_date, label: s.name,
-        cost, revenue, roas: cost > 0 ? revenue / cost : null,
-        cumCost: t.cost || 0, cumRevenue: t.revenue || 0,
-      })
-      prevT = t
-    }
-    return out
-  }, [imports, selectedImport, period])
+  // Tren harian = angka tiap hari LANGSUNG (bukan selisih) dari totals ringkas.
+  const trend = useMemo(() => scopeDays.map(s => {
+    const t = s.totals || {}
+    return { date: s.snapshot_date, label: s.name, cost: t.cost || 0, revenue: t.revenue || 0, roas: t.cost > 0 ? t.revenue / t.cost : null }
+  }), [scopeDays])
 
-  const periodName = selectedImport?.name || (period === 'all' ? 'Semua (per bulan)' : null)
+  const windowLabel = windowLabelOf(windowDays)
+  const periodName = period === 'all'
+    ? `Semua bulan${windowDays !== 'month' ? ' · ' + windowLabel : ''}`
+    : (selectedMonth ? `${monthLabel(selectedMonth)}${windowDays !== 'month' ? ' · ' + windowLabel : ''}` : null)
+  const todayDate = scopeDays.length ? scopeDays[scopeDays.length - 1].snapshot_date : null
+
   const insights = useMemo(() => ({
     cards: insightCards(videos, thresholds),
     plan: actionPlan(videos, thresholds),
@@ -286,13 +256,9 @@ export function GmvMaxProvider({ children }) {
     try {
       const parsed = await parseGmvMaxFile(file)
       await saveImport(parsed, thresholds)
-      // Retensi: pangkas snapshot harian bulan-bulan lalu (sisakan 1 final/bulan).
-      await pruneOldSnapshots().catch(() => {})
       await reload()
-      // Lompat ke snapshot yang baru diunggah (jadi paling baru → period=null).
-      setPeriod(null)
-      // Auto-scrape nama akun untuk video baru yang akunnya kosong — jalan di
-      // latar belakang (tak memblok), progresnya tampil via `enriching`.
+      setPeriod(null) // lompat ke bulan terbaru
+      // Auto-scrape nama akun untuk video baru yang akunnya kosong (background).
       const targets = parsed.rows
         .filter(r => r.creativeType === 'Video' && r.videoId && !r.tiktokAccount)
         .map(r => r.videoId)
@@ -306,15 +272,11 @@ export function GmvMaxProvider({ children }) {
 
   async function removeImport(id) {
     setBusy(true)
-    try {
-      await deleteImport(id)
-      if (period === id) setPeriod(null)
-      await reload()
-    } finally { setBusy(false) }
+    try { await deleteImport(id); await reload() }
+    finally { setBusy(false) }
   }
 
   // Scrape username via oEmbed publik untuk kumpulan videoId → cache Supabase.
-  // Cek cache DB dulu agar tak mengulang yang sudah 'ok'/'notfound'.
   async function runEnrich(candidateIds) {
     const cand = [...new Set((candidateIds || []).filter(Boolean))]
     if (!cand.length) return { ok: true, filled: 0 }
@@ -341,7 +303,6 @@ export function GmvMaxProvider({ children }) {
     }
   }
 
-  // Tombol manual: scrape yang akunnya masih kosong di view sekarang.
   function enrichUsernames() {
     return runEnrich(creativesEnriched
       .filter(c => c.creativeType === 'Video' && c.videoId && !c.tiktokAccount)
@@ -362,9 +323,8 @@ export function GmvMaxProvider({ children }) {
     setNotes(await listNotes())
   }
 
-  // Tambah entri ke Log Optimasi (append). Melampirkan konteks snapshot terpilih.
   async function logAction(entry) {
-    const row = await addActionLog({ snapshotDate: selectedImport?.snapshot_date || null, ...entry })
+    const row = await addActionLog({ snapshotDate: todayDate, ...entry })
     setActionLog(prev => [row, ...prev])
     return row
   }
@@ -374,7 +334,6 @@ export function GmvMaxProvider({ children }) {
   }
 
   // ── Boost Center ────────────────────────────────────────────────────────────
-  // Masukkan video ke pipeline boost (status 'diminta') + catat ke Log Optimasi.
   async function requestBoost(v) {
     const row = await upsertBoost(v.videoId, {
       status: 'diminta', videoTitle: v.title, tiktokAccount: v.account, roas: v.lifetime?.roas ?? null,
@@ -398,9 +357,9 @@ export function GmvMaxProvider({ children }) {
 
   const value = {
     imports, creatives, rows, thresholds, notes, actionLog, boost, productNames,
-    period, setPeriod, periodName,
+    period, setPeriod, periodName, months,
     windowDays, setWindowDays, windows: WINDOWS,
-    selectedImport, prevSnapshot, latestPerMonth, prev, dailyDelta, trend,
+    prev, dailyDelta, trend,
     videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
     hasData: imports.length > 0,
     loading, busy, error,

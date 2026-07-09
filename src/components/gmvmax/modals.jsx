@@ -56,9 +56,9 @@ export function UploadModal({ onClose }) {
           <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => handleFile(e.target.files?.[0])} />
           <p className="text-xs text-ink-faint mt-3 leading-relaxed">
-            <span className="text-ink-muted font-medium">Tips harian:</span> export rentang <b>1 s/d hari ini</b> bulan
-            berjalan, lalu upload sekali sehari. Tiap upload jadi snapshot bertanggal — tool otomatis menghitung angka
-            harian & tren. Upload ulang tanggal sama akan menimpa (memperbaiki).
+            <span className="text-ink-muted font-medium">Tips harian:</span> export rentang <b>1 hari</b> (mis. kemarin),
+            lalu upload sekali sehari. Tiap file = 1 hari; tool menjumlahkan per bulan & window otomatis. Upload ulang
+            tanggal sama akan menimpa (memperbaiki).
           </p>
           {err && <p className="text-xs text-red-500 mt-3">{err}</p>}
         </>

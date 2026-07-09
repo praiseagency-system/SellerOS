@@ -24,17 +24,8 @@ const PAGES = {
   gmv_input: InputPage,
 }
 
-// Kelompokkan snapshot per bulan untuk optgroup (mis. "Juli 2026").
-const MONTHS_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-function monthLabel(imp) {
-  const s = imp.period_month || imp.snapshot_date
-  const m = s && s.match(/^(\d{4})-(\d{2})/)
-  return m ? `${MONTHS_FULL[(+m[2]) - 1]} ${m[1]}` : 'Lainnya'
-}
-
 export default function GmvMaxModule({ page }) {
-  const { imports, period, setPeriod, windowDays, setWindowDays, windows, hasData, loading } = useGmvMax()
+  const { months, period, setPeriod, windowDays, setWindowDays, windows, hasData, loading } = useGmvMax()
   const [showUpload, setShowUpload] = useState(false)
   const Page = PAGES[page] || DashboardPage
 
@@ -44,15 +35,7 @@ export default function GmvMaxModule({ page }) {
     </div>
   }
 
-  // Susun optgroup per bulan (imports sudah urut snapshot terbaru dulu).
-  const groups = []
-  for (const imp of imports) {
-    const label = monthLabel(imp)
-    let g = groups.find(x => x.label === label)
-    if (!g) { g = { label, items: [] }; groups.push(g) }
-    g.items.push(imp)
-  }
-  const selectValue = period == null ? (imports[0]?.id || 'all') : period
+  const selectValue = period == null ? (months[0]?.key || 'all') : period
 
   return (
     <div>
@@ -60,22 +43,14 @@ export default function GmvMaxModule({ page }) {
         <div className="flex items-center justify-between gap-3 px-6 pt-4">
           <div className="flex items-center gap-2 flex-wrap">
             <select value={selectValue} onChange={e => setPeriod(e.target.value)}
-              title="Pilih snapshot harian (kumulatif s/d tanggal itu)"
-              className="px-3 py-1.5 rounded-lg bg-surface border border-line/10 text-sm text-ink max-w-[16rem]">
-              <option value="all">Semua (per bulan)</option>
-              {groups.map(g => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.items.map((i, idx) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}{idx === 0 && g === groups[0] ? ' — terbaru' : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
+              title="Pilih bulan"
+              className="px-3 py-1.5 rounded-lg bg-surface border border-line/10 text-sm text-ink max-w-[14rem]">
+              <option value="all">Semua bulan</option>
+              {months.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
             </select>
             {selectValue !== 'all' && (
               <div className="inline-flex items-center rounded-lg bg-surface border border-line/10 p-0.5"
-                title="Jendela perbandingan performa">
+                title="Rentang data yang diagregasi (berapa hari terakhir)">
                 {windows.map(w => (
                   <button key={w.d} onClick={() => setWindowDays(w.d)}
                     className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors

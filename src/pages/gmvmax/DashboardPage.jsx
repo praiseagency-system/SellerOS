@@ -17,7 +17,7 @@ export default function DashboardPage({ onOpenUpload }) {
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
       {periodName && (
         <p className="text-sm text-ink-muted -mb-1">
-          {period === 'all' ? periodName : <>Snapshot s/d <span className="text-ink font-medium">{periodName}</span></>}
+          <span className="text-ink font-medium">{periodName}</span>
           {prev && <span className="text-ink-faint"> · dibanding {prev.name}</span>}
         </p>
       )}
@@ -27,7 +27,7 @@ export default function DashboardPage({ onOpenUpload }) {
         <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
           <SectionTitle right={<Legend />}>Tren harian bulan ini</SectionTitle>
           <TrendBars series={trend} />
-          <p className="text-xs text-ink-faint mt-2">Angka per hari = selisih tiap snapshot (spend & revenue yang bertambah hari itu).</p>
+          <p className="text-xs text-ink-faint mt-2">Angka per hari = spend &amp; revenue hari itu (dari file harian yang diupload).</p>
         </div>
       )}
 
