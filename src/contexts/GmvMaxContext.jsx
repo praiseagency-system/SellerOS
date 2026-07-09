@@ -7,7 +7,7 @@
 // deret selisih harian dari `totals` ringkas tiap snapshot.
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
 import { parseGmvMaxFile } from '../utils/parseGmvMax'
-import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gmvmaxImports'
+import { listImports, loadCreatives, saveImport, deleteImport, pruneOldSnapshots } from '../data/gmvmaxImports'
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
 import { listActionLog, addActionLog, deleteActionLog } from '../data/gmvmaxActionLog'
@@ -286,6 +286,8 @@ export function GmvMaxProvider({ children }) {
     try {
       const parsed = await parseGmvMaxFile(file)
       await saveImport(parsed, thresholds)
+      // Retensi: pangkas snapshot harian bulan-bulan lalu (sisakan 1 final/bulan).
+      await pruneOldSnapshots().catch(() => {})
       await reload()
       // Lompat ke snapshot yang baru diunggah (jadi paling baru → period=null).
       setPeriod(null)

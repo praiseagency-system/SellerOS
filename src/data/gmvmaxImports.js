@@ -92,6 +92,31 @@ export async function deleteImport(id) {
   if (error) throw error
 }
 
+// Retensi storage: untuk bulan yang SUDAH LEWAT (lebih tua dari bulan snapshot
+// terbaru), sisakan hanya 1 snapshot final per bulan & hapus harian-nya. Bulan
+// berjalan (paling baru) dibiarkan utuh agar delta harian & tren tetap jalan.
+// creatives ikut terhapus via CASCADE. Aman dipanggil berulang (idempoten).
+const monthOf = i => (i.period_month || i.snapshot_date || '').slice(0, 7)
+
+export async function pruneOldSnapshots() {
+  const imps = await listImports() // urut snapshot_date desc
+  if (imps.length < 2) return { deleted: 0 }
+  const latestMonth = monthOf(imps[0])
+  const byMonth = new Map()
+  for (const i of imps) {
+    const m = monthOf(i)
+    if (!m || m === latestMonth) continue // jaga bulan berjalan (terbaru)
+    if (!byMonth.has(m)) byMonth.set(m, [])
+    byMonth.get(m).push(i)               // per bulan, sudah urut terbaru dulu
+  }
+  const toDelete = []
+  for (const list of byMonth.values()) list.slice(1).forEach(i => toDelete.push(i.id))
+  if (!toDelete.length) return { deleted: 0 }
+  const { error } = await supabase.from('gmvmax_imports').delete().in('id', toDelete)
+  if (error) throw error
+  return { deleted: toDelete.length }
+}
+
 // ─── map row ⇆ objek creative (bentuk parser) ────────────────────────────────
 function creativeToRow(importId, r) {
   return {
@@ -111,7 +136,9 @@ function creativeToRow(importId, r) {
     impressions: r.impressions, clicks: r.clicks, ctr: r.ctr, cvr: r.cvr,
     vr_2s: r.vr2s, vr_6s: r.vr6s, vr_25: r.vr25, vr_50: r.vr50, vr_75: r.vr75, vr_100: r.vr100,
     hook_tag: r.hookTag,
-    raw_data: r.raw ?? null,
+    // raw_data sengaja TIDAK disimpan — duplikasi kolom terstruktur & tak pernah
+    // dibaca balik; membuangnya memangkas ukuran baris ~separuh (hemat storage).
+    raw_data: null,
   }
 }
 
