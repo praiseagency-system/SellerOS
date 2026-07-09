@@ -41,10 +41,11 @@ export function RoasBadge({ roas, thresholds, showLabel = true }) {
 export function DeliveryBadge({ delivery }) {
   if (!delivery) return <span className="text-ink-faint text-xs">—</span>
   const t = delivery.toLowerCase()
-  const tone = t.includes('deliver') && !t.includes('not') ? 'green'
-    : t.includes('learning') ? 'blue'
-    : t.includes('queue') ? 'amber'
-    : t.includes('exclud') ? 'red'
+  const del = (t.includes('deliver') || t.includes('ditayangkan')) && !t.includes('not') && !t.includes('tidak')
+  const tone = del ? 'green'
+    : (t.includes('learning') || t.includes('mempelajari') || t.includes('belajar')) ? 'blue'
+    : (t.includes('queue') || t.includes('antrean')) ? 'amber'
+    : (t.includes('exclud') || t.includes('dikecualikan')) ? 'red'
     : 'muted'
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold ${TONE[tone]}`}>

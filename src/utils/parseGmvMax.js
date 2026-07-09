@@ -110,7 +110,9 @@ export function parsePeriodFromFilename(filename) {
 }
 
 // ─── Pemetaan kolom → field ──────────────────────────────────────────────────
+// Mendukung export Inggris & Bahasa Indonesia (TikTok Seller Center bilingual).
 const COL_MAP = {
+  // ── English ──
   'campaign name': 'campaignName',
   'campaign id': 'campaignId',
   'product id': 'productId',
@@ -137,6 +139,31 @@ const COL_MAP = {
   '75% ad video view rate': 'vr75',
   '100% ad video view rate': 'vr100',
   'currency': 'currency',
+  // ── Bahasa Indonesia ──
+  'nama kampanye': 'campaignName',
+  'id campaign': 'campaignId',
+  'id produk': 'productId',
+  'jenis materi iklan': 'creativeType',
+  'judul video': 'videoTitle',
+  'id video': 'videoId',
+  'akun tiktok': 'tiktokAccount',
+  'waktu posting': 'timePosted',
+  'jenis otorisasi': 'authType',
+  'biaya': 'cost',
+  'pesanan sku': 'skuOrders',
+  'biaya per pesanan': 'costPerOrder',
+  'pendapatan kotor': 'grossRevenue',
+  'impresi iklan produk': 'impressions',
+  'jumlah klik iklan produk': 'clicks',
+  'tingkat klik iklan produk': 'ctr',
+  'rasio konversi iklan': 'cvr',
+  'rasio tayang video iklan 2 detik': 'vr2s',
+  'rasio tayang video iklan 6 detik': 'vr6s',
+  'rasio tayang video iklan 25%': 'vr25',
+  'rasio tayang video iklan 50%': 'vr50',
+  'rasio tayang video iklan 75%': 'vr75',
+  'rasio tayang video iklan 100%': 'vr100',
+  'mata uang': 'currency',
 }
 
 // Field yang diparse sebagai angka Rupiah/desimal.
@@ -153,13 +180,13 @@ export function parseGmvMaxRows(aoa, filename = '') {
   if (!Array.isArray(aoa) || aoa.length === 0) {
     throw new Error('File kosong atau tidak terbaca.')
   }
-  // Cari baris header (memuat "Campaign name" & "Product ID").
+  // Cari baris header — kenali kolom kampanye & produk (Inggris/Indonesia).
+  const isCampaignCol = c => ['campaign name', 'nama kampanye'].includes(c?.toString().trim().toLowerCase())
+  const isProductCol = c => ['product id', 'id produk'].includes(c?.toString().trim().toLowerCase())
   const headerIdx = aoa.findIndex(r =>
-    Array.isArray(r) &&
-    r.some(c => c?.toString().trim().toLowerCase() === 'campaign name') &&
-    r.some(c => c?.toString().trim().toLowerCase() === 'product id'))
+    Array.isArray(r) && r.some(isCampaignCol) && r.some(isProductCol))
   if (headerIdx === -1) {
-    throw new Error('Header GMV Max tidak ditemukan (butuh kolom "Campaign name" & "Product ID").')
+    throw new Error('Header GMV Max tidak ditemukan (butuh kolom "Campaign name"/"Nama kampanye" & "Product ID"/"ID produk").')
   }
 
   const headers = aoa[headerIdx].map(h => (h ?? '').toString().trim())
@@ -185,7 +212,7 @@ export function parseGmvMaxRows(aoa, filename = '') {
       campaignName: str(rec.campaignName),
       campaignId: cleanId(rec.campaignId),
       productId: cleanId(rec.productId),
-      creativeType: str(rec.creativeType),
+      creativeType: normCreativeType(rec.creativeType),
       videoTitle: str(rec.videoTitle),
       tiktokAccount: cleanAccount(rec.tiktokAccount),
       timePosted: parseTimePosted(rec.timePosted),
@@ -197,11 +224,15 @@ export function parseGmvMaxRows(aoa, filename = '') {
     // desimal, tanpa pemisah ribuan. Karena itu parseNum, BUKAN parseIDNum.
     for (const f of NUM_FIELDS) row[f] = parseNum(rec[f])
 
+    // Buang baris tanpa aktivitas apa pun (nol spend/impresi/revenue/order).
+    // Export GMV Max memuat SEMUA materi (mayoritas nol) — menyimpannya cuma
+    // memboroskan storage & tak dipakai analisis.
+    const active = (row.cost ?? 0) > 0 || (row.impressions ?? 0) > 0
+      || (row.grossRevenue ?? 0) > 0 || (row.skuOrders ?? 0) > 0
+    if (!active) continue
+
     row.hookTag = row.creativeType === 'Video' ? deriveHook(row.videoTitle) : null
     row.hasSpend = (row.cost ?? 0) > 0
-
-    // Simpan mentah (untuk audit / kolom yang belum dipetakan).
-    row.raw = rec
 
     if (row.creativeType === 'Product card') productCardCount++
     else videoCount++
@@ -253,6 +284,13 @@ function str(v) {
 function cleanId(v) {
   const s = str(v)
   return s || null
+}
+// Normalkan jenis materi lintas bahasa → 'Video' | 'Product card' (kanonik).
+function normCreativeType(v) {
+  const s = str(v).toLowerCase()
+  if (s.includes('kartu produk') || s.includes('product card')) return 'Product card'
+  if (s.includes('video')) return 'Video'
+  return str(v)
 }
 function cleanAccount(v) {
   // '-' / kosong / 'N/A' → null (akan digrup sebagai "Akun toko / tanpa kreator").

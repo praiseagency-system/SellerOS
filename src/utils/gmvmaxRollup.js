@@ -18,9 +18,10 @@ const DELIVERY_RANK = { delivering: 3, learning: 2, in_queue: 1, other: 0 }
 export function normDeliveryStatus(s) {
   const t = (s || '').toLowerCase().trim()
   if (!t || t === '-' || t === 'n/a') return null
-  if (t.includes('learning')) return 'learning'
-  if (t.includes('queue')) return 'in_queue'
-  if (t === 'delivering' || (t.includes('deliver') && !t.includes('not'))) return 'delivering'
+  if (t.includes('learning') || t.includes('mempelajari') || t.includes('belajar')) return 'learning'
+  if (t.includes('queue') || t.includes('antrean')) return 'in_queue'
+  // "delivering"/"ditayangkan" — kecualikan "not delivering"/"tidak ditayangkan".
+  if ((t.includes('deliver') || t.includes('ditayangkan')) && !t.includes('not') && !t.includes('tidak')) return 'delivering'
   return 'other'
 }
 const deliveryRank = (c) => (c == null ? -1 : (DELIVERY_RANK[c] ?? 0))
