@@ -7,7 +7,7 @@
 // (dari `totals` ringkas tiap snapshot, tanpa selisih). Creatives dimuat hanya
 // untuk hari-hari dalam window (+ pembanding) agar hemat memori.
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
-import { parseGmvMaxFile } from '../utils/parseGmvMax'
+import { parseGmvMaxFile, fmtSnapshotLabel } from '../utils/parseGmvMax'
 import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gmvmaxImports'
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
@@ -57,6 +57,15 @@ function prevMonthOf(mk) {
 }
 const windowLabelOf = w => (w === 'month' ? 'Bulan ini' : w === 1 ? 'Hari ini' : `${w} hari terakhir`)
 
+// ── Date range (picker harian/mingguan/bulanan/custom) ────────────────────────
+const addDaysISO = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const daysBetweenISO = (a, b) => Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000)
+function fmtRangeLabel(start, end) {
+  if (!start || !end) return null
+  if (start === end) return fmtSnapshotLabel(start) || start
+  return `${fmtSnapshotLabel(start) || start} – ${fmtSnapshotLabel(end) || end}`
+}
+
 // Window agregasi: berapa hari terakhir yang dijumlahkan. 'month' = semua hari.
 export const WINDOWS = [
   { d: 1, label: 'Hari ini', short: '1h' },
@@ -77,6 +86,7 @@ export function GmvMaxProvider({ children }) {
   const [enriching, setEnriching] = useState(null)
   const [period, setPeriod] = useState(null)    // null=bulan terbaru | 'all' | monthKey
   const [windowDays, setWindowDays] = useState('month') // 1 | 3 | 7 | 'month'
+  const [customRange, setCustomRange] = useState(null)  // { start, end, key } | null (mode date-range picker)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -118,25 +128,64 @@ export function GmvMaxProvider({ children }) {
   const selectedMonth = period === 'all' ? null
     : (period && period !== 'all' ? period : (months[0]?.key || null))
 
+  // ── Date range picker: batas data, preset, default ──────────────────────────
+  const dateBounds = useMemo(() => {
+    const ds = imports.map(sd).filter(Boolean).sort()
+    return ds.length ? { min: ds[0], max: ds[ds.length - 1] } : null
+  }, [imports])
+
+  const rangePresets = useMemo(() => {
+    if (!dateBounds) return []
+    const { max, min } = dateBounds
+    return [
+      { key: 'today', label: 'Terbaru (1 hari)', start: max, end: max },
+      { key: '7d', label: '7 hari terakhir', start: addDaysISO(max, -6), end: max },
+      { key: '30d', label: '30 hari', start: addDaysISO(max, -29), end: max },
+      { key: 'month', label: 'Bulan ini', start: `${max.slice(0, 7)}-01`, end: max },
+      { key: 'all', label: 'Semua', start: min, end: max },
+    ]
+  }, [dateBounds])
+
+  // Rentang efektif = pilihan user (customRange) atau default bulan berjalan
+  // (s/d snapshot terbaru). Turunan, bukan set-state-in-effect.
+  const effectiveRange = useMemo(() => {
+    if (customRange) return customRange
+    if (dateBounds) return { start: `${dateBounds.max.slice(0, 7)}-01`, end: dateBounds.max, key: 'month' }
+    return null
+  }, [customRange, dateBounds])
+
   // Hari (snapshot) dalam scope terpilih, urut tanggal naik.
-  const scopeDays = useMemo(() => imports
-    .filter(i => i.snapshot_date && (period === 'all' || monthKey(i) === selectedMonth))
-    .sort((a, b) => (sd(a) < sd(b) ? -1 : 1)), [imports, period, selectedMonth])
+  const scopeDays = useMemo(() => {
+    const asc = (a, b) => (sd(a) < sd(b) ? -1 : 1)
+    if (effectiveRange) return imports
+      .filter(i => i.snapshot_date && i.snapshot_date >= effectiveRange.start && i.snapshot_date <= effectiveRange.end)
+      .sort(asc)
+    return imports
+      .filter(i => i.snapshot_date && (period === 'all' || monthKey(i) === selectedMonth))
+      .sort(asc)
+  }, [imports, period, selectedMonth, effectiveRange])
 
   // Hari dalam window (N terakhir; 'month' = semua hari scope).
   const windowDaysSnaps = useMemo(
-    () => (windowDays === 'month' ? scopeDays : scopeDays.slice(-windowDays)),
-    [scopeDays, windowDays])
+    () => ((effectiveRange || windowDays === 'month') ? scopeDays : scopeDays.slice(-windowDays)),
+    [scopeDays, windowDays, effectiveRange])
 
   // Hari pembanding: blok N hari sebelum window; untuk 'month' = bulan sebelumnya.
   const prevDaysSnaps = useMemo(() => {
+    if (effectiveRange) {
+      const len = daysBetweenISO(effectiveRange.start, effectiveRange.end) + 1
+      const prevEnd = addDaysISO(effectiveRange.start, -1)
+      const prevStart = addDaysISO(effectiveRange.start, -len)
+      return imports.filter(i => i.snapshot_date && i.snapshot_date >= prevStart && i.snapshot_date <= prevEnd)
+        .sort((a, b) => (sd(a) < sd(b) ? -1 : 1))
+    }
     if (windowDays === 'month') {
       if (period === 'all' || !selectedMonth) return []
       const pm = prevMonthOf(selectedMonth)
       return imports.filter(i => i.snapshot_date && monthKey(i) === pm).sort((a, b) => (sd(a) < sd(b) ? -1 : 1))
     }
     return scopeDays.slice(-2 * windowDays, -windowDays)
-  }, [scopeDays, windowDays, imports, period, selectedMonth])
+  }, [scopeDays, windowDays, imports, period, selectedMonth, effectiveRange])
 
   const neededIds = useMemo(() => {
     const s = new Set()
@@ -202,9 +251,11 @@ export function GmvMaxProvider({ children }) {
   const prevRows = useMemo(
     () => (prevDaysSnaps.length ? creativesEnriched.filter(c => prevNames.has(c.periodName)) : null),
     [creativesEnriched, prevNames, prevDaysSnaps])
-  const prevLabel = windowDays === 'month'
-    ? (selectedMonth ? monthLabel(prevMonthOf(selectedMonth)) : null)
-    : `${windowDays} hari sebelumnya`
+  const prevLabel = effectiveRange
+    ? 'periode sebelumnya'
+    : (windowDays === 'month'
+      ? (selectedMonth ? monthLabel(prevMonthOf(selectedMonth)) : null)
+      : `${windowDays} hari sebelumnya`)
   const prev = useMemo(() => {
     if (!prevRows || !prevRows.length) return null
     return {
@@ -240,9 +291,11 @@ export function GmvMaxProvider({ children }) {
   }), [scopeDays])
 
   const windowLabel = windowLabelOf(windowDays)
-  const periodName = period === 'all'
-    ? `Semua bulan${windowDays !== 'month' ? ' · ' + windowLabel : ''}`
-    : (selectedMonth ? `${monthLabel(selectedMonth)}${windowDays !== 'month' ? ' · ' + windowLabel : ''}` : null)
+  const periodName = effectiveRange
+    ? fmtRangeLabel(effectiveRange.start, effectiveRange.end)
+    : (period === 'all'
+      ? `Semua bulan${windowDays !== 'month' ? ' · ' + windowLabel : ''}`
+      : (selectedMonth ? `${monthLabel(selectedMonth)}${windowDays !== 'month' ? ' · ' + windowLabel : ''}` : null))
   const todayDate = scopeDays.length ? scopeDays[scopeDays.length - 1].snapshot_date : null
 
   const insights = useMemo(() => ({
@@ -251,18 +304,36 @@ export function GmvMaxProvider({ children }) {
     framework: winningFramework(videos, hooks, thresholds),
   }), [videos, hooks, thresholds])
 
+  // Persist + reload + enrich background. Dipakai bersama jalur xlsx & API.
+  async function persistAndReload(parsed) {
+    await saveImport(parsed, thresholds)
+    await reload()
+    setPeriod(null) // lompat ke bulan terbaru
+    // Auto-scrape nama akun untuk video baru yang akunnya kosong (background).
+    const targets = parsed.rows
+      .filter(r => r.creativeType === 'Video' && r.videoId && !r.tiktokAccount)
+      .map(r => r.videoId)
+    runEnrich(targets).catch(() => {})
+  }
+
   async function upload(file) {
     setBusy(true); setError(null)
     try {
       const parsed = await parseGmvMaxFile(file)
-      await saveImport(parsed, thresholds)
-      await reload()
-      setPeriod(null) // lompat ke bulan terbaru
-      // Auto-scrape nama akun untuk video baru yang akunnya kosong (background).
-      const targets = parsed.rows
-        .filter(r => r.creativeType === 'Video' && r.videoId && !r.tiktokAccount)
-        .map(r => r.videoId)
-      runEnrich(targets).catch(() => {})
+      await persistAndReload(parsed)
+      return { ok: true, meta: parsed.meta }
+    } catch (e) {
+      setError(e.message)
+      return { ok: false, error: e.message }
+    } finally { setBusy(false) }
+  }
+
+  // Impor dataset yang SUDAH terparse ({ meta, rows }) — mis. hasil tarikan API
+  // (lihat utils/gmvmaxApiService). Bentuk & persist identik dengan jalur xlsx.
+  async function importDataset(parsed) {
+    setBusy(true); setError(null)
+    try {
+      await persistAndReload(parsed)
       return { ok: true, meta: parsed.meta }
     } catch (e) {
       setError(e.message)
@@ -358,13 +429,14 @@ export function GmvMaxProvider({ children }) {
   const value = {
     imports, creatives, rows, thresholds, notes, actionLog, boost, productNames,
     period, setPeriod, periodName, months,
+    range: effectiveRange, setRange: setCustomRange, rangePresets, dateBounds,
     windowDays, setWindowDays, windows: WINDOWS,
     prev, dailyDelta, trend,
     videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
     hasData: imports.length > 0,
     loading, busy, error,
     missingAccountCount, enriching,
-    upload, removeImport, updateThresholds, setNote, clearNote, enrichUsernames,
+    upload, importDataset, removeImport, updateThresholds, setNote, clearNote, enrichUsernames,
     logAction, removeActionLog,
     requestBoost, updateBoost, removeBoost,
     reload,
