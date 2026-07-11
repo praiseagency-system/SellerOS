@@ -46,4 +46,6 @@ if [ "$VERIFY_EXIT" -ne 0 ]; then
   exit $VERIFY_EXIT
 fi
 echo "===== $(date '+%F %T') SUCCESS gmvmaxsync target=$TARGET runbook_exit=0 verify=OK ====="
+# (5) Sinkron token segar ke VPS shadow — NON-FATAL ke OLD (kegagalan sync tak menggagalkan OLD).
+GMVMAX_SYNC_DATE="$TARGET" "$REPO/scripts/gmvmax-token-sync.sh" || echo "----- token-sync exit=$? (NON-FATAL ke OLD) -----"
 exit 0
