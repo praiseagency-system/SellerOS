@@ -1,0 +1,27 @@
+# GMV Max VPS SHADOW — pemicu harian.
+# Jadwal DILANDASKAN bukti: OLD daily-sync jalan 07:30 WIB (pull "kemarin"). SHADOW
+# jalan 14:00 WIB (= 07:00 UTC) → OLD sudah selesai & snapshot "kemarin" ada di Supabase
+# untuk parity. App menghitung snapshot_date pakai Asia/Jakarta secara eksplisit, jadi
+# tak bergantung TZ mesin.
+#
+# CATATAN systemd: suffix "UTC" pada OnCalendar butuh systemd cukup baru (verifikasi:
+#   systemd-analyze calendar '*-*-* 07:00:00 UTC'
+# ). Jika versi lama menolak: set TZ mesin ke UTC (`timedatectl set-timezone UTC`) dan
+# ganti baris di bawah jadi `OnCalendar=*-*-* 07:00:00` (tanpa suffix).
+[Unit]
+Description=Daily trigger — GMV Max VPS SHADOW (14:00 WIB / 07:00 UTC, setelah OLD 07:30 WIB)
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 UTC
+# GUARD SEMENTARA (enable 3.12, 2026-07-12): Persistent=false agar TIDAK
+# catch-up-fire hari ini (jendela 14:00 WIB sudah lewat saat enable). Run
+# terjadwal pertama = kejadian 14:00 WIB berikutnya. Setelah run terjadwal
+# pertama SUKSES & DITINJAU, kembalikan ke Persistent=true.
+Persistent=false
+# Deterministik setelah OLD → tanpa jitter. (Boleh diaktifkan & didokumentasikan bila perlu.)
+RandomizedDelaySec=0
+AccuracySec=1min
+Unit=gmvmax-shadow.service
+
+[Install]
+WantedBy=timers.target
