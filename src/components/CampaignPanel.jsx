@@ -152,7 +152,7 @@ export default function CampaignPanel({ products }) {
       )}
 
       {campaigns.length === 0 ? (
-        <div className="bg-surface border border-line/8 rounded-2xl flex flex-col items-center justify-center text-center p-12 min-h-[240px]">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm flex flex-col items-center justify-center text-center p-12 min-h-[240px]">
           <div className="w-12 h-12 rounded-2xl bg-blue-600/10 flex items-center justify-center mb-3">
             <Megaphone className="w-6 h-6 text-blue-500" />
           </div>
@@ -169,7 +169,7 @@ export default function CampaignPanel({ products }) {
             const open = expanded === c.id
             const Chevron = open ? ChevronDown : ChevronRight
             return (
-              <div key={c.id} className="bg-surface border border-line/8 rounded-2xl overflow-hidden">
+              <div key={c.id} className="bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-3 p-4">
                   <button onClick={() => setExpanded(x => x === c.id ? null : c.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                     <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
@@ -324,7 +324,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
       </div>
 
       {/* Nama + platform + tanggal */}
-      <div className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-1">
             <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
@@ -380,7 +380,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
       </div>
 
       {/* Tabel produk + varian */}
-      <div className="bg-surface border border-line/8 rounded-2xl overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-line/8">
           <p className="text-sm font-semibold text-ink-strong">Produk &amp; Harga Campaign</p>
           <button onClick={() => setShowPicker(true)}
@@ -488,7 +488,7 @@ function ProductPicker({ products, enrolledIds, onAdd, onClose }) {
 
 function Stat({ label, value, cls = 'text-ink-strong' }) {
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl px-4 py-3 text-center">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm px-4 py-3 text-center">
       <p className="text-[10px] text-ink-faint">{label}</p>
       <p className={`text-lg font-bold tabular-nums ${cls}`}>{value}</p>
     </div>

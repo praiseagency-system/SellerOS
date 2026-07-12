@@ -90,6 +90,25 @@ export function DeliveryPills({ counts }) {
   )
 }
 
+// Kartu statistik COMPACT glass (opsi 1, dipilih user 2026-07-12): micro-label
+// uppercase + ikon garis kecil, angka & delta sejajar satu baris. Dipakai
+// halaman full-glass (Overview, GMV Max Dashboard).
+export function StatCompact({ icon: Icon, label, value, delta, sub }) {
+  return (
+    <div className="glass-card rounded-xl px-3.5 py-2.5 min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-widest text-ink-faint flex items-center gap-1.5 mb-1">
+        {Icon && <Icon className="w-3 h-3 text-blue-400/80 flex-shrink-0" />}
+        <span className="truncate">{label}</span>
+      </p>
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span className="text-[15px] font-semibold text-ink-strong tabular-nums whitespace-nowrap">{value}</span>
+        {delta}
+      </div>
+      {sub && <p className="text-[10px] text-ink-faint mt-0.5 truncate">{sub}</p>}
+    </div>
+  )
+}
+
 // Kartu statistik gaya Praise: ikon-tile berwarna + label + angka besar + delta.
 export function StatCard({ icon: Icon, label, value, sub, delta, tone = 'blue' }) {
   return (

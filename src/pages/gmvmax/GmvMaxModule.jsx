@@ -1,7 +1,7 @@
 // Pembungkus modul GMV Max: top-strip (pilih periode + Upload) lalu render
 // sub-halaman sesuai `page`. Dipakai App.jsx untuk semua route gmv_*.
 import { useState } from 'react'
-import { UploadCloud, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { UploadModal } from '../../components/gmvmax/modals'
 import DateRangePicker from '../../components/gmvmax/DateRangePicker'
@@ -38,13 +38,11 @@ export default function GmvMaxModule({ page }) {
 
   return (
     <div>
+      {/* Tombol Upload dihapus (2026-07-12) — upload cukup lewat menu Import
+          Data. Modal upload tetap ada utk CTA empty-state halaman. */}
       {hasData && page !== 'gmv_input' && (
-        <div className="flex items-center justify-between gap-3 px-6 pt-4">
+        <div className="flex items-center gap-3 px-6 pt-4">
           <DateRangePicker />
-          <button onClick={() => setShowUpload(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium">
-            <UploadCloud className="w-4 h-4" /> Upload
-          </button>
         </div>
       )}
       <Page onOpenUpload={() => setShowUpload(true)} />

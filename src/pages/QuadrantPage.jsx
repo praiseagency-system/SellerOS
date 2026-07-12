@@ -57,10 +57,12 @@ export default function QuadrantPage() {
   const trafficName = platformLabels[platform]?.traffic
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    // Frame disamakan dgn section GMV Max (2026-07-12): kontainer p-6 max-w-7xl,
+    // panel jadi kartu rounded — bukan workbench edge-to-edge lagi.
+    <div className="p-6 space-y-4 max-w-7xl mx-auto">
 
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-line/5 flex-shrink-0 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         {hasData ? (
           <>
             <div className="flex items-center gap-0.5 bg-fill/5 rounded-lg p-0.5">
@@ -101,7 +103,7 @@ export default function QuadrantPage() {
 
       {/* Benchmark panel */}
       {showBenchmark && hasData && (
-        <div className="border-b border-line/5 bg-surface2 px-4 py-4 flex-shrink-0">
+        <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
           <div className="flex flex-wrap gap-8 items-start">
             <div className="space-y-3">
               <p className="text-xs font-semibold text-ink-muted uppercase tracking-wide">Traffic</p>
@@ -170,7 +172,7 @@ export default function QuadrantPage() {
 
       {/* Summary bar */}
       {hasData && (
-        <div className="border-b border-line/5 px-4 py-2 flex-shrink-0">
+        <div>
           <QuadrantSummary
             products={productsWithQuadrant}
             activeQuadrant={activeQuadrant}
@@ -181,7 +183,7 @@ export default function QuadrantPage() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div>
         {!hasData ? (
           <EmptyState onGoImport={() => setShowImport(true)} />
         ) : (
@@ -192,7 +194,7 @@ export default function QuadrantPage() {
             )}
             {activeTab === 'perubahan' && <MovementView products={productsWithQuadrant} dark />}
             {activeTab === 'chart' && (
-              <div className="bg-surface rounded-2xl border border-line/5 p-4">
+              <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
                 <QuadrantChart products={productsWithQuadrant} settings={effectiveSettings} dark />
               </div>
             )}

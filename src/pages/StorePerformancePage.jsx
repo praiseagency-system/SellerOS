@@ -110,7 +110,7 @@ export default function StorePerformancePage() {
   ]
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 max-w-7xl mx-auto">
       {/* Header: status data + tombol Import (ringkas, modal saat dipencet) */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="min-w-0">
@@ -130,7 +130,7 @@ export default function StorePerformancePage() {
       </div>
 
       {!stats ? (
-        <div className="mt-6 bg-surface border border-line/8 rounded-2xl flex flex-col items-center justify-center text-center p-12 min-h-[260px]">
+        <div className="mt-6 bg-surface rounded-2xl border border-line/10 shadow-sm flex flex-col items-center justify-center text-center p-12 min-h-[260px]">
           <div className="w-12 h-12 rounded-2xl bg-blue-600/10 flex items-center justify-center mb-3">
             <TrendingUp className="w-6 h-6 text-blue-500" />
           </div>
@@ -239,7 +239,7 @@ export default function StorePerformancePage() {
 
 function KpiCard({ label, value, sub }) {
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl p-4">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
       <p className="text-[11px] text-ink-faint">{label}</p>
       <p className="text-xl font-bold text-ink-strong tabular-nums mt-0.5">{value}</p>
       {sub && <p className="text-[11px] text-ink-faint mt-0.5">{sub}</p>}
@@ -262,7 +262,7 @@ function Ringkasan({ stats, insights }) {
         <KpiCard label="Marketplace" value={fmtNum(stats.marketplaces.length)} sub={stats.marketplaces.map(m => m.name).join(', ')} />
       </div>
 
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong flex items-center gap-2 mb-3"><Sparkles className="w-4 h-4 text-blue-400" /> AI Insights</h3>
         <ul className="space-y-2">
           {insights.map((t, i) => (
@@ -285,7 +285,7 @@ function Marketplace({ stats }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-ink-strong mb-3">Kontribusi GMV</h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -297,7 +297,7 @@ function Marketplace({ stats }) {
             </PieChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-ink-strong mb-3">GMV per Marketplace</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
@@ -312,7 +312,7 @@ function Marketplace({ stats }) {
         </div>
       </div>
 
-      <div className="bg-surface border border-line/8 rounded-2xl p-5 overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -348,7 +348,7 @@ function Mingguan({ stats }) {
   const data = stats.weekly.map(w => ({ ...w, name: `Minggu ${w.week}` }))
   return (
     <div className="space-y-4">
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Tren GMV Mingguan</h3>
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={data} margin={{ left: 5, right: 10 }}>
@@ -363,7 +363,7 @@ function Mingguan({ stats }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {data.map(w => (
-          <div key={w.week} className="bg-surface border border-line/8 rounded-2xl p-4">
+          <div key={w.week} className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
             <p className="text-sm font-semibold text-ink-strong mb-2">{w.name}</p>
             <p className="text-lg font-bold text-ink-strong tabular-nums">{fmtRpShort(w.gmv)}</p>
             <p className="text-[11px] text-ink-faint">{fmtRp(w.gmv)}</p>
@@ -405,7 +405,7 @@ function Produk({ stats }) {
         <KpiCard label="Produk Kelas A" value={fmtNum(stats.products.filter(p => p.abc === 'A').length)} sub="≤80% revenue kumulatif" />
       </div>
 
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Pareto / ABC (Top 12)</h3>
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={pareto} margin={{ left: 5, right: 5 }}>
@@ -428,7 +428,7 @@ function Produk({ stats }) {
 
 function RankTable({ title, rows, showAbc }) {
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl p-5 overflow-x-auto">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
       <h3 className="text-sm font-semibold text-ink-strong mb-3">{title}</h3>
       <table className="w-full text-sm">
         <thead>
@@ -468,7 +468,7 @@ function Kategori({ stats }) {
         <KpiCard label="Total Kategori" value={fmtNum(cats.length)} />
         <KpiCard label="Kategori Teratas" value={cats[0]?.name || '—'} sub={cats[0] ? `${cats[0].share.toFixed(0)}% GMV` : ''} />
       </div>
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Kontribusi GMV per Kategori (Top 8)</h3>
         <ResponsiveContainer width="100%" height={240}>
           <PieChart>
@@ -508,7 +508,7 @@ function Waktu({ stats }) {
           const maxDayOrders = top5Days[0]?.orders || 1
           const totalDayOrders = time.byDay.reduce((s, d) => s + d.orders, 0)
           return (
-            <div className="bg-surface border border-line/8 rounded-2xl p-5">
+            <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
               <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Hari Terlaris</h3>
               <div className="space-y-3">
                 {top5Days.map((d, i) => {
@@ -544,7 +544,7 @@ function Waktu({ stats }) {
         })()}
 
         {/* Top 5 Jam Terbaik — kanan */}
-        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik</h3>
           <div className="space-y-3">
             {top5Hours.map((h, i) => (
@@ -572,7 +572,7 @@ function Waktu({ stats }) {
         </div>
       </div>
 
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">GMV per Jam</h3>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={time.byHour} margin={{ left: 5, right: 5 }}>
@@ -585,7 +585,7 @@ function Waktu({ stats }) {
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-surface border border-line/8 rounded-2xl p-5 overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Heatmap Hari × Jam (intensitas GMV)</h3>
         <div className="min-w-[640px]">
           <div className="flex gap-0.5 mb-0.5 pl-9">
@@ -623,7 +623,7 @@ function Lokasi({ stats, mp, lsf }) {
         <KpiCard label="Provinsi Teratas" value={stats.provinces[0]?.name || '—'} sub={stats.provinces[0] ? `${stats.provinces[0].share.toFixed(0)}% GMV` : ''} />
         <KpiCard label="Kota Teratas" value={stats.cities[0]?.name || '—'} sub={stats.cities[0] ? `${stats.cities[0].share.toFixed(0)}% GMV` : ''} />
       </div>
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Top Provinsi (GMV)</h3>
         <ResponsiveContainer width="100%" height={Math.max(160, prov.length * 26)}>
           <BarChart data={prov} layout="vertical" margin={{ left: 10 }}>
@@ -645,7 +645,7 @@ function Lokasi({ stats, mp, lsf }) {
 function LogisticsCard({ lsf }) {
   const { blended, dominant, uplift, zones } = lsf
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl p-5">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
       <div className="flex items-center gap-2 mb-1">
         <Truck className="w-4 h-4 text-blue-400" />
         <h3 className="text-sm font-semibold text-ink-strong">Estimasi Biaya Logistik</h3>
@@ -694,7 +694,7 @@ function LogisticsCard({ lsf }) {
 
 function GeoTable({ title, rows }) {
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl p-5 overflow-x-auto">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
       <h3 className="text-sm font-semibold text-ink-strong mb-3">{title}</h3>
       <table className="w-full text-sm">
         <thead>
@@ -742,7 +742,7 @@ function Transaksi({ stats, vouchers = [] }) {
 
       {/* Metode Pembayaran */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-ink-strong mb-3">Metode Pembayaran</h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -757,7 +757,7 @@ function Transaksi({ stats, vouchers = [] }) {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-surface border border-line/8 rounded-2xl p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-ink-strong mb-4">Ranking Metode Pembayaran</h3>
           <div className="space-y-3">
             {payments.map((p, i) => (
@@ -773,7 +773,7 @@ function Transaksi({ stats, vouchers = [] }) {
       </div>
 
       {/* Performa Rentang Tanggal */}
-      <div className="bg-surface border border-line/8 rounded-2xl p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-ink-strong mb-4">Performa Rentang Tanggal</h3>
         <div className="space-y-3 mb-4">
           {dekade.map(d => (
@@ -805,7 +805,7 @@ function Transaksi({ stats, vouchers = [] }) {
       {promo.hasData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Voucher Seller */}
-          <div className="bg-surface border border-line/8 rounded-2xl p-5">
+          <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-ink-strong mb-1">Penggunaan Voucher Seller</h3>
             <p className="text-[11px] text-ink-faint mb-3">Nominal ditanggung penjual</p>
             <ResponsiveContainer width="100%" height={180}>
@@ -882,7 +882,7 @@ function Transaksi({ stats, vouchers = [] }) {
           </div>
 
           {/* Voucher Shopee */}
-          <div className="bg-surface border border-line/8 rounded-2xl p-5">
+          <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-ink-strong mb-1">Voucher Ditanggung Shopee</h3>
             <p className="text-[11px] text-ink-faint mb-3">Platform yang menanggung diskon</p>
             <ResponsiveContainer width="100%" height={180}>
@@ -922,7 +922,7 @@ function Transaksi({ stats, vouchers = [] }) {
           </div>
         </div>
       ) : (
-        <div className="bg-surface border border-line/8 rounded-2xl p-5 text-center py-8">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 text-center py-8">
           <p className="text-sm text-ink-faint">Data voucher tidak tersedia</p>
           <p className="text-xs text-ink-faint mt-1">Kolom "Voucher Ditanggung Penjual" / "Voucher Ditanggung Shopee" tidak ditemukan di file ini</p>
         </div>
