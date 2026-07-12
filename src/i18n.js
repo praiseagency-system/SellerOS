@@ -3,6 +3,13 @@
 export const TRANSLATIONS = {
   id: {
     // Sidebar
+    'nav.MAIN': 'UTAMA',
+    'nav.overview.label': 'Overview',
+    'nav.MARKETPLACE': 'MARKETPLACE',
+    'nav.AFFILIATE MONITORING': 'AFFILIATE MONITORING',
+    'nav.ads.label': 'Ads Performance',
+    'nav.settings.label': 'Pengaturan',
+    'nav.soonHint': 'Segera hadir',
     'nav.GMV MAX ADS': 'GMV MAX ADS',
     'nav.gmv_dashboard.label': 'Dashboard',
     'nav.gmv_monitoring.label': 'Monitoring',
@@ -23,13 +30,15 @@ export const TRANSLATIONS = {
     'nav.calculator.label': 'Kalkulator Marketplace',
     'nav.products.label': 'Produk',
     'nav.performance.label': 'Performa Toko',
-    'nav.campaign.label': 'Campaign',
+    'nav.campaign.label': 'Campaign Pricing',
     'nav.reports.label': 'Laporan Penjualan',
     'nav.ai.label': 'AI Analyst',
     'nav.info': 'Informasi',
     'nav.soon': 'Soon',
 
     // Judul & subjudul halaman
+    'page.overview.title': 'Overview',
+    'page.overview.subtitle': 'Pusat kendali SellerOS — ringkasan lintas modul',
     'page.import.title': 'Import Data',
     'page.import.subtitle': 'Upload data performa produk dari Shopee atau TikTok Shop',
     'page.quadrant.title': 'Kuadran Traffic Conversion',
@@ -109,6 +118,13 @@ export const TRANSLATIONS = {
   },
   en: {
     // Sidebar
+    'nav.MAIN': 'MAIN',
+    'nav.overview.label': 'Overview',
+    'nav.MARKETPLACE': 'MARKETPLACE',
+    'nav.AFFILIATE MONITORING': 'AFFILIATE MONITORING',
+    'nav.ads.label': 'Ads Performance',
+    'nav.settings.label': 'Settings',
+    'nav.soonHint': 'Coming soon',
     'nav.GMV MAX ADS': 'GMV MAX ADS',
     'nav.gmv_dashboard.label': 'Dashboard',
     'nav.gmv_monitoring.label': 'Monitoring',
@@ -129,13 +145,15 @@ export const TRANSLATIONS = {
     'nav.calculator.label': 'Marketplace Calculator',
     'nav.products.label': 'Products',
     'nav.performance.label': 'Store Performance',
-    'nav.campaign.label': 'Campaign',
+    'nav.campaign.label': 'Campaign Pricing',
     'nav.reports.label': 'Sales Reports',
     'nav.ai.label': 'AI Analyst',
     'nav.info': 'Information',
     'nav.soon': 'Soon',
 
     // Page titles & subtitles
+    'page.overview.title': 'Overview',
+    'page.overview.subtitle': 'SellerOS command center — cross-module summary',
     'page.import.title': 'Import Data',
     'page.import.subtitle': 'Upload product performance data from Shopee or TikTok Shop',
     'page.quadrant.title': 'Traffic Conversion Quadrant',

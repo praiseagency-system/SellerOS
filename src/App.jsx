@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react'
 import Layout from './components/Layout'
+import OverviewPage from './pages/OverviewPage'
 import QuadrantPage from './pages/QuadrantPage'
 import CalculatorPage from './pages/CalculatorPage'
 import ProductsPage from './pages/ProductsPage'
@@ -14,9 +15,8 @@ import { useAuth } from './contexts/AuthContext'
 import LoginPage from './pages/LoginPage'
 import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
-import { listSessions } from './data/periods'
 
-const PAGE_KEYS = ['quadrant', 'calculator', 'products', 'performance', 'campaign', 'reports', 'ai']
+const PAGE_KEYS = ['overview', 'quadrant', 'calculator', 'products', 'performance', 'campaign', 'reports', 'ai']
 // Halaman tanpa key i18n — judul ditetapkan manual.
 const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
@@ -46,14 +46,15 @@ export default function App() {
 
 function MainApp() {
   const { t } = useLang()
-  // Selalu mulai di Kuadran. Bila ada periode tersimpan, data di-restore otomatis
-  // (QuadrantContext). Bila kosong, Kuadran menampilkan empty-state + tombol Import.
-  const [currentPage, setCurrentPage] = useState('quadrant')
+  // Landing default: Overview (command center). Data periode tetap di-restore
+  // otomatis oleh QuadrantContext di latar belakang, terlepas halaman awal.
+  const [currentPage, setCurrentPage] = useState('overview')
 
   // Produk yang sedang dibuka di kalkulator (null = produk baru/kosong).
   // calcKey membump-remount CalculatorPage agar field ter-reset/terisi sesuai produk.
   const [editingProduct, setEditingProduct] = useState(null)
   const [calcKey, setCalcKey] = useState(0)
+  const [settingsTab, setSettingsTab] = useState('profil')
 
   function openProduct(product) {
     setEditingProduct(product)
@@ -69,8 +70,9 @@ function MainApp() {
   // Navigasi sidebar: buka kalkulator selalu sebagai produk BARU. Tanpa ini,
   // editingProduct yang basi (dari edit/duplikat sebelumnya) ikut terbawa,
   // sehingga "Simpan" malah menimpa produk lama, bukan membuat yang baru.
-  function handleNavigate(target) {
+  function handleNavigate(target, opts) {
     if (target === 'calculator') { newProduct(); return }
+    if (target === 'settings' && opts?.tab) setSettingsTab(opts.tab)
     setCurrentPage(target)
   }
 
@@ -100,8 +102,6 @@ function MainApp() {
         setCurrentWorkspace(cur)
         setWorkspaces(list)
         setCurrentId(cur)
-        const saved = await listSessions()
-        if (saved.length > 0) setCurrentPage('quadrant')
       } catch (e) {
         console.error('Gagal memuat workspace:', e)
       } finally {
@@ -166,14 +166,20 @@ function MainApp() {
         )}
         {currentPage === 'performance' && <StorePerformancePage />}
         {currentPage === 'campaign' && <CampaignPage />}
-        {currentPage === 'settings' && <SettingsPage />}
-        {currentPage.startsWith('gmv_') && (
+        {currentPage === 'settings' && (
+          <SettingsPage initialTab={settingsTab} currentWorkspace={currentWorkspace} />
+        )}
+        {/* Overview ikut provider GMV Max (baca-saja) supaya data tidak
+            dimuat ulang saat berpindah Overview ↔ halaman gmv_*. */}
+        {(currentPage === 'overview' || currentPage.startsWith('gmv_')) && (
           <GmvMaxProvider key="gmv">
-            <GmvMaxModule page={currentPage} />
+            {currentPage === 'overview'
+              ? <OverviewPage onNavigate={handleNavigate} />
+              : <GmvMaxModule page={currentPage} />}
           </GmvMaxProvider>
         )}
-        {!currentPage.startsWith('gmv_') &&
-          !['quadrant', 'calculator', 'products', 'performance', 'campaign', 'settings'].includes(currentPage) && (
+        {currentPage !== 'overview' && !currentPage.startsWith('gmv_') &&
+          !['overview', 'quadrant', 'calculator', 'products', 'performance', 'campaign', 'settings'].includes(currentPage) && (
           <div className="flex items-center justify-center min-h-[60vh]">
             <p className="text-ink-faint text-sm">{t('page.wip')}</p>
           </div>
