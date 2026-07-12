@@ -2,9 +2,19 @@
 import { ChevronDown, Check, Plus, X, Store, Trash2 } from 'lucide-react'
 import { PRESET_COLORS, clearWorkspaceLocalData } from '../utils/workspace'
 import { createWorkspace, deleteWorkspace } from '../data/workspaces'
+import { useIdentity } from '../contexts/IdentityContext'
 
-function WsAvatar({ ws, size = 'sm' }) {
+// Avatar workspace: pakai LOGO BRAND bila ada (diatur di Settings › Brand),
+// jatuh ke inisial berwarna bila belum diset.
+function WsAvatar({ ws, brand, size = 'sm' }) {
   const dim = size === 'md' ? 'w-9 h-9 text-xs' : 'w-7 h-7 text-[10px]'
+  if (brand?.logo) {
+    return (
+      <div className={`${dim} rounded-lg overflow-hidden flex-shrink-0`}>
+        <img src={brand.logo} alt="" className="w-full h-full object-cover" />
+      </div>
+    )
+  }
   const initials = ws.name.slice(0, 2).toUpperCase()
   return (
     <div className={`${dim} rounded-lg flex items-center justify-center flex-shrink-0 font-bold text-white`}
@@ -107,6 +117,7 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
   const [open, setOpen] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const ref = useRef(null)
+  const { brandFor } = useIdentity()
 
   useEffect(() => {
     function onClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
@@ -134,17 +145,19 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
 
   if (!current) return null
 
+  const currentBrand = brandFor(current.id)
+
   return (
     <>
       <div ref={ref} className="relative">
         <button onClick={() => setOpen(o => !o)}
           className="w-full flex items-center gap-3 px-2 py-1.5 rounded-xl hover:bg-fill/5 transition-colors">
-          <WsAvatar ws={current} size="md" />
+          <WsAvatar ws={current} brand={currentBrand} size="md" />
           {!collapsed && (
             <>
               <div className="flex-1 min-w-0 text-left">
-                <p className="font-bold text-ink-strong text-sm leading-tight truncate">{current.name}</p>
-                <p className="text-xs text-ink-muted">Workspace</p>
+                <p className="font-bold text-ink-strong text-sm leading-tight truncate">{currentBrand.name || current.name}</p>
+                <p className="text-xs text-ink-muted truncate">{currentBrand.name ? current.name : 'Workspace'}</p>
               </div>
               <ChevronDown className={`w-3.5 h-3.5 text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
             </>
@@ -156,11 +169,13 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
           <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line/10 rounded-xl shadow-2xl py-1.5 z-50 min-w-56">
             <p className="text-xs text-ink-faint px-3 py-1.5 font-semibold uppercase tracking-wider">Workspace</p>
             <div className="max-h-64 overflow-y-auto">
-              {workspaces.map(ws => (
+              {workspaces.map(ws => {
+                const b = brandFor(ws.id)
+                return (
                 <button key={ws.id} onClick={() => { onSwitch(ws.id); setOpen(false) }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-fill/5 transition-colors group">
-                  <WsAvatar ws={ws} />
-                  <span className="flex-1 text-left text-sm text-ink truncate">{ws.name}</span>
+                  <WsAvatar ws={ws} brand={b} />
+                  <span className="flex-1 text-left text-sm text-ink truncate">{b.name || ws.name}</span>
                   {ws.id === current.id && <Check className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
                   {ws.id !== current.id && workspaces.length > 1 && (
                     <span onClick={e => handleDelete(e, ws.id)}
@@ -169,7 +184,7 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
                     </span>
                   )}
                 </button>
-              ))}
+              ) })}
             </div>
             <div className="border-t border-line/5 mt-1 pt-1">
               <button onClick={() => { setShowCreate(true); setOpen(false) }}
