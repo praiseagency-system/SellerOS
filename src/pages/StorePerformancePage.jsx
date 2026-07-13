@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
-  Package, Tags, Clock, MapPin, CreditCard, Truck,
+  Package, Tags, Clock, MapPin, CreditCard, Truck, BookOpen, ChevronDown,
 } from 'lucide-react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -230,6 +230,8 @@ export default function StorePerformancePage() {
                 <button onClick={handleClear} className="text-xs text-ink-faint hover:text-red-400 ml-1">Hapus semua</button>
               </div>
             )}
+
+            <ExportGuide />
           </div>
         </Modal>
       )}
@@ -237,12 +239,71 @@ export default function StorePerformancePage() {
   )
 }
 
+// Panduan "Cara Export Data" di modal import (collapsible, tab Shopee/TikTok).
+// Menerima file EKSPOR PESANAN mentah; sumber dideteksi dari kolom, bukan nama file.
+const GUIDE = {
+  shopee: {
+    label: 'Shopee',
+    steps: [
+      'Buka Shopee Seller Center → menu Pesanan → Semua Pesanan.',
+      '(Opsional) atur rentang tanggal / status pesanan.',
+      'Klik Ekspor → Ekspor Data Pesanan, tunggu siap, lalu Download (.xlsx).',
+      'Upload file itu di form di atas.',
+    ],
+    cols: 'No. Pesanan · Waktu Pesanan Dibuat · Nama Produk · Nomor Referensi SKU · Jumlah · Harga Setelah Diskon · Provinsi · Kota/Kabupaten',
+  },
+  tiktok: {
+    label: 'TikTok / Tokopedia',
+    steps: [
+      'Buka TikTok Shop Seller Center → Pesanan → Kelola Pesanan (Manage Orders).',
+      '(Opsional) atur filter tanggal / status.',
+      'Klik Ekspor (Export), download file .xlsx / .csv.',
+      'Upload di form di atas — order Tokopedia ikut terpisah otomatis.',
+    ],
+    cols: 'Order ID · Created Time · Product Name · Seller SKU · SKU ID · Quantity · SKU Subtotal After Discount · Province · Product Category · Purchase Channel',
+  },
+}
+function ExportGuide() {
+  const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState('shopee')
+  const g = GUIDE[tab]
+  return (
+    <div className="mt-4 rounded-2xl border border-line/10 bg-fill/5 overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-ink hover:bg-fill/5">
+        <BookOpen className="w-4 h-4 text-blue-500" /> Cara Export Data
+        <ChevronDown className={`w-4 h-4 text-ink-faint ml-auto transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          <div className="flex gap-1.5 mb-3">
+            {Object.entries(GUIDE).map(([k, v]) => (
+              <button key={k} onClick={() => setTab(k)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  tab === k ? 'bg-blue-600 text-white' : 'text-ink-muted hover:bg-fill/10'
+                }`}>{v.label}</button>
+            ))}
+          </div>
+          <ol className="text-sm text-ink-muted space-y-1.5 list-decimal list-inside">
+            {g.steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+          <p className="text-[11px] text-ink-faint mt-3 leading-relaxed">
+            Format XLSX atau CSV, boleh beberapa file / bulan sekaligus. Pastikan kolom kunci ikut ter-export:
+            <span className="text-ink-muted"> {g.cols}</span>.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Compact (2026-07-12) — resep sama dgn StatCard/StatCompact di menu lain.
 function KpiCard({ label, value, sub }) {
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
-      <p className="text-[11px] text-ink-faint">{label}</p>
-      <p className="text-xl font-bold text-ink-strong tabular-nums mt-0.5">{value}</p>
-      {sub && <p className="text-[11px] text-ink-faint mt-0.5">{sub}</p>}
+    <div className="glass-card rounded-xl px-3.5 py-2.5 min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-widest text-ink-faint truncate">{label}</p>
+      <p className="text-[15px] font-semibold text-ink-strong tabular-nums mt-1">{value}</p>
+      {sub && <p className="text-[10px] text-ink-faint mt-0.5 truncate">{sub}</p>}
     </div>
   )
 }

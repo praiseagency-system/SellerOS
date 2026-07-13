@@ -46,6 +46,138 @@ export async function loadCreatives(importIds = null) {
   return all
 }
 
+// Riwayat LENGKAP video yang PERNAH di-exclude untuk satu produk, LINTAS SEMUA
+// snapshot (bukan hanya window aktif). Read-only, di-scope product_id → ringan.
+// Balik: [{ videoId, title, account, campaign, first, last, dayCount }] urut
+// exclude terakhir terbaru dulu. first/last = tanggal snapshot pertama/terakhir
+// video itu terlihat berstatus excluded.
+export async function loadExcludedHistory(productId) {
+  if (!productId) return []
+  const imports = await listImports()
+  if (imports.length === 0) return []
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
+  const ids = imports.map(i => i.id)
+
+  const byVid = new Map()
+  for (let i = 0; i < ids.length; i += 25) {
+    const chunk = ids.slice(i, i + 25)
+    const { data, error } = await supabase
+      .from('gmvmax_creatives')
+      .select('video_id, video_title, tiktok_account, campaign_name, status, import_id')
+      .in('import_id', chunk)
+      .eq('product_id', productId)
+      .or('status.ilike.%exclud%,status.ilike.%dikecualikan%')
+    if (error) throw error
+    for (const r of data || []) {
+      if (!r.video_id) continue
+      const d = dateById[r.import_id] || null
+      let e = byVid.get(r.video_id)
+      if (!e) {
+        e = { videoId: r.video_id, title: r.video_title || '', account: r.tiktok_account || null,
+              campaign: r.campaign_name || '', first: d, last: d, days: new Set() }
+        byVid.set(r.video_id, e)
+      }
+      if (d) { if (!e.first || d < e.first) e.first = d; if (!e.last || d > e.last) e.last = d; e.days.add(d) }
+      if (!e.campaign && r.campaign_name) e.campaign = r.campaign_name
+      if (!e.title && r.video_title) e.title = r.video_title
+      if (!e.account && r.tiktok_account) e.account = r.tiktok_account
+    }
+  }
+  return [...byVid.values()]
+    .map(({ days, ...e }) => ({ ...e, dayCount: days.size }))
+    .sort((a, b) => ((a.last || '') < (b.last || '') ? 1 : -1))
+}
+
+// Video yang PERNAH ber-authorization_type "AUTH_CODE" (= "video code"/boosted
+// pakai kode menurut TikTok) untuk satu produk, lintas semua snapshot. Sinyal
+// deteksi boost objektif (bukan pipeline manual). Read-only, scope product_id.
+// Balik: Map<videoId, { videoId, title, account, campaign, first, last }>.
+export async function loadCodeVideos(productId) {
+  if (!productId) return new Map()
+  const imports = await listImports()
+  if (imports.length === 0) return new Map()
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
+  const impIds = imports.map(i => i.id)
+  const byVid = new Map()
+  for (let i = 0; i < impIds.length; i += 25) {
+    const chunk = impIds.slice(i, i + 25)
+    const { data, error } = await supabase
+      .from('gmvmax_creatives')
+      .select('video_id, video_title, tiktok_account, campaign_name, import_id')
+      .in('import_id', chunk)
+      .eq('product_id', productId)
+      .eq('auth_type', 'AUTH_CODE')
+    if (error) throw error
+    for (const r of data || []) {
+      if (!r.video_id) continue
+      const d = dateById[r.import_id] || null
+      let e = byVid.get(r.video_id)
+      if (!e) {
+        e = { videoId: r.video_id, title: r.video_title || '', account: r.tiktok_account || null,
+              campaign: r.campaign_name || '', first: d, last: d }
+        byVid.set(r.video_id, e)
+      }
+      if (d) { if (!e.first || d < e.first) e.first = d; if (!e.last || d > e.last) e.last = d }
+      if (!e.campaign && r.campaign_name) e.campaign = r.campaign_name
+    }
+  }
+  return byVid
+}
+
+// Set video_id yang PERNAH muncul untuk satu produk, lintas semua snapshot.
+// Dipakai memetakan record boost (tak simpan product_id) ke produk agar tab
+// Boosted/Kode-masuk pakai data keseluruhan (bukan window aktif). Read-only.
+export async function loadProductVideoIds(productId) {
+  if (!productId) return new Set()
+  const imports = await listImports()
+  if (imports.length === 0) return new Set()
+  const impIds = imports.map(i => i.id)
+  const set = new Set()
+  for (let i = 0; i < impIds.length; i += 25) {
+    const chunk = impIds.slice(i, i + 25)
+    const { data, error } = await supabase
+      .from('gmvmax_creatives')
+      .select('video_id')
+      .in('import_id', chunk)
+      .eq('product_id', productId)
+    if (error) throw error
+    for (const r of data || []) if (r.video_id) set.add(r.video_id)
+  }
+  return set
+}
+
+// Metrik HARIAN per video (cost/revenue/orders per snapshot_date) untuk
+// sekumpulan videoId, lintas semua snapshot. Read-only, di-scope video_id →
+// ringan. Dipakai menghitung "performa sejak di-boost". Balik:
+// Map<videoId, [{ date, cost, revenue, orders }]> (belum terurut).
+export async function loadVideosDaily(videoIds) {
+  const ids = [...new Set((videoIds || []).filter(Boolean))]
+  if (ids.length === 0) return new Map()
+  const imports = await listImports()
+  if (imports.length === 0) return new Map()
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
+  const impIds = imports.map(i => i.id)
+
+  const out = new Map(ids.map(v => [v, []]))
+  for (let i = 0; i < impIds.length; i += 25) {
+    const chunk = impIds.slice(i, i + 25)
+    const { data, error } = await supabase
+      .from('gmvmax_creatives')
+      .select('video_id, cost, gross_revenue, sku_orders, import_id')
+      .in('import_id', chunk)
+      .in('video_id', ids)
+    if (error) throw error
+    for (const r of data || []) {
+      const d = dateById[r.import_id]
+      if (!d || !out.has(r.video_id)) continue
+      out.get(r.video_id).push({
+        date: d, cost: num(r.cost) || 0, revenue: num(r.gross_revenue) || 0, orders: num(r.sku_orders) || 0,
+      })
+    }
+  }
+  return out
+}
+
 // Simpan hasil parser. parsed = { meta, rows } dari parseGmvMaxFile.
 export async function saveImport(parsed, settings = null) {
   const wsId = getCurrentWorkspaceId()
@@ -163,6 +295,9 @@ function rowToCreative(row, imp) {
     hasSpend: num(row.cost) > 0,
     period: imp?.period_month || 'all',
     periodName: imp?.name || 'all',
+    // Tanggal snapshot harian sumber baris — dipakai UI, mis. keterangan
+    // "Excluded sejak <tgl>" di modal detail produk.
+    snapshotDate: imp?.snapshot_date || null,
   }
 }
 

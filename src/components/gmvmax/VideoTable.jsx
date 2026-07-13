@@ -1,8 +1,15 @@
 // Tabel video GMV Max — dipakai Video Overview & Video Check. Kolom standar +
 // opsi kolom Aksi (rekomendasi) & tombol Catatan.
 import { StickyNote } from 'lucide-react'
-import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp } from './ui'
+import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp, useSortableRows, SortTh } from './ui'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
+
+const VIDEO_SORT = {
+  cost: (v) => v.lifetime.cost,
+  revenue: (v) => v.lifetime.revenue,
+  roas: (v) => v.lifetime.roas,
+  orders: (v) => v.lifetime.orders,
+}
 
 const ACTION_TEXT = {
   scale: 'Scale Budget — naikkan anggaran',
@@ -13,6 +20,7 @@ const ACTION_TEXT = {
 }
 
 export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showDelivery = false, showCampaign = false, showProduct = false }) {
+  const { sorted, sort, toggle } = useSortableRows(videos, VIDEO_SORT)
   if (!videos.length) return <p className="text-sm text-ink-faint py-10 text-center">Tidak ada video yang cocok.</p>
   return (
     <div className="overflow-x-auto">
@@ -26,16 +34,16 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
             {showCampaign && <th className="py-2.5 px-3 font-medium">KAMPANYE</th>}
             {showProduct && <th className="py-2.5 px-3 font-medium">PRODUK</th>}
             {showHook && <th className="py-2.5 px-3 font-medium">HOOK</th>}
-            <th className="py-2.5 px-3 font-medium text-right">COST</th>
-            <th className="py-2.5 px-3 font-medium text-right">REVENUE</th>
-            <th className="py-2.5 px-3 font-medium text-right">ROAS</th>
-            <th className="py-2.5 px-3 font-medium text-right">ORDERS</th>
+            <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} />
+            <SortTh label="REVENUE" sortKey="revenue" sort={sort} onSort={toggle} />
+            <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} />
+            <SortTh label="ORDERS" sortKey="orders" sort={sort} onSort={toggle} />
             {showAction && <th className="py-2.5 px-3 font-medium">AKSI</th>}
             <th className="py-2.5 pl-3 font-medium text-center">CATATAN</th>
           </tr>
         </thead>
         <tbody>
-          {videos.map(v => {
+          {sorted.map(v => {
             const note = notes[v.videoId]
             return (
               <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">

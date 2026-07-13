@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import { Search, Users, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
+import CreatorVideosModal from '../../components/gmvmax/CreatorVideosModal'
+import { NoteModal } from '../../components/gmvmax/modals'
 
 const n = (v) => v.toLocaleString('id-ID')
 const creatorBase = (arr) => arr.filter(c => c.cost > 0 || c.revenue > 0)
@@ -20,8 +22,10 @@ function sumCreators(arr) {
 }
 
 export default function CreatorPage({ onOpenUpload }) {
-  const { creators, thresholds, hasData, prev, periodName } = useGmvMax()
+  const { creators, videos, notes, productNames, thresholds, hasData, prev, periodName } = useGmvMax()
   const [q, setQ] = useState('')
+  const [detailCreator, setDetailCreator] = useState(null)  // creator yang dibuka video-nya
+  const [noteVideo, setNoteVideo] = useState(null)
 
   const base = useMemo(() => creatorBase(creators), [creators])
   const list = useMemo(() => {
@@ -68,7 +72,8 @@ export default function CreatorPage({ onOpenUpload }) {
       <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm space-y-1">
         {list.length === 0 && <p className="text-sm text-ink-faint py-8 text-center">Tidak ada kreator.</p>}
         {list.map((c, i) => (
-          <div key={c.account || '__store__'} className="flex items-center gap-3 py-2 border-b border-line/5 last:border-0">
+          <div key={c.account || '__store__'} onClick={() => setDetailCreator(c)} title="Lihat video creator"
+            className="flex items-center gap-3 py-2 border-b border-line/5 last:border-0 cursor-pointer hover:bg-fill/5 -mx-2 px-2 rounded-lg transition-colors">
             <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0
               ${i < 3 ? rankColor[i] : 'bg-fill/15 text-ink-muted'}`}>{i + 1}</span>
             <div className="flex-1 min-w-0">
@@ -87,6 +92,20 @@ export default function CreatorPage({ onOpenUpload }) {
           </div>
         ))}
       </div>
+
+      {detailCreator && (
+        <CreatorVideosModal
+          creator={detailCreator}
+          videos={videos}
+          thresholds={thresholds}
+          notes={notes}
+          productNames={productNames}
+          periodName={periodName}
+          onNote={setNoteVideo}
+          onClose={() => setDetailCreator(null)}
+        />
+      )}
+      {noteVideo && <NoteModal video={noteVideo} onClose={() => setNoteVideo(null)} />}
     </div>
   )
 }

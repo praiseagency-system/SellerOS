@@ -7,7 +7,7 @@ import { useIdentity } from '../contexts/IdentityContext'
 // Avatar workspace: pakai LOGO BRAND bila ada (diatur di Settings › Brand),
 // jatuh ke inisial berwarna bila belum diset.
 function WsAvatar({ ws, brand, size = 'sm' }) {
-  const dim = size === 'md' ? 'w-9 h-9 text-xs' : 'w-7 h-7 text-[10px]'
+  const dim = size === 'md' ? 'w-8 h-8 text-[11px]' : 'w-7 h-7 text-[10px]'
   if (brand?.logo) {
     return (
       <div className={`${dim} rounded-lg overflow-hidden flex-shrink-0`}>
@@ -151,13 +151,13 @@ export default function WorkspaceSwitcher({ workspaces, current, onSwitch, onCha
     <>
       <div ref={ref} className="relative">
         <button onClick={() => setOpen(o => !o)}
-          className="w-full flex items-center gap-3 px-2 py-1.5 rounded-xl hover:bg-fill/5 transition-colors">
+          className="w-full flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-fill/5 transition-colors">
           <WsAvatar ws={current} brand={currentBrand} size="md" />
           {!collapsed && (
             <>
               <div className="flex-1 min-w-0 text-left">
-                <p className="font-bold text-ink-strong text-sm leading-tight truncate">{currentBrand.name || current.name}</p>
-                <p className="text-xs text-ink-muted truncate">{currentBrand.name ? current.name : 'Workspace'}</p>
+                <p className="font-bold text-ink-strong text-[13px] leading-tight truncate">{currentBrand.name || current.name}</p>
+                <p className="text-[10px] text-ink-muted truncate leading-tight">{currentBrand.name ? current.name : 'Workspace'}</p>
               </div>
               <ChevronDown className={`w-3.5 h-3.5 text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
             </>

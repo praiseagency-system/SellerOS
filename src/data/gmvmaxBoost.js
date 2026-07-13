@@ -35,19 +35,38 @@ export async function upsertBoost(videoId, patch) {
   if ('videoTitle' in patch) fields.video_title = patch.videoTitle
   if ('tiktokAccount' in patch) fields.tiktok_account = patch.tiktokAccount
   if ('roas' in patch) fields.roas = patch.roas
+  // Tanggal boost (migrasi 0018). null diperbolehkan (mis. hapus tanggal akhir).
+  if ('boostStart' in patch) fields.boost_start = patch.boostStart || null
+  if ('boostEnd' in patch) fields.boost_end = patch.boostEnd || null
 
-  if (existing) {
-    const { data, error } = await supabase.from('gmvmax_boost')
-      .update({ ...fields, updated_at: new Date().toISOString() })
-      .eq('id', existing.id).select('*').single()
-    if (error) throw error
-    return data
+  // Retry tanpa kolom tanggal bila migrasi 0018 belum dijalankan (kolom hilang).
+  const dateKeys = ['boost_start', 'boost_end']
+  const stripDates = (f) => {
+    const c = { ...f }; dateKeys.forEach(k => delete c[k]); return c
   }
-  const { data, error } = await supabase.from('gmvmax_boost')
-    .insert({ workspace_id: wsId, video_id: videoId, ...fields })
-    .select('*').single()
-  if (error) throw error
-  return data
+  async function run(f) {
+    if (existing) {
+      return supabase.from('gmvmax_boost')
+        .update({ ...f, updated_at: new Date().toISOString() })
+        .eq('id', existing.id).select('*').single()
+    }
+    return supabase.from('gmvmax_boost')
+      .insert({ workspace_id: wsId, video_id: videoId, ...f }).select('*').single()
+  }
+
+  let res = await run(fields)
+  if (res.error && isMissingBoostDateColumn(res.error)) res = await run(stripDates(fields))
+  if (res.error) throw res.error
+  return res.data
+}
+
+// True bila error karena kolom boost_start/boost_end belum ada (migrasi 0018).
+function isMissingBoostDateColumn(error) {
+  return (
+    error?.code === '42703' || error?.code === 'PGRST204' ||
+    (/boost_(start|end)/i.test(error?.message || '') &&
+      /column|does not exist|schema cache/i.test(error?.message || ''))
+  )
 }
 
 export async function deleteBoost(videoId) {

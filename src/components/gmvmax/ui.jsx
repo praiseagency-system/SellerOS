@@ -1,9 +1,45 @@
 /* eslint-disable react-refresh/only-export-components */
 // Komponen UI bersama modul GMV Max — memakai token tema (bg-surface, text-ink,
 // accent) agar selaras palet Praise. Gaya kartu/badge meniru dashboard Praise.
-import { ExternalLink } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { ExternalLink, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { fmtNum, fmtCompact } from '../../utils/quadrantUtils'
 import { roasBadge, STATUS_META } from '../../utils/gmvmaxClassify'
+
+// ─── Sortir tabel: setiap kolom metrik bisa diurut turun ↔ naik ↔ default ───
+// accessors = { key: (row) => number }. 3-state: klik → turun → naik → kembali
+// ke urutan asal (parent). null diperlakukan paling kecil.
+export function useSortableRows(rows, accessors) {
+  const [sort, setSort] = useState(null) // { key, dir: 'desc'|'asc' } | null
+  const sorted = useMemo(() => {
+    const get = sort && accessors[sort.key]
+    if (!get) return rows
+    const mul = sort.dir === 'asc' ? 1 : -1
+    return [...rows].sort((a, b) => {
+      const va = get(a), vb = get(b)
+      const na = va == null ? -Infinity : va, nb = vb == null ? -Infinity : vb
+      return na === nb ? 0 : (na < nb ? -mul : mul)
+    })
+  }, [rows, sort, accessors])
+  const toggle = (key) => setSort(s =>
+    s?.key !== key ? { key, dir: 'desc' } : s.dir === 'desc' ? { key, dir: 'asc' } : null)
+  return { sorted, sort, toggle }
+}
+
+// Header kolom yang bisa diklik untuk sortir. `align` = 'right' (metrik) / 'left'.
+export function SortTh({ label, sortKey, sort, onSort, align = 'right', className = '' }) {
+  const active = sort?.key === sortKey
+  const Icon = !active ? ChevronsUpDown : sort.dir === 'desc' ? ChevronDown : ChevronUp
+  return (
+    <th className={`py-2.5 px-3 font-medium ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
+      <button onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 transition-colors hover:text-ink ${align === 'right' ? 'flex-row-reverse' : ''} ${active ? 'text-ink' : ''}`}>
+        {label}
+        <Icon className={`w-3 h-3 ${active ? 'text-accent' : 'text-ink-faint/60'}`} />
+      </button>
+    </th>
+  )
+}
 
 // URL video TikTok dari video ID. TikTok me-resolve video dari ID-nya, jadi
 // handle di path boleh placeholder bila akun tak URL-safe (mis. ada emoji).
@@ -109,21 +145,26 @@ export function StatCompact({ icon: Icon, label, value, delta, sub }) {
   )
 }
 
-// Kartu statistik gaya Praise: ikon-tile berwarna + label + angka besar + delta.
+// Kartu statistik — sejak 2026-07-12 dibuat COMPACT (resep sama dgn StatCompact
+// di Overview/Dashboard, permintaan user "seluruh menu"). API lama dipertahankan
+// (icon/label/value/sub/delta/tone) agar semua pemakai ikut tanpa diubah;
+// `tone` kini mewarnai ikon kecil, bukan tile besar.
+const ICON_TONE = {
+  green: 'text-emerald-500', amber: 'text-amber-400', red: 'text-red-400',
+  blue: 'text-blue-400', muted: 'text-ink-faint', violet: 'text-violet-400',
+}
 export function StatCard({ icon: Icon, label, value, sub, delta, tone = 'blue' }) {
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
-      <div className="flex items-center gap-2.5 mb-2">
-        {Icon && (
-          <span className={`w-8 h-8 rounded-xl flex items-center justify-center ${TONE[tone]}`}>
-            <Icon className="w-4 h-4" />
-          </span>
-        )}
-        <span className="text-xs font-medium text-ink-muted uppercase tracking-wide">{label}</span>
+    <div className="glass-card rounded-xl px-3.5 py-2.5 min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-widest text-ink-faint flex items-center gap-1.5 mb-1">
+        {Icon && <Icon className={`w-3 h-3 flex-shrink-0 ${ICON_TONE[tone] || ICON_TONE.blue}`} />}
+        <span className="truncate">{label}</span>
+      </p>
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span className="text-[15px] font-semibold text-ink-strong tabular-nums whitespace-nowrap">{value}</span>
+        {delta}
       </div>
-      <p className="text-2xl font-bold text-ink-strong">{value}</p>
-      {delta && <div className="mt-1">{delta}</div>}
-      {sub && <p className="text-xs text-ink-faint mt-1">{sub}</p>}
+      {sub && <p className="text-[10px] text-ink-faint mt-0.5 truncate">{sub}</p>}
     </div>
   )
 }

@@ -3,7 +3,17 @@
 import { useState, useMemo } from 'react'
 import { Search, Package, Wallet, TrendingUp, Target, ShoppingCart, PlayCircle } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX, DeliveryPills } from '../../components/gmvmax/ui'
+import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX, DeliveryPills, useSortableRows, SortTh } from '../../components/gmvmax/ui'
+import ProductDetailModal from '../../components/gmvmax/ProductDetailModal'
+
+const PRODUCT_SORT = {
+  videoCount: (p) => p.videoCount,
+  delivering: (p) => p.statusCounts?.delivering || 0,
+  cost: (p) => p.cost,
+  revenue: (p) => p.revenue,
+  roas: (p) => p.roas,
+  orders: (p) => p.orders,
+}
 
 const n = (v) => v.toLocaleString('id-ID')
 const productBase = (arr) => arr.filter(p => p.productId && (p.cost > 0 || p.revenue > 0))
@@ -26,8 +36,9 @@ function sumProducts(arr) {
 }
 
 export default function ProductPage({ onOpenUpload }) {
-  const { products, thresholds, hasData, prev, periodName } = useGmvMax()
+  const { products, videos, boost, thresholds, hasData, prev, periodName, requestBoost, updateBoost } = useGmvMax()
   const [q, setQ] = useState('')
+  const [detail, setDetail] = useState(null)   // produk yang dibuka modal detailnya
 
   // Kartu meringkas seluruh produk periode ini (tak terpengaruh pencarian);
   // kotak cari hanya menyaring tabel di bawahnya — seperti Monitoring Praise.
@@ -40,6 +51,7 @@ export default function ProductPage({ onOpenUpload }) {
 
   const sum = useMemo(() => sumProducts(base), [base])
   const prevSum = useMemo(() => (prev ? sumProducts(productBase(prev.products)) : null), [prev])
+  const { sorted, sort, toggle } = useSortableRows(list, PRODUCT_SORT)
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -80,17 +92,18 @@ export default function ProductPage({ onOpenUpload }) {
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/10">
               <th className="py-2.5 pr-3 font-medium">PRODUK</th>
-              <th className="py-2.5 px-3 font-medium text-right">#VIDEO</th>
-              <th className="py-2.5 px-3 font-medium text-right" title="Video yang sedang Delivering / In queue / Learning">DELIVERY</th>
-              <th className="py-2.5 px-3 font-medium text-right">COST</th>
-              <th className="py-2.5 px-3 font-medium text-right">REVENUE</th>
-              <th className="py-2.5 px-3 font-medium text-right">ROAS</th>
-              <th className="py-2.5 pl-3 font-medium text-right">ORDERS</th>
+              <SortTh label="#VIDEO" sortKey="videoCount" sort={sort} onSort={toggle} />
+              <SortTh label="DELIVERY" sortKey="delivering" sort={sort} onSort={toggle} />
+              <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} />
+              <SortTh label="REVENUE" sortKey="revenue" sort={sort} onSort={toggle} />
+              <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} />
+              <SortTh label="ORDERS" sortKey="orders" sort={sort} onSort={toggle} />
             </tr>
           </thead>
           <tbody>
-            {list.map(p => (
-              <tr key={p.productId} className="border-b border-line/5 hover:bg-fill/5">
+            {sorted.map(p => (
+              <tr key={p.productId} onClick={() => setDetail(p)} title="Lihat detail creative"
+                className="border-b border-line/5 hover:bg-fill/5 cursor-pointer">
                 <td className="py-2.5 pr-3 max-w-sm">
                   {p.name
                     ? <><p className="font-medium text-ink truncate">{p.name}</p>
@@ -110,6 +123,21 @@ export default function ProductPage({ onOpenUpload }) {
         </table>
         {list.length === 0 && <p className="text-sm text-ink-faint py-8 text-center">Tidak ada produk.</p>}
       </div>
+
+      {detail && (
+        <ProductDetailModal
+          product={detail}
+          videos={videos}
+          boost={boost}
+          periodName={periodName}
+          onClose={() => setDetail(null)}
+          onTrackBoost={async (v) => {
+            // Video terdeteksi video code di TikTok → masuk pipeline sbg Terpasang.
+            await requestBoost({ videoId: v.videoId, title: v.title, account: v.account, lifetime: v.lifetime })
+            await updateBoost(v.videoId, { status: 'terpasang' })
+          }}
+        />
+      )}
     </div>
   )
 }

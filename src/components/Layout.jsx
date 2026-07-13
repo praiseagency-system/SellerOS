@@ -37,19 +37,17 @@ const NAV = [
     ],
   },
   {
+    // Toko sendiri: analitik (Performa Toko, Kuadran Traffic) + alat (Kalkulator,
+    // Produk, Campaign). Traffic Quadrant & Store Performance BUKAN affiliate —
+    // dipindah ke sini (2026-07-12).
     section: 'MARKETPLACE',
     items: [
+      { id: 'performance', icon: TrendingUp },
+      { id: 'quadrant',    icon: LayoutGrid, hasSub: true },
       { id: 'calculator',  icon: Calculator },
       { id: 'products',    icon: Package },
       { id: 'campaign',    icon: Megaphone },
       { id: 'reports',     icon: BarChart3,  soon: true },
-    ],
-  },
-  {
-    section: 'AFFILIATE MONITORING',
-    items: [
-      { id: 'quadrant',    icon: LayoutGrid, hasSub: true },
-      { id: 'performance', icon: TrendingUp },
     ],
   },
 ]
@@ -197,16 +195,16 @@ function SidebarContent({
     <div className="flex flex-col h-full">
       {/* Brand header (gaya Praise): tile logo + nama agency/sistem + toggle */}
       <div className={`border-b border-line/5 flex ${collapsed
-        ? 'flex-col items-center gap-2 px-2 py-3'
-        : 'items-center gap-2.5 px-4 py-4'}`}
+        ? 'flex-col items-center gap-1.5 px-2 py-2.5'
+        : 'items-center gap-2 px-3 py-2.5'}`}
       >
-        <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0 bg-surface2 border border-line/10 flex items-center justify-center">
-          <img src="/favicon.svg" alt="SellerOS" className="w-full h-full object-contain p-1.5" />
+        <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 bg-surface2 border border-line/10 flex items-center justify-center">
+          <img src="/favicon.svg" alt="SellerOS" className="w-full h-full object-contain p-1" />
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-bold text-ink-faint uppercase tracking-[0.15em] truncate">Praise Agency</p>
-            <p className="text-[13px] font-bold text-ink-strong leading-tight tracking-tight truncate">SellerOS</p>
+            <p className="text-[8px] font-bold text-ink-faint uppercase tracking-[0.15em] truncate leading-tight">Praise Agency</p>
+            <p className="text-[12px] font-bold text-ink-strong leading-tight tracking-tight truncate">SellerOS</p>
           </div>
         )}
         {toggleSidebar && (
@@ -214,15 +212,15 @@ function SidebarContent({
             onClick={toggleSidebar}
             aria-label={collapsed ? 'Lebarkan menu' : 'Ciutkan menu'}
             title={collapsed ? 'Lebarkan' : 'Ciutkan'}
-            className="hidden lg:flex w-7 h-7 items-center justify-center rounded-lg text-ink-faint hover:text-ink hover:bg-fill/5 transition-colors flex-shrink-0"
+            className="hidden lg:flex w-6 h-6 items-center justify-center rounded-lg text-ink-faint hover:text-ink hover:bg-fill/5 transition-colors flex-shrink-0"
           >
-            {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+            {collapsed ? <ChevronsRight className="w-3.5 h-3.5" /> : <ChevronsLeft className="w-3.5 h-3.5" />}
           </button>
         )}
       </div>
 
       {/* Workspace switcher */}
-      <div className={`border-b border-line/5 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
+      <div className={`border-b border-line/5 ${collapsed ? 'px-2 py-2' : 'px-2.5 py-2'}`}>
         <WorkspaceSwitcher
           workspaces={workspaces}
           current={currentWorkspace}
