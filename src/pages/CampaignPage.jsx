@@ -28,7 +28,7 @@ export default function CampaignPage() {
   useEffect(() => { reload() }, [reload])
 
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="p-6 max-w-7xl mx-auto">
       <CampaignPanel products={products} />
     </div>
   )

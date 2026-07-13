@@ -1,70 +1,33 @@
-import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown, LogOut, Settings } from 'lucide-react'
+import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown, LogOut, User, Palette, Users, Globe } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useIdentity } from '../contexts/IdentityContext'
+import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownSeparator } from './ui/Dropdown'
 
 export default function HeaderControls({ notifCount = '8+', showPeriod = true, onNavigate }) {
   const { theme, setTheme } = useTheme()
   const { lang, setLang, t } = useLang()
   const { periodType, periodLabel, prevLabel, isCompareMode, hasData, setShowHistory } = useQuadrant()
   const { user, signOut } = useAuth()
+  const { profile } = useIdentity()
 
   const typeLabel = periodType ? t(`period.${periodType}`) : t('period.none')
   const mainLabel = hasData && periodLabel ? periodLabel : t('period.empty')
   const PeriodIcon = periodType === 'mingguan' ? CalendarDays : Calendar
 
   return (
-    <div className="flex items-center gap-3 flex-shrink-0">
-      {/* Toggle tema */}
-      <div className="hidden sm:flex items-center bg-fill/5 border border-line/10 rounded-full p-0.5">
-        <button
-          onClick={() => setTheme('dark')}
-          aria-label={t('header.themeDark')}
-          className={`flex items-center justify-center w-7 h-7 rounded-full transition-colors ${
-            theme === 'dark' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'
-          }`}
-        >
-          <Moon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => setTheme('light')}
-          aria-label={t('header.themeLight')}
-          className={`flex items-center justify-center w-7 h-7 rounded-full transition-colors ${
-            theme === 'light' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'
-          }`}
-        >
-          <Sun className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Switch bahasa */}
-      <div className="hidden sm:flex items-center bg-fill/5 border border-line/10 rounded-full p-0.5 text-xs font-semibold">
-        <button
-          onClick={() => setLang('en')}
-          className={`px-2.5 py-1 rounded-full transition-colors ${
-            lang === 'en' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'
-          }`}
-        >
-          EN
-        </button>
-        <button
-          onClick={() => setLang('id')}
-          className={`px-2.5 py-1 rounded-full transition-colors ${
-            lang === 'id' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'
-          }`}
-        >
-          ID
-        </button>
-      </div>
+    <div className="flex items-center gap-2 flex-shrink-0">
+      {/* Toggle tema & bahasa dipindah ke dropdown profil (hemat area header). */}
 
       {/* Notifikasi */}
       <button
         aria-label={t('header.notifications')}
-        className="relative flex items-center justify-center w-9 h-9 rounded-full bg-fill/5 border border-line/10 text-ink-muted hover:text-ink hover:bg-fill/10 transition-colors"
+        className="relative flex items-center justify-center w-7 h-7 rounded-full bg-fill/5 border border-line/10 text-ink-muted hover:text-ink hover:bg-fill/10 transition-colors"
       >
-        <Bell className="w-4 h-4" />
-        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold text-white bg-emerald-500 rounded-full border-2 border-app">
+        <Bell className="w-3.5 h-3.5" />
+        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 flex items-center justify-center text-[9px] font-bold text-white bg-emerald-500 rounded-full border-2 border-app">
           {notifCount}
         </span>
       </button>
@@ -96,28 +59,77 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true, o
       </div>
       )}
 
-      {/* Akun: avatar → Pengaturan, ikon keluar → logout */}
+      {/* Akun: avatar (foto profil) → dropdown Profil / Brand / Team + Keluar */}
       {user && (
-        <div className="flex items-center bg-fill/5 border border-line/10 rounded-full pl-1 pr-1 py-1 gap-1">
-          <button
-            onClick={() => onNavigate?.('settings')}
-            title={`${user.email} — Pengaturan`}
-            className="flex items-center gap-1.5 text-ink-muted hover:text-ink transition-colors"
-          >
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold uppercase">
-              {(user.email?.[0] || '?')}
-            </span>
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-          <span className="w-px h-5 bg-line/15" />
-          <button
-            onClick={() => signOut()}
-            title="Keluar"
-            className="flex items-center justify-center w-7 h-7 rounded-full text-ink-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
+        <Dropdown>
+          <DropdownTrigger>
+            <button
+              title={profile.name || user.email}
+              className="flex items-center gap-0.5 bg-fill/5 border border-line/10 rounded-full pl-0.5 pr-1.5 py-0.5 text-ink-muted hover:text-ink hover:bg-fill/10 transition-colors"
+            >
+              <span className="flex items-center justify-center w-6 h-6 rounded-full overflow-hidden bg-blue-600 text-white text-[10px] font-bold uppercase">
+                {profile.avatar
+                  ? <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
+                  : (user.email?.[0] || '?')}
+              </span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </DropdownTrigger>
+          <DropdownContent side="right" align="start" className="w-56">
+            <div className="flex items-center gap-2.5 px-2 pt-2 pb-2">
+              <span className="flex items-center justify-center w-9 h-9 rounded-full overflow-hidden bg-blue-600 text-white text-sm font-bold uppercase flex-shrink-0">
+                {profile.avatar
+                  ? <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
+                  : (user.email?.[0] || '?')}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-ink truncate">{profile.name || 'Akun SellerOS'}</p>
+                <p className="text-[10px] text-ink-faint truncate">{user.email}</p>
+              </div>
+            </div>
+            <DropdownSeparator />
+
+            {/* Tema — tak menutup dropdown (bukan DropdownItem) */}
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+              <span className="text-sm text-ink-muted flex items-center gap-2"><Palette className="w-4 h-4" /> Tema</span>
+              <div className="flex items-center bg-fill/5 border border-line/10 rounded-full p-0.5">
+                <button onClick={() => setTheme('dark')} aria-label={t('header.themeDark')}
+                  className={`flex items-center justify-center w-6 h-6 rounded-full transition-colors ${theme === 'dark' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'}`}>
+                  <Moon className="w-3 h-3" />
+                </button>
+                <button onClick={() => setTheme('light')} aria-label={t('header.themeLight')}
+                  className={`flex items-center justify-center w-6 h-6 rounded-full transition-colors ${theme === 'light' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'}`}>
+                  <Sun className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+            {/* Bahasa */}
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+              <span className="text-sm text-ink-muted flex items-center gap-2"><Globe className="w-4 h-4" /> Bahasa</span>
+              <div className="flex items-center bg-fill/5 border border-line/10 rounded-full p-0.5 text-[11px] font-semibold">
+                <button onClick={() => setLang('en')}
+                  className={`px-2 py-0.5 rounded-full transition-colors ${lang === 'en' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'}`}>EN</button>
+                <button onClick={() => setLang('id')}
+                  className={`px-2 py-0.5 rounded-full transition-colors ${lang === 'id' ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'}`}>ID</button>
+              </div>
+            </div>
+            <DropdownSeparator />
+
+            <DropdownItem onClick={() => onNavigate?.('settings', { tab: 'profil' })}>
+              <User className="w-4 h-4 mr-2" /> Profil
+            </DropdownItem>
+            <DropdownItem onClick={() => onNavigate?.('settings', { tab: 'brand' })}>
+              <Palette className="w-4 h-4 mr-2" /> Brand
+            </DropdownItem>
+            <DropdownItem onClick={() => onNavigate?.('settings', { tab: 'team' })}>
+              <Users className="w-4 h-4 mr-2" /> Team
+            </DropdownItem>
+            <DropdownSeparator />
+            <DropdownItem destructive onClick={() => signOut()}>
+              <LogOut className="w-4 h-4 mr-2" /> Keluar
+            </DropdownItem>
+          </DropdownContent>
+        </Dropdown>
       )}
     </div>
   )

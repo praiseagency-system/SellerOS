@@ -1,18 +1,38 @@
 // Import Data — halaman upload bersih (drag & drop + panduan export). Nama akun
 // discrape otomatis di latar belakang setelah upload. Riwayat upload via toggle.
 import { useState, useRef } from 'react'
-import { UploadCloud, Loader2, History, BookOpen, CheckCircle2 } from 'lucide-react'
+import { UploadCloud, Loader2, History, BookOpen, CheckCircle2, Zap, RefreshCw } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { UploadHistoryModal } from '../../components/gmvmax/modals'
 import { fmtRp } from '../../components/gmvmax/ui'
 
+// Selisih hari dari 'YYYY-MM-DD' ke hari ini (UTC).
+function daysSince(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  if (isNaN(d)) return null
+  return Math.floor((Date.now() - d.getTime()) / 86400000)
+}
+
 export default function InputPage() {
-  const { imports, upload, busy, enriching } = useGmvMax()
+  const { imports, upload, busy, enriching, reload } = useGmvMax()
   const [showHistory, setShowHistory] = useState(false)
   const [result, setResult] = useState(null)
   const [err, setErr] = useState(null)
   const [drag, setDrag] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const inputRef = useRef(null)
+
+  // Snapshot via API = tanpa nama file sumber (upload manual selalu punya filename).
+  const apiSnaps = imports.filter(i => !i.source_filename)
+  const latest = imports[0] || null
+  const lag = daysSince(latest?.snapshot_date)
+  const fresh = lag != null && lag <= 2
+
+  async function handleRefresh() {
+    setSyncing(true)
+    try { await reload() } finally { setSyncing(false) }
+  }
 
   async function handleFile(file) {
     if (!file) return
@@ -35,7 +55,36 @@ export default function InputPage() {
       </div>
 
       <div className="bg-surface rounded-2xl border border-line/10 p-6 shadow-sm">
-        <p className="text-sm font-medium text-ink mb-3">File Data</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-ink inline-flex items-center gap-2">
+            <Zap className="w-4 h-4 text-accent" /> Sinkron Otomatis — TikTok GMV Max API
+          </p>
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${fresh
+            ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+            : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+            {latest ? (fresh ? 'Terkini' : `${lag} hari lalu`) : 'Belum ada data'}
+          </span>
+        </div>
+        {latest ? (
+          <div className="text-sm text-ink-muted">
+            Snapshot terbaru: <span className="text-ink font-medium">{latest.name}</span>
+            <span className="text-ink-faint"> · {latest.snapshot_date}</span>
+            {latest.totals?.cost != null && <> · Cost {fmtRp(latest.totals.cost)}</>}
+          </div>
+        ) : (
+          <p className="text-sm text-ink-muted">Belum ada data tersinkron. Worker terjadwal akan mengisinya otomatis.</p>
+        )}
+        <p className="mt-1 text-xs text-ink-faint">
+          {apiSnaps.length} snapshot dari TikTok API · disinkronkan otomatis dari akun iklan (tanpa upload manual).
+        </p>
+        <button onClick={handleRefresh} disabled={syncing}
+          className="mt-4 px-3 py-1.5 rounded-lg text-sm bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 inline-flex items-center gap-2 disabled:opacity-60">
+          <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} /> Segarkan data
+        </button>
+      </div>
+
+      <div className="bg-surface rounded-2xl border border-line/10 p-6 shadow-sm">
+        <p className="text-sm font-medium text-ink mb-3">Upload Manual (.xlsx) — cadangan</p>
         <div
           onClick={() => !busy && inputRef.current?.click()}
           onDragOver={e => { e.preventDefault(); setDrag(true) }}

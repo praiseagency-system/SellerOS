@@ -275,7 +275,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   }
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 max-w-7xl mx-auto">
       {/* Platform tabs + Simpan Produk */}
       <div className="flex items-center gap-2 mb-6">
         {[
@@ -304,7 +304,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
         {/* ── LEFT: Inputs ── */}
         <div className="space-y-5">
 
-          <section className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
+          <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-ink">Harga &amp; Modal</h3>
               {variations.length > 1 && <span className="text-[11px] text-ink-faint">Varian {ai + 1}/{variations.length}</span>}
@@ -355,7 +355,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
             </div>
           </section>
 
-          <section className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
+          <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
             <h3 className="text-sm font-semibold text-ink">Biaya Platform</h3>
 
             {isTikTok ? (
@@ -611,7 +611,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
             )}
           </section>
 
-          <section className="bg-surface border border-line/8 rounded-2xl p-5 space-y-4">
+          <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
             <h3 className="text-sm font-semibold text-ink">
               Biaya Tambahan <span className="text-ink-faint text-xs font-normal">(opsional)</span>
             </h3>
@@ -655,7 +655,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
               {/* Perbandingan tier harga (Normal/Campaign/Flash Sale) */}
               {tiers.length > 1 && (
-                <div className="bg-surface border border-line/8 rounded-2xl p-5">
+                <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
                   <h3 className="text-sm font-semibold text-ink mb-1">Perbandingan Harga</h3>
                   <p className="text-[11px] text-ink-faint mb-3">Profit &amp; margin per unit (sebelum iklan) — biaya sama, hanya harga berbeda</p>
                   <div className="space-y-2">
@@ -698,14 +698,14 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
               {/* BEP & ROAS cards */}
               <div className="grid grid-cols-2 gap-3">
                 {c.bep != null && (
-                  <div className="bg-surface border border-line/8 rounded-2xl p-4">
+                  <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
                     <p className="text-xs text-ink-faint mb-0.5">Harga BEP (titik impas)</p>
                     <p className="text-lg font-bold text-ink-strong">{fmt(Math.ceil(c.bep))}</p>
                     <p className="text-xs text-ink-faint mt-1.5">Harga jual minimal agar tidak rugi</p>
                   </div>
                 )}
                 {c.roas != null && (
-                  <div className="bg-surface border border-line/8 rounded-2xl p-4">
+                  <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
                     <p className="text-xs text-ink-faint mb-0.5">ROAS Iklan</p>
                     <p className={`text-lg font-bold ${c.roas >= 3 ? 'text-green-400' : c.roas >= 1.5 ? 'text-yellow-400' : 'text-red-400'}`}>
                       {c.roas.toFixed(2)}&times;
@@ -718,7 +718,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
               </div>
             </>
           ) : (
-            <div className="bg-surface border border-line/8 rounded-2xl flex flex-col items-center justify-center text-center p-12 min-h-[300px]">
+            <div className="bg-surface rounded-2xl border border-line/10 shadow-sm flex flex-col items-center justify-center text-center p-12 min-h-[300px]">
               <div className="w-12 h-12 rounded-2xl bg-blue-600/10 flex items-center justify-center mb-3">
                 <TrendingUp className="w-6 h-6 text-blue-500" />
               </div>

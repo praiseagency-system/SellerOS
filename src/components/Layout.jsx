@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   LayoutGrid, Calculator, TrendingUp,
-  ChevronRight, ChevronDown,
-  BarChart3, Sparkles, Info, Menu, Package, Megaphone,
+  ChevronsLeft, ChevronsRight, ChevronDown,
+  BarChart3, Menu, Package, Megaphone, Home, Activity, Settings, Sparkles,
   LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
@@ -12,6 +13,12 @@ import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
 
 const NAV = [
+  {
+    section: 'MAIN',
+    items: [
+      { id: 'overview', icon: Home },
+    ],
+  },
   {
     section: 'GMV MAX ADS',
     items: [
@@ -25,38 +32,67 @@ const NAV = [
       { id: 'gmv_insight',   icon: Sparkles },
       { id: 'gmv_boost',     icon: Rocket },
       { id: 'gmv_log',       icon: ClipboardList },
+      // Stub display-only — belum ada route; TIDAK terhubung ke worker/sync.
+      { id: 'ads',           icon: Activity, soon: true },
     ],
   },
   {
-    section: 'KUADRAN TRAFFIC',
+    // Toko sendiri: analitik (Performa Toko, Kuadran Traffic) + alat (Kalkulator,
+    // Produk, Campaign). Traffic Quadrant & Store Performance BUKAN affiliate —
+    // dipindah ke sini (2026-07-12).
+    section: 'MARKETPLACE',
     items: [
-      { id: 'quadrant', icon: LayoutGrid, hasSub: true },
-    ],
-  },
-  {
-    section: 'ANALISIS CERDAS',
-    items: [
+      { id: 'performance', icon: TrendingUp },
+      { id: 'quadrant',    icon: LayoutGrid, hasSub: true },
       { id: 'calculator',  icon: Calculator },
       { id: 'products',    icon: Package },
-      { id: 'performance', icon: TrendingUp },
       { id: 'campaign',    icon: Megaphone },
       { id: 'reports',     icon: BarChart3,  soon: true },
     ],
   },
-  {
-    section: 'AI TOOLS',
-    items: [
-      { id: 'ai', icon: Sparkles, soon: true },
-    ],
-  },
 ]
 
-function NavItem({ item, active, onClick, t }) {
+// Jejak lokasi utk breadcrumb topbar: [label seksi, id induk | null].
+// null → halaman di luar NAV (mis. settings), breadcrumb tak dirender.
+function findCrumb(page) {
+  for (const g of NAV) {
+    for (const it of g.items) {
+      if (it.id === page) return { section: g.section, parent: null }
+      if (it.children?.some(c => c.id === page)) return { section: g.section, parent: it.id }
+    }
+  }
+  return null
+}
+
+function NavItem({ item, active, onClick, t, collapsed }) {
+  const label = t(`nav.${item.id}.label`)
+  // Mode ciut (rail ikon, gaya Praise): ikon 44px terpusat + tooltip title.
+  if (collapsed) {
+    return (
+      <button
+        onClick={() => !item.soon && onClick(item.id)}
+        aria-disabled={item.soon || undefined}
+        aria-label={label}
+        title={item.soon ? `${label} — ${t('nav.soonHint')}` : label}
+        className={`flex items-center justify-center w-11 h-11 mx-auto rounded-xl transition-all ${
+          active
+            ? 'bg-blue-600/15 text-blue-500'
+            : item.soon
+              ? 'text-ink-faint cursor-not-allowed'
+              : 'text-ink-muted hover:bg-fill/5 hover:text-ink'
+        }`}
+      >
+        <item.icon className="w-4 h-4" />
+      </button>
+    )
+  }
   return (
     <button
       onClick={() => !item.soon && onClick(item.id)}
+      aria-disabled={item.soon || undefined}
+      title={item.soon ? t('nav.soonHint') : undefined}
       className={`
-        w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group
+        w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-all group
         ${active
           ? 'bg-blue-600/15 text-blue-500'
           : item.soon
@@ -67,15 +103,15 @@ function NavItem({ item, active, onClick, t }) {
     >
       <item.icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-blue-500' : ''}`} />
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium truncate ${active ? 'text-blue-500' : ''}`}>
+        <p className={`text-[13px] font-medium truncate ${active ? 'text-blue-500' : ''}`}>
           {t(`nav.${item.id}.label`)}
         </p>
         {item.hasSub && (
-          <p className="text-xs text-ink-faint truncate">{t(`nav.${item.id}.sub`)}</p>
+          <p className="text-[11px] text-ink-faint truncate">{t(`nav.${item.id}.sub`)}</p>
         )}
       </div>
       {item.soon && (
-        <span className="text-xs bg-gray-700 text-ink-muted px-1.5 py-0.5 rounded-md flex-shrink-0">
+        <span className="text-[10px] bg-gray-700 text-ink-muted px-1.5 py-0.5 rounded-md flex-shrink-0">
           {t('nav.soon')}
         </span>
       )}
@@ -85,27 +121,61 @@ function NavItem({ item, active, onClick, t }) {
 }
 
 // Item induk yang punya anak (submenu collapsible), mis. Monitoring. Saat
-// sidebar diciutkan (ikon saja), anak dirender rata tanpa induk.
-function NavParent({ item, t, currentPage, collapsed, open, onToggle, onNavigate }) {
+// sidebar diciutkan: ikon grup + flyout anak saat hover (meniru Praise) —
+// flyout dirender via portal + position:fixed karena backdrop-filter panel
+// kaca membuat containing block & nav punya overflow yang akan memotongnya.
+function NavParent({ item, t, currentPage, collapsed, open, onToggle, onNavigate,
+  fly, openFly, closeFlySoon, cancelFlyClose, closeFlyNow }) {
   const childActive = item.children.some(c => c.id === currentPage)
+  const btnRef = useRef(null)
   if (collapsed) {
-    return item.children.map(c => (
-      <NavItem key={c.id} item={c} t={t} active={currentPage === c.id} onClick={onNavigate} />
-    ))
+    const label = t(`nav.${item.id}.label`)
+    const openThis = () => {
+      const r = btnRef.current?.getBoundingClientRect()
+      openFly(item.id, r ? r.top : 0)
+    }
+    return (
+      <div className="relative" onMouseEnter={openThis} onMouseLeave={closeFlySoon}>
+        <button ref={btnRef} aria-label={label} title={label}
+          className={`flex items-center justify-center w-11 h-11 mx-auto rounded-xl transition-colors ${
+            childActive ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5 hover:text-ink'
+          }`}
+        >
+          <item.icon className="w-4 h-4" />
+        </button>
+        {fly?.id === item.id && createPortal(
+          <div
+            style={{ position: 'fixed', top: fly.top, left: 64, zIndex: 100 }}
+            onMouseEnter={cancelFlyClose}
+            onMouseLeave={closeFlySoon}
+            className="min-w-[200px] bg-surface border border-line/10 rounded-xl shadow-lg py-1.5 px-1.5"
+          >
+            <p className="px-2.5 pt-0.5 pb-1.5 text-[10px] font-semibold text-ink-faint uppercase tracking-wider">{label}</p>
+            <div className="space-y-0.5">
+              {item.children.map(c => (
+                <NavItem key={c.id} item={c} t={t} active={currentPage === c.id}
+                  onClick={id => { closeFlyNow(); onNavigate(id) }} />
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
+      </div>
+    )
   }
   const expanded = open || childActive
   return (
     <div>
       <button onClick={onToggle}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all
+        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-all
           ${childActive ? 'text-blue-500' : 'text-ink-muted hover:bg-fill/5 hover:text-ink'}`}
       >
         <item.icon className={`w-4 h-4 flex-shrink-0 ${childActive ? 'text-blue-500' : ''}`} />
-        <span className="flex-1 text-sm font-medium truncate">{t(`nav.${item.id}.label`)}</span>
+        <span className="flex-1 text-[13px] font-medium truncate">{t(`nav.${item.id}.label`)}</span>
         <ChevronDown className={`w-3.5 h-3.5 text-ink-faint transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`} />
       </button>
       {expanded && (
-        <div className="ml-4 pl-3 border-l border-line/10 space-y-0.5 mt-0.5">
+        <div className="ml-3.5 pl-2.5 border-l border-line/10 space-y-0.5 mt-0.5">
           {item.children.map(c => (
             <NavItem key={c.id} item={c} t={t} active={currentPage === c.id} onClick={onNavigate} />
           ))}
@@ -116,41 +186,68 @@ function NavParent({ item, t, currentPage, collapsed, open, onToggle, onNavigate
 }
 
 function SidebarContent({
-  sidebarOpen, setSidebarOpen, openSections, toggleSection, openSubs, toggleSub,
+  collapsed, toggleSidebar, openSections, toggleSection, openSubs, toggleSub,
   currentPage, onNavigate,
   workspaces, currentWorkspace, onSwitchWorkspace, onWorkspaceChange, setMobileOpen, t,
+  fly, openFly, closeFlySoon, cancelFlyClose, closeFlyNow,
 }) {
   return (
     <div className="flex flex-col h-full">
+      {/* Brand header (gaya Praise): tile logo + nama agency/sistem + toggle */}
+      <div className={`border-b border-line/5 flex ${collapsed
+        ? 'flex-col items-center gap-1.5 px-2 py-2.5'
+        : 'items-center gap-2 px-3 py-2.5'}`}
+      >
+        <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 bg-surface2 border border-line/10 flex items-center justify-center">
+          <img src="/favicon.svg" alt="SellerOS" className="w-full h-full object-contain p-1" />
+        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
+            <p className="text-[8px] font-bold text-ink-faint uppercase tracking-[0.15em] truncate leading-tight">Praise Agency</p>
+            <p className="text-[12px] font-bold text-ink-strong leading-tight tracking-tight truncate">SellerOS</p>
+          </div>
+        )}
+        {toggleSidebar && (
+          <button
+            onClick={toggleSidebar}
+            aria-label={collapsed ? 'Lebarkan menu' : 'Ciutkan menu'}
+            title={collapsed ? 'Lebarkan' : 'Ciutkan'}
+            className="hidden lg:flex w-6 h-6 items-center justify-center rounded-lg text-ink-faint hover:text-ink hover:bg-fill/5 transition-colors flex-shrink-0"
+          >
+            {collapsed ? <ChevronsRight className="w-3.5 h-3.5" /> : <ChevronsLeft className="w-3.5 h-3.5" />}
+          </button>
+        )}
+      </div>
+
       {/* Workspace switcher */}
-      <div className="px-3 py-3 border-b border-line/5">
+      <div className={`border-b border-line/5 ${collapsed ? 'px-2 py-2' : 'px-2.5 py-2'}`}>
         <WorkspaceSwitcher
           workspaces={workspaces}
           current={currentWorkspace}
           onSwitch={onSwitchWorkspace}
           onChange={onWorkspaceChange}
-          collapsed={!sidebarOpen}
+          collapsed={collapsed}
         />
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
+      <nav className={`flex-1 py-3 space-y-3.5 overflow-y-auto ${collapsed ? 'px-2' : 'px-2.5'}`}>
         {NAV.map(group => {
           const isOpen = openSections[group.section] ?? true
           return (
             <div key={group.section}>
-              {sidebarOpen ? (
+              {!collapsed ? (
                 <button
                   onClick={() => toggleSection(group.section)}
-                  className="w-full flex items-center justify-between px-3 mb-1.5 group"
+                  className="w-full flex items-center justify-between px-2.5 mb-1 group"
                 >
-                  <p className="text-xs font-semibold text-ink-faint tracking-wider group-hover:text-ink-muted transition-colors">
+                  <p className="text-[10px] font-semibold text-ink-faint tracking-wider group-hover:text-ink-muted transition-colors">
                     {t(`nav.${group.section}`)}
                   </p>
                   <ChevronDown className={`w-3 h-3 text-ink-faint group-hover:text-ink-muted transition-all duration-200 ${isOpen ? '' : '-rotate-90'}`} />
                 </button>
               ) : null}
-              {(isOpen || !sidebarOpen) && (
+              {(isOpen || collapsed) && (
                 <div className="space-y-0.5">
                   {group.items.map(item => item.children
                     ? <NavParent
@@ -158,15 +255,21 @@ function SidebarContent({
                         item={item}
                         t={t}
                         currentPage={currentPage}
-                        collapsed={!sidebarOpen}
+                        collapsed={collapsed}
                         open={openSubs[item.id] ?? true}
                         onToggle={() => toggleSub(item.id)}
                         onNavigate={id => { onNavigate(id); setMobileOpen(false) }}
+                        fly={fly}
+                        openFly={openFly}
+                        closeFlySoon={closeFlySoon}
+                        cancelFlyClose={cancelFlyClose}
+                        closeFlyNow={closeFlyNow}
                       />
                     : <NavItem
                         key={item.id}
                         item={item}
                         t={t}
+                        collapsed={collapsed}
                         active={currentPage === item.id}
                         onClick={id => { onNavigate(id); setMobileOpen(false) }}
                       />
@@ -178,24 +281,24 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Bottom */}
-      <div className="px-3 py-3 border-t border-line/5 space-y-0.5">
-        <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-ink-muted hover:bg-fill/5 hover:text-ink transition-all">
-          <Info className="w-4 h-4 flex-shrink-0" />
-          {sidebarOpen && <span className="text-sm font-medium">{t('nav.info')}</span>}
+      {/* Bottom — Pengaturan (dulu tombol "Informasi" yang mati/tanpa aksi) */}
+      <div className={`border-t border-line/5 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'} space-y-0.5`}>
+        <button
+          onClick={() => { onNavigate('settings'); setMobileOpen(false) }}
+          aria-label={t('nav.settings.label')}
+          title={collapsed ? t('nav.settings.label') : undefined}
+          className={`${collapsed
+            ? 'flex items-center justify-center w-11 h-11 mx-auto'
+            : 'w-full flex items-center gap-2.5 px-2.5 py-1.5'} rounded-lg transition-all ${
+            currentPage === 'settings'
+              ? 'bg-blue-600/15 text-blue-500'
+              : 'text-ink-muted hover:bg-fill/5 hover:text-ink'
+          }`}
+        >
+          <Settings className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && <span className="text-[13px] font-medium">{t('nav.settings.label')}</span>}
         </button>
       </div>
-
-      {/* Collapse toggle (desktop) */}
-      <button
-        onClick={() => setSidebarOpen(s => !s)}
-        className="hidden lg:flex items-center justify-center py-3 border-t border-line/5 text-ink-faint hover:text-ink-muted transition-colors"
-      >
-        {sidebarOpen
-          ? <ChevronRight className="w-4 h-4 rotate-180" />
-          : <ChevronRight className="w-4 h-4" />
-        }
-      </button>
     </div>
   )
 }
@@ -205,7 +308,25 @@ export default function Layout({
   children, pageTitle, pageSubtitle,
   workspaces, currentWorkspace, onSwitchWorkspace, onWorkspaceChange,
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Lebar/ciut sidebar persist per-device (gaya Praise: localStorage).
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return localStorage.getItem('sq_sidebar_collapsed') !== '1' } catch { return true }
+  })
+  function toggleSidebar() {
+    setSidebarOpen(v => {
+      const next = !v
+      try { localStorage.setItem('sq_sidebar_collapsed', next ? '0' : '1') } catch { /* ignore */ }
+      return next
+    })
+  }
+  // Flyout submenu saat sidebar ciut — satu yang terbuka, close ditunda 160ms
+  // supaya kursor sempat menyeberang dari ikon ke panel flyout.
+  const [fly, setFly] = useState(null)
+  const flyTimer = useRef(null)
+  const openFly = (id, top) => { clearTimeout(flyTimer.current); setFly({ id, top }) }
+  const closeFlySoon = () => { clearTimeout(flyTimer.current); flyTimer.current = setTimeout(() => setFly(null), 160) }
+  const cancelFlyClose = () => clearTimeout(flyTimer.current)
+  const closeFlyNow = () => { clearTimeout(flyTimer.current); setFly(null) }
   const [mobileOpen, setMobileOpen] = useState(false)
   const [openSections, setOpenSections] = useState(() =>
     NAV.reduce((acc, g) => ({ ...acc, [g.section]: true }), {})
@@ -220,6 +341,7 @@ export default function Layout({
     setOpenSubs(prev => ({ ...prev, [id]: !(prev[id] ?? true) }))
   }
   const { sessions, showHistory, setShowHistory, refreshSessions, loadSession } = useQuadrant()
+  const crumb = findCrumb(currentPage)
 
   function handleLoadSession(session) {
     loadSession(session)
@@ -228,16 +350,16 @@ export default function Layout({
   }
 
   return (
-    <div className="flex min-h-screen bg-app text-ink">
-      {/* Desktop sidebar */}
+    <div className="app-glow flex min-h-screen bg-app text-ink">
+      {/* Desktop sidebar — panel kaca (full glass chrome) */}
       <aside
-        className={`hidden lg:flex flex-col bg-app border-r border-line/5 transition-all duration-300 ${
+        className={`hidden lg:flex flex-col glass-panel border-r border-line/10 relative z-10 transition-all duration-300 ${
           sidebarOpen ? 'w-64' : 'w-16'
         } flex-shrink-0`}
       >
         <SidebarContent
-          sidebarOpen={sidebarOpen}
-          setSidebarOpen={setSidebarOpen}
+          collapsed={!sidebarOpen}
+          toggleSidebar={toggleSidebar}
           openSections={openSections}
           toggleSection={toggleSection}
           openSubs={openSubs}
@@ -250,18 +372,25 @@ export default function Layout({
           onWorkspaceChange={onWorkspaceChange}
           setMobileOpen={setMobileOpen}
           t={t}
+          fly={fly}
+          openFly={openFly}
+          closeFlySoon={closeFlySoon}
+          cancelFlyClose={cancelFlyClose}
+          closeFlyNow={closeFlyNow}
         />
       </aside>
 
       {/* Mobile sidebar overlay */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="w-64 bg-app border-r border-line/5 flex flex-col">
+          <div className="w-64 glass-panel bg-app/85 border-r border-line/10 flex flex-col">
             <SidebarContent
-              sidebarOpen={sidebarOpen}
-              setSidebarOpen={setSidebarOpen}
+              collapsed={false}
+              toggleSidebar={null}
               openSections={openSections}
               toggleSection={toggleSection}
+              openSubs={openSubs}
+              toggleSub={toggleSub}
               currentPage={currentPage}
               onNavigate={onNavigate}
               workspaces={workspaces}
@@ -277,9 +406,9 @@ export default function Layout({
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="flex items-center gap-4 px-6 py-4 border-b border-line/5 bg-app/50 backdrop-blur-sm sticky top-0 z-10 flex-shrink-0">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+        {/* Top bar — panel kaca (full glass chrome) */}
+        <header className="flex items-center gap-4 px-6 py-4 border-b border-line/10 glass-panel sticky top-0 z-10 flex-shrink-0">
           <button
             onClick={() => setMobileOpen(true)}
             className="lg:hidden text-ink-muted hover:text-ink"
@@ -287,6 +416,12 @@ export default function Layout({
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">
+            {crumb && (
+              <p className="text-[11px] text-ink-faint truncate leading-tight">
+                {t(`nav.${crumb.section}`)}
+                {crumb.parent && <> <span className="opacity-60">›</span> {t(`nav.${crumb.parent}.label`)}</>}
+              </p>
+            )}
             <h1 className="text-lg font-bold text-ink-strong truncate">{pageTitle}</h1>
             {pageSubtitle && (
               <p className="text-xs text-ink-muted truncate">{pageSubtitle}</p>
@@ -294,7 +429,7 @@ export default function Layout({
           </div>
           <HeaderControls
             onNavigate={onNavigate}
-            showPeriod={!currentPage.startsWith('gmv_') && !['import', 'calculator', 'products', 'performance', 'settings'].includes(currentPage)} />
+            showPeriod={!currentPage.startsWith('gmv_') && !['overview', 'import', 'calculator', 'products', 'performance', 'settings'].includes(currentPage)} />
         </header>
 
         {/* Page content */}

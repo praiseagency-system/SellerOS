@@ -146,7 +146,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const compareProducts = products.filter(p => selected.includes(p.id))
 
   return (
-    <div className="p-6 max-w-6xl">
+    <div className="p-6 max-w-7xl mx-auto">
       {/* Tabs: Produk | Voucher */}
       <div className="flex items-center gap-1 mb-6 border-b border-line/8">
         {[
@@ -215,7 +215,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
 
       {/* Product grid */}
       {filtered.length === 0 ? (
-        <div className="bg-surface border border-line/8 rounded-2xl flex flex-col items-center justify-center text-center p-12 min-h-[240px]">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm flex flex-col items-center justify-center text-center p-12 min-h-[240px]">
           <div className="w-12 h-12 rounded-2xl bg-blue-600/10 flex items-center justify-center mb-3">
             <Package className="w-6 h-6 text-blue-500" />
           </div>
@@ -262,7 +262,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
 function StatCard({ label, value, icon: Icon, accent }) {
   const color = accent === 'green' ? 'text-green-400' : accent === 'red' ? 'text-red-400' : accent === 'blue' ? 'text-blue-400' : 'text-ink-strong'
   return (
-    <div className="bg-surface border border-line/8 rounded-2xl p-4">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
       <div className="flex items-center gap-1.5 mb-1">
         {Icon && <Icon className="w-3.5 h-3.5 text-ink-faint" />}
         <p className="text-[11px] text-ink-faint">{label}</p>
@@ -285,7 +285,7 @@ function ProductCard({ p, selected, onSelect, onShowDetail, onOpen, onDuplicate,
   const s = STATUS_CLS[p.status.color] || STATUS_CLS.green
   const calc = p.calc
   return (
-    <div className={`bg-surface border rounded-2xl p-4 transition-all ${selected ? 'border-blue-600/50 ring-1 ring-blue-600/30' : 'border-line/8 hover:border-line/20'}`}>
+    <div className={`bg-surface border rounded-2xl p-4 shadow-sm transition-all ${selected ? 'border-blue-600/50 ring-1 ring-blue-600/30' : 'border-line/10 hover:border-line/20'}`}>
       <div className="cursor-pointer" onClick={onShowDetail} title="Lihat rincian kalkulasi">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-start gap-2.5 min-w-0 flex-1">
