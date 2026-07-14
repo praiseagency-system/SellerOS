@@ -205,9 +205,9 @@ export default function StorePerformancePage() {
   ]
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-5 max-w-6xl mx-auto">
       {/* Header: status data + tombol Import (ringkas, modal saat dipencet) */}
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
         <div className="min-w-0">
           {store.files.length > 0 ? (
             <p className="text-xs text-ink-muted">
@@ -400,10 +400,10 @@ function ExportGuide() {
 // Compact (2026-07-12) — resep sama dgn StatCard/StatCompact di menu lain.
 function KpiCard({ label, value, sub }) {
   return (
-    <div className="glass-card rounded-xl px-3.5 py-2.5 min-w-0">
-      <p className="text-[10px] font-medium uppercase tracking-widest text-ink-faint truncate">{label}</p>
-      <p className="text-[15px] font-semibold text-ink-strong tabular-nums mt-1">{value}</p>
-      {sub && <p className="text-[10px] text-ink-faint mt-0.5 truncate">{sub}</p>}
+    <div className="glass-card rounded-lg px-3 py-2 min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-ink-faint truncate">{label}</p>
+      <p className="text-sm font-semibold text-ink-strong tabular-nums mt-0.5">{value}</p>
+      {sub && <p className="text-[10px] text-ink-faint mt-0.5 truncate leading-tight">{sub}</p>}
     </div>
   )
 }
@@ -411,8 +411,8 @@ function KpiCard({ label, value, sub }) {
 function Ringkasan({ stats, insights }) {
   const o = stats.overview
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
         <KpiCard label="Total GMV" value={fmtRpShort(o.gmv)} sub={fmtRp(o.gmv)} />
         <KpiCard label="Total Pesanan" value={fmtNum(o.orders)} />
         <KpiCard label="Total Pembeli" value={fmtNum(o.buyers)} />
@@ -423,11 +423,11 @@ function Ringkasan({ stats, insights }) {
         <KpiCard label="Marketplace" value={fmtNum(stats.marketplaces.length)} sub={stats.marketplaces.map(m => m.name).join(', ')} />
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-ink-strong flex items-center gap-2 mb-3"><Sparkles className="w-4 h-4 text-blue-400" /> AI Insights</h3>
-        <ul className="space-y-2">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
+        <h3 className="text-sm font-semibold text-ink-strong flex items-center gap-2 mb-2.5"><Sparkles className="w-4 h-4 text-blue-400" /> AI Insights</h3>
+        <ul className="space-y-1.5">
           {insights.map((t, i) => (
-            <li key={i} className="flex gap-2 text-sm text-ink-muted">
+            <li key={i} className="flex gap-2 text-[13px] text-ink-muted leading-snug">
               <span className="text-blue-400 mt-0.5">•</span>{t}
             </li>
           ))}
@@ -444,9 +444,9 @@ function Marketplace({ stats }) {
   }
   const donut = data.map(m => ({ name: m.name, value: Math.round(m.gmv) }))
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
           <h3 className="text-sm font-semibold text-ink-strong mb-3">Kontribusi GMV</h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -458,7 +458,7 @@ function Marketplace({ stats }) {
             </PieChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
           <h3 className="text-sm font-semibold text-ink-strong mb-3">GMV per Marketplace</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
@@ -473,7 +473,7 @@ function Marketplace({ stats }) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -508,8 +508,8 @@ function Marketplace({ stats }) {
 function Mingguan({ stats }) {
   const data = stats.weekly.map(w => ({ ...w, name: `Minggu ${w.week}` }))
   return (
-    <div className="space-y-4">
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+    <div className="space-y-3">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Tren GMV Mingguan</h3>
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={data} margin={{ left: 5, right: 10 }}>
@@ -559,14 +559,14 @@ function Produk({ stats }) {
   const bottom = [...stats.products].filter(p => p.gmv > 0).reverse().slice(0, 8)
   const pareto = stats.products.slice(0, 12).map(p => ({ name: p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name, gmv: Math.round(p.gmv), cum: +p.cum.toFixed(1) }))
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard label="Total Produk" value={fmtNum(stats.products.length)} />
         <KpiCard label="Top 20% Produk" value={fmtNum(stats.top20Count)} sub={`menyumbang ${stats.top20Share.toFixed(0)}% revenue`} />
         <KpiCard label="Produk Kelas A" value={fmtNum(stats.products.filter(p => p.abc === 'A').length)} sub="≤80% revenue kumulatif" />
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Pareto / ABC (Top 12)</h3>
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={pareto} margin={{ left: 5, right: 5 }}>
@@ -589,7 +589,7 @@ function Produk({ stats }) {
 
 function RankTable({ title, rows, showAbc }) {
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
       <h3 className="text-sm font-semibold text-ink-strong mb-3">{title}</h3>
       <table className="w-full text-sm">
         <thead>
@@ -624,12 +624,12 @@ function Kategori({ stats }) {
   const donut = cats.slice(0, 8).map(c => ({ name: c.name, value: Math.round(c.gmv) }))
   const PAL = ['#3b82f6', '#f97316', '#22c55e', '#eab308', '#8b5cf6', '#ec4899', '#14b8a6', '#6b7280']
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Total Kategori" value={fmtNum(cats.length)} />
         <KpiCard label="Kategori Teratas" value={cats[0]?.name || '—'} sub={cats[0] ? `${cats[0].share.toFixed(0)}% GMV` : ''} />
       </div>
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Kontribusi GMV per Kategori (Top 8)</h3>
         <ResponsiveContainer width="100%" height={240}>
           <PieChart>
@@ -652,7 +652,7 @@ function Waktu({ stats }) {
   const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
   const maxHourOrders = top5Hours[0]?.orders || 1
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Hari Terlaris" value={time.bestDay?.day || '—'} sub={time.bestDay ? `${fmtRp(time.bestDay.gmv)} · ${fmtNum(time.bestDay.orders)} pesanan` : ''} />
         <KpiCard label="Jam Puncak" value={time.bestHour ? `${String(time.bestHour.hour).padStart(2, '0')}:00` : '—'} sub={time.bestHour ? `${fmtRp(time.bestHour.gmv)} · ${fmtNum(time.bestHour.orders)} pesanan` : ''} />
@@ -669,7 +669,7 @@ function Waktu({ stats }) {
           const maxDayOrders = top5Days[0]?.orders || 1
           const totalDayOrders = time.byDay.reduce((s, d) => s + d.orders, 0)
           return (
-            <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+            <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
               <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Hari Terlaris</h3>
               <div className="space-y-3">
                 {top5Days.map((d, i) => {
@@ -705,7 +705,7 @@ function Waktu({ stats }) {
         })()}
 
         {/* Top 5 Jam Terbaik — kanan */}
-        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
           <h3 className="text-sm font-semibold text-ink-strong mb-4">Top 5 Jam Terbaik</h3>
           <div className="space-y-3">
             {top5Hours.map((h, i) => (
@@ -733,7 +733,7 @@ function Waktu({ stats }) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">GMV per Jam</h3>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={time.byHour} margin={{ left: 5, right: 5 }}>
@@ -746,7 +746,7 @@ function Waktu({ stats }) {
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Heatmap Hari × Jam (intensitas GMV)</h3>
         <div className="min-w-[640px]">
           <div className="flex gap-0.5 mb-0.5 pl-9">
@@ -778,13 +778,13 @@ function Lokasi({ stats, mp, lsf }) {
   // filter Semua atau TikTok; sembunyikan untuk Shopee & Tokopedia.
   const showLSF = lsf?.hasData && (mp === 'all' || mp === 'TikTok')
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {showLSF && <LogisticsCard lsf={lsf} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard label="Provinsi Teratas" value={stats.provinces[0]?.name || '—'} sub={stats.provinces[0] ? `${stats.provinces[0].share.toFixed(0)}% GMV` : ''} />
         <KpiCard label="Kota Teratas" value={stats.cities[0]?.name || '—'} sub={stats.cities[0] ? `${stats.cities[0].share.toFixed(0)}% GMV` : ''} />
       </div>
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Top Provinsi (GMV)</h3>
         <ResponsiveContainer width="100%" height={Math.max(160, prov.length * 26)}>
           <BarChart data={prov} layout="vertical" margin={{ left: 10 }}>
@@ -806,7 +806,7 @@ function Lokasi({ stats, mp, lsf }) {
 function LogisticsCard({ lsf }) {
   const { blended, dominant, uplift, zones } = lsf
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
       <div className="flex items-center gap-2 mb-1">
         <Truck className="w-4 h-4 text-blue-400" />
         <h3 className="text-sm font-semibold text-ink-strong">Estimasi Biaya Logistik</h3>
@@ -855,7 +855,7 @@ function LogisticsCard({ lsf }) {
 
 function GeoTable({ title, rows }) {
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 overflow-x-auto">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
       <h3 className="text-sm font-semibold text-ink-strong mb-3">{title}</h3>
       <table className="w-full text-sm">
         <thead>
@@ -899,11 +899,11 @@ function Transaksi({ stats, vouchers = [] }) {
   }), [promo, vouchers])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
 
       {/* Metode Pembayaran */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
           <h3 className="text-sm font-semibold text-ink-strong mb-3">Metode Pembayaran</h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -918,7 +918,7 @@ function Transaksi({ stats, vouchers = [] }) {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
           <h3 className="text-sm font-semibold text-ink-strong mb-4">Ranking Metode Pembayaran</h3>
           <div className="space-y-3">
             {payments.map((p, i) => (
@@ -934,7 +934,7 @@ function Transaksi({ stats, vouchers = [] }) {
       </div>
 
       {/* Performa Rentang Tanggal */}
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-4">Performa Rentang Tanggal</h3>
         <div className="space-y-3 mb-4">
           {dekade.map(d => (
@@ -966,7 +966,7 @@ function Transaksi({ stats, vouchers = [] }) {
       {promo.hasData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Voucher Seller */}
-          <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+          <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
             <h3 className="text-sm font-semibold text-ink-strong mb-1">Penggunaan Voucher Seller</h3>
             <p className="text-[11px] text-ink-faint mb-3">Nominal ditanggung penjual</p>
             <ResponsiveContainer width="100%" height={180}>
@@ -1043,7 +1043,7 @@ function Transaksi({ stats, vouchers = [] }) {
           </div>
 
           {/* Voucher Shopee */}
-          <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+          <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
             <h3 className="text-sm font-semibold text-ink-strong mb-1">Voucher Ditanggung Shopee</h3>
             <p className="text-[11px] text-ink-faint mb-3">Platform yang menanggung diskon</p>
             <ResponsiveContainer width="100%" height={180}>
@@ -1083,7 +1083,7 @@ function Transaksi({ stats, vouchers = [] }) {
           </div>
         </div>
       ) : (
-        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 text-center py-8">
+        <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 text-center py-8">
           <p className="text-sm text-ink-faint">Data voucher tidak tersedia</p>
           <p className="text-xs text-ink-faint mt-1">Kolom "Voucher Ditanggung Penjual" / "Voucher Ditanggung Shopee" tidak ditemukan di file ini</p>
         </div>
