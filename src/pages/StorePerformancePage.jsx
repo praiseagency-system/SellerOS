@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
   Package, Tags, Clock, MapPin, CreditCard, Truck, BookOpen, ChevronDown,
+  Calendar, ChevronLeft, ChevronRight, Layers,
 } from 'lucide-react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -14,6 +15,89 @@ import { computeStore, quickInsights } from '../utils/storeAnalytics'
 import { listVouchers } from '../data/vouchers'
 import { matchVouchersToAmount } from '../utils/voucher'
 import Modal from '../components/Modal'
+
+const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+const monthKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_ID[+m - 1]} ${y}` }
+
+// Pemilih periode gaya affiliate: mode Per Bulan (grid bulan, hanya yang ada
+// datanya) + Lifetime (semua). value = { mode, month }.
+function StoreMonthPicker({ months, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const years = useMemo(() => [...new Set(months.map(m => m.slice(0, 4)))].sort(), [months])
+  const [viewYear, setViewYear] = useState(
+    () => (value.month ? value.month.slice(0, 4) : years[years.length - 1]) || String(new Date().getFullYear()))
+
+  useEffect(() => {
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [])
+
+  const yi = years.indexOf(viewYear)
+  const label = value.mode === 'month' && value.month ? monthLabel(value.month) : 'Lifetime'
+  const has = (mm) => months.includes(`${viewYear}-${mm}`)
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold bg-fill/5 border border-line/15 text-ink hover:border-blue-600/40 transition-colors">
+        <Calendar className="w-4 h-4 text-blue-500" />
+        {label}
+        <ChevronDown className={`w-3.5 h-3.5 text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 z-50 flex glass-modal rounded-2xl overflow-hidden min-w-[320px]">
+          {/* Mode */}
+          <div className="w-28 flex-shrink-0 border-r border-line/10 p-1.5 space-y-0.5">
+            <button
+              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
+                value.mode === 'month' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
+              <Calendar className="w-3.5 h-3.5" /> Per Bulan
+            </button>
+            <button onClick={() => { onChange({ mode: 'lifetime', month: null }); setOpen(false) }}
+              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
+                value.mode === 'lifetime' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
+              <Layers className="w-3.5 h-3.5" /> Lifetime
+            </button>
+          </div>
+          {/* Grid bulan */}
+          <div className="p-3 flex-1">
+            <div className="flex items-center justify-between mb-2.5">
+              <button disabled={yi <= 0} onClick={() => setViewYear(years[yi - 1])}
+                className="text-ink-faint hover:text-ink disabled:opacity-30"><ChevronLeft className="w-4 h-4" /></button>
+              <span className="text-sm font-bold text-ink-strong">{viewYear}</span>
+              <button disabled={yi >= years.length - 1} onClick={() => setViewYear(years[yi + 1])}
+                className="text-ink-faint hover:text-ink disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {MONTHS_ID.map((m, i) => {
+                const mm = String(i + 1).padStart(2, '0')
+                const ym = `${viewYear}-${mm}`
+                const enabled = has(mm)
+                const active = value.mode === 'month' && value.month === ym
+                return (
+                  <button key={mm} disabled={!enabled}
+                    onClick={() => { onChange({ mode: 'month', month: ym }); setOpen(false) }}
+                    className={`py-2 rounded-lg text-xs font-semibold transition-colors ${
+                      active ? 'bg-blue-600 text-white'
+                        : enabled ? 'bg-fill/5 text-ink hover:bg-fill/10'
+                        : 'text-ink-faint/40 cursor-not-allowed'}`}>
+                    {m}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[10px] text-ink-faint mt-2.5">Bulan terang = ada datanya.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
@@ -35,6 +119,7 @@ export default function StorePerformancePage() {
   const [error, setError] = useState(null)
   const [warning, setWarning] = useState(null)
   const [mpFilter, setMpFilter] = useState('all')
+  const [period, setPeriod] = useState({ mode: 'lifetime', month: null })  // { mode:'lifetime'|'month', month:'YYYY-MM' }
   const [vouchers, setVouchers] = useState([])
   const [showImport, setShowImport] = useState(false)
   const fileRef = useRef(null)
@@ -55,18 +140,28 @@ export default function StorePerformancePage() {
     return () => { active = false }
   }, [])
 
-  // Daftar marketplace yang ada di dataset (untuk filter bila >1 sumber).
-  const mpOptions = useMemo(() => [...new Set(store.lines.map(l => l.m))].sort(), [store])
+  // Bulan yang ADA datanya (YYYY-MM), untuk pemilih periode Per Bulan/Lifetime.
+  const monthOptions = useMemo(
+    () => [...new Set(store.lines.map(l => monthKey(l.t)))].sort(),
+    [store])
+  // Baris sesuai periode terpilih (Lifetime = semua; Per Bulan = 1 bulan).
+  const periodLines = useMemo(() => {
+    if (period.mode === 'month' && period.month) return store.lines.filter(l => monthKey(l.t) === period.month)
+    return store.lines
+  }, [store, period])
+
+  // Daftar marketplace yang ada di periode terpilih (untuk filter bila >1 sumber).
+  const mpOptions = useMemo(() => [...new Set(periodLines.map(l => l.m))].sort(), [periodLines])
   const mp = mpOptions.includes(mpFilter) ? mpFilter : 'all'
 
   const stats = useMemo(() => {
-    const lines = mp === 'all' ? store.lines : store.lines.filter(l => l.m === mp)
+    const lines = mp === 'all' ? periodLines : periodLines.filter(l => l.m === mp)
     return lines.length ? computeStore(lines) : null
-  }, [store, mp])
+  }, [periodLines, mp])
   const insights = useMemo(() => (stats ? quickInsights(stats) : []), [stats])
 
-  // Estimasi biaya logistik (LSF) selalu dari order TikTok saja, tak ikut filter.
-  const tiktokLSF = useMemo(() => blendedLogistics(store), [store])
+  // Estimasi biaya logistik (LSF) dari order TikTok pada periode terpilih.
+  const tiktokLSF = useMemo(() => blendedLogistics({ ...store, lines: periodLines }), [store, periodLines])
 
   async function handleFiles(fileList) {
     const files = Array.from(fileList || [])
@@ -123,10 +218,15 @@ export default function StorePerformancePage() {
             <p className="text-xs text-ink-faint">Belum ada data terimport</p>
           )}
         </div>
-        <button onClick={() => setShowImport(true)} disabled={busy}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors flex-shrink-0">
-          <Upload className="w-4 h-4" />{busy ? 'Memproses…' : 'Import Data'}
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {monthOptions.length > 0 && (
+            <StoreMonthPicker months={monthOptions} value={period} onChange={setPeriod} />
+          )}
+          <button onClick={() => setShowImport(true)} disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+            <Upload className="w-4 h-4" />{busy ? 'Memproses…' : 'Import Data'}
+          </button>
+        </div>
       </div>
 
       {!stats ? (
