@@ -112,6 +112,22 @@ export function refreshAccessToken(refreshToken) {
   })
 }
 
+// Daftar advertiser/toko yang dilihat token (lewat proxy serverless — MCP kena
+// CORS dari browser). → [{ advertiser_id, advertiser_name }]
+const ADV_PROXY = import.meta.env.VITE_TIKTOK_ADV_PROXY || '/api/tiktok/advertisers'
+export async function fetchAdvertisers(accessToken) {
+  const res = await fetch(ADV_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ access_token: accessToken }),
+  })
+  const text = await res.text()
+  let j
+  try { j = JSON.parse(text) } catch { throw new Error(`advertisers proxy non-JSON (${res.status})`) }
+  if (!res.ok || j.error) throw new Error(j.error_description || j.error || `gagal ambil daftar akun (${res.status})`)
+  return j.advertisers || []
+}
+
 // ── Sesi PKCE sementara (sessionStorage) antara tombol Connect → callback ────
 const SS_KEY = 'tiktok_oauth' // { verifier, state, wsId }
 export function stashOAuthSession(sess) { sessionStorage.setItem(SS_KEY, JSON.stringify(sess)) }
