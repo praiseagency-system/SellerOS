@@ -19,6 +19,7 @@ import { enrichVideos } from '../utils/gmvmaxEnrich'
 import { DEFAULT_THRESHOLDS } from '../utils/gmvmaxClassify'
 import {
   rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, rollupProducts, dashboardSummary,
+  rollupChannels, channelDailyTrend,
 } from '../utils/gmvmaxRollup'
 import { insightCards, actionPlan, winningFramework } from '../utils/gmvmaxInsights'
 
@@ -77,6 +78,7 @@ export const WINDOWS = [
 export function GmvMaxProvider({ children }) {
   const [imports, setImports] = useState([])   // snapshot harian (ringkas, tanpa creatives)
   const [creatives, setCreatives] = useState([])
+  const [creativesLoading, setCreativesLoading] = useState(false) // re-fetch saat ganti rentang
   const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS)
   const [notes, setNotes] = useState({})
   const [actionLog, setActionLog] = useState([])
@@ -198,7 +200,8 @@ export function GmvMaxProvider({ children }) {
   useEffect(() => {
     let active = true
     ;(async () => {
-      if (!neededIds.length) { if (active) setCreatives([]); return }
+      if (!neededIds.length) { if (active) { setCreatives([]); setCreativesLoading(false) } return }
+      if (active) setCreativesLoading(true)
       try {
         const cre = await loadCreatives(neededIds)
         if (!active) return
@@ -207,6 +210,7 @@ export function GmvMaxProvider({ children }) {
         const loaded = await loadVideoMeta(vids)
         if (active) setMeta(prev => ({ ...prev, ...loaded }))
       } catch (e) { if (active) setError(e.message) }
+      finally { if (active) setCreativesLoading(false) }
     })()
     return () => { active = false }
   }, [neededKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -246,6 +250,9 @@ export function GmvMaxProvider({ children }) {
   })), [rows, productNames])
   const dashboard = useMemo(() => dashboardSummary(videos, thresholds), [videos, thresholds])
   const typeTotals = useMemo(() => typeTotalsOf(rows), [rows])
+  // Perbandingan per channel (Video / Product card / Live) + tren harian stacked.
+  const channels = useMemo(() => rollupChannels(rows), [rows])
+  const channelTrend = useMemo(() => channelDailyTrend(rows), [rows])
 
   // Pembanding (window sebelumnya / bulan lalu) untuk delta di kartu & halaman.
   const prevRows = useMemo(
@@ -264,6 +271,7 @@ export function GmvMaxProvider({ children }) {
       creators: rollupCreators(prevRows, thresholds),
       products: rollupProducts(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
       typeTotals: typeTotalsOf(prevRows),
+      channels: rollupChannels(prevRows),
     }
   }, [prevRows, prevLabel, thresholds, productNames])
 
@@ -433,8 +441,9 @@ export function GmvMaxProvider({ children }) {
     windowDays, setWindowDays, windows: WINDOWS,
     prev, dailyDelta, trend,
     videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
+    channels, channelTrend,
     hasData: imports.length > 0,
-    loading, busy, error,
+    loading, busy, creativesLoading, error,
     missingAccountCount, enriching,
     upload, importDataset, removeImport, updateThresholds, setNote, clearNote, enrichUsernames,
     logAction, removeActionLog,

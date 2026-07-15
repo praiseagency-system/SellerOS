@@ -7,6 +7,7 @@ import { UploadModal } from '../../components/gmvmax/modals'
 import DateRangePicker from '../../components/gmvmax/DateRangePicker'
 import DashboardPage from './DashboardPage'
 import OverviewPage from './OverviewPage'
+import ChannelPage from './ChannelPage'
 import CreatorPage from './CreatorPage'
 import ProductPage from './ProductPage'
 import InsightPage from './InsightPage'
@@ -17,6 +18,7 @@ import LogPage from './LogPage'
 const PAGES = {
   gmv_dashboard: DashboardPage,
   gmv_overview: OverviewPage,
+  gmv_channel: ChannelPage,
   gmv_creator: CreatorPage,
   gmv_product: ProductPage,
   gmv_insight: InsightPage,
@@ -25,8 +27,8 @@ const PAGES = {
   gmv_input: InputPage,
 }
 
-export default function GmvMaxModule({ page }) {
-  const { hasData, loading } = useGmvMax()
+export default function GmvMaxModule({ page, onNavigate }) {
+  const { hasData, loading, creativesLoading } = useGmvMax()
   const [showUpload, setShowUpload] = useState(false)
   const Page = PAGES[page] || DashboardPage
 
@@ -43,9 +45,14 @@ export default function GmvMaxModule({ page }) {
       {hasData && page !== 'gmv_input' && (
         <div className="flex items-center gap-3 px-6 pt-4">
           <DateRangePicker />
+          {creativesLoading && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-ink-faint">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> memuat data periode…
+            </span>
+          )}
         </div>
       )}
-      <Page onOpenUpload={() => setShowUpload(true)} />
+      <Page onOpenUpload={() => setShowUpload(true)} onNavigate={onNavigate} />
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
     </div>
   )
