@@ -2,15 +2,19 @@ import { useState, useRef, useEffect } from 'react'
 import {
   ShieldCheck, ShieldOff, LogOut, AlertCircle, CheckCircle2,
   User, Palette, Users, Camera, Save, Store, Mail, UserPlus,
+  Plug, Loader2, Link2Off, RefreshCw,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useIdentity } from '../contexts/IdentityContext'
 import { fileToAvatarDataUrl } from '../data/localIdentity'
 import { supabase } from '../lib/supabase'
+import { createPkce, buildAuthorizeUrl, refreshAccessToken, stashOAuthSession } from '../lib/tiktokOAuth'
+import { getConnection, saveConnection, deleteConnection } from '../data/tiktokConnection'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: User },
   { id: 'brand', label: 'Brand', icon: Palette },
+  { id: 'integrasi', label: 'Integrasi', icon: Plug },
   { id: 'team', label: 'Team', icon: Users },
 ]
 
@@ -38,6 +42,7 @@ export default function SettingsPage({ initialTab = 'profil', currentWorkspace }
 
       {tab === 'profil' && <ProfilTab />}
       {tab === 'brand' && <BrandTab currentWorkspace={currentWorkspace} />}
+      {tab === 'integrasi' && <IntegrasiTab currentWorkspace={currentWorkspace} />}
       {tab === 'team' && <TeamTab />}
     </div>
   )
@@ -216,6 +221,138 @@ function BrandTab({ currentWorkspace }) {
         </button>
         {saved && <span className="flex items-center gap-1.5 text-xs text-green-400"><CheckCircle2 className="w-3.5 h-3.5" /> Tersimpan</span>}
       </div>
+    </section>
+  )
+}
+
+// ── Tab Integrasi: koneksi TikTok Ads MCP (OAuth PKCE) per workspace ───────
+function IntegrasiTab({ currentWorkspace }) {
+  const wsId = currentWorkspace?.id || null
+  const [conn, setConn] = useState(null)
+  const [expired, setExpired] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [okMsg, setOkMsg] = useState(null)
+
+  // Terapkan koneksi + hitung kedaluwarsa (Date.now di luar render = murni).
+  function applyConn(c) {
+    setConn(c)
+    setExpired(!!c && Date.parse(c.expires_at) <= Date.now())
+  }
+
+  useEffect(() => {
+    let active = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true); setError(null)
+    getConnection(wsId)
+      .then(c => { if (active) applyConn(c) })
+      .catch(e => { if (active) setError(e.message || 'Gagal memuat koneksi.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [wsId])
+
+  async function connect() {
+    if (!wsId) return
+    setBusy(true); setError(null)
+    try {
+      const { verifier, challenge, state } = await createPkce()
+      stashOAuthSession({ verifier, state, wsId })
+      window.location.assign(buildAuthorizeUrl({ challenge, state }))
+    } catch (e) {
+      setError(e.message || 'Gagal memulai koneksi.'); setBusy(false)
+    }
+  }
+
+  async function disconnect() {
+    setBusy(true); setError(null); setOkMsg(null)
+    try { await deleteConnection(wsId); applyConn(null); setOkMsg('Koneksi diputus.') }
+    catch (e) { setError(e.message || 'Gagal memutus koneksi.') }
+    finally { setBusy(false) }
+  }
+
+  async function renew() {
+    if (!conn?.refresh_token) return
+    setBusy(true); setError(null); setOkMsg(null)
+    try {
+      const tok = await refreshAccessToken(conn.refresh_token)
+      await saveConnection(tok, wsId)
+      applyConn(await getConnection(wsId))
+      setOkMsg('Token diperbarui.')
+    } catch (e) {
+      setError(e.message || 'Gagal memperbarui token.')
+    } finally { setBusy(false) }
+  }
+
+  if (!wsId) {
+    return <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-8 text-center">
+      <p className="text-sm text-ink-faint">Pilih workspace dulu untuk mengatur integrasi.</p>
+    </section>
+  }
+
+  const expLabel = conn ? new Date(conn.expires_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : ''
+
+  return (
+    <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <h2 className="text-sm font-semibold text-ink-strong mb-1 flex items-center gap-2">
+        <Plug className="w-4 h-4 text-blue-500" /> TikTok Ads (GMV Max)
+      </h2>
+      <p className="text-xs text-ink-muted mb-4 leading-relaxed">
+        Sambungkan akun TikTok Ads untuk <span className="text-ink font-medium">{currentWorkspace.name}</span> agar
+        data GMV Max tersinkron otomatis — tanpa upload manual. Login dilakukan langsung di TikTok; token
+        disimpan aman & diperpanjang otomatis.
+      </p>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-ink-faint py-4">
+          <Loader2 className="w-4 h-4 animate-spin" /> Memuat status…
+        </div>
+      ) : conn ? (
+        <div className={`rounded-xl border p-4 ${expired ? 'border-amber-500/25 bg-amber-500/5' : 'border-green-500/25 bg-green-500/5'}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${expired ? 'bg-amber-500/15' : 'bg-green-500/15'}`}>
+                <CheckCircle2 className={`w-4 h-4 ${expired ? 'text-amber-400' : 'text-green-400'}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink-strong">
+                  {conn.advertiser_name || conn.advertiser_id || 'Akun TikTok tersambung'}
+                </p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  {expired ? 'Token kedaluwarsa — perbarui.' : 'Aktif'} · berlaku s/d {expLabel}
+                </p>
+                <p className="text-[11px] text-ink-faint mt-0.5">scope {conn.scope || '—'}</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-4">
+            <button onClick={renew} disabled={busy || !conn.refresh_token}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Perbarui token
+            </button>
+            <button onClick={disconnect} disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors">
+              <Link2Off className="w-3.5 h-3.5" /> Putuskan
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={connect} disabled={busy}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />} Connect TikTok Ads
+        </button>
+      )}
+
+      {error && (
+        <div className="mt-3 flex items-center gap-2 text-xs">
+          <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" /><span className="text-red-300">{error}</span>
+        </div>
+      )}
+      {okMsg && !error && (
+        <div className="mt-3 flex items-center gap-2 text-xs">
+          <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" /><span className="text-green-300">{okMsg}</span>
+        </div>
+      )}
     </section>
   )
 }

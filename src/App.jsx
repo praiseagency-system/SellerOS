@@ -13,6 +13,7 @@ import { QuadrantProvider } from './contexts/QuadrantContext'
 import { useLang } from './contexts/LanguageContext'
 import { useAuth } from './contexts/AuthContext'
 import LoginPage from './pages/LoginPage'
+import TiktokCallback from './components/TiktokCallback'
 import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
 
@@ -33,6 +34,8 @@ const PAGE_META = {
 // Gate auth: cek sesi dulu, tampilkan login bila belum masuk.
 export default function App() {
   const { loading, user } = useAuth()
+  // Callback OAuth TikTok — tangani sebelum gate biasa (sesi Supabase persist).
+  if (window.location.pathname === '/oauth/tiktok/callback') return <TiktokCallback />
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-app">
@@ -46,15 +49,26 @@ export default function App() {
 
 function MainApp() {
   const { t } = useLang()
+  // Deep-link pasca-connect TikTok: `?connected=tiktok` / `?page=integrasi`
+  // membuka Settings → Integrasi. Query dibersihkan di efek di bawah.
+  const wantsIntegrasi = (() => {
+    const q = new URLSearchParams(window.location.search)
+    return q.get('connected') === 'tiktok' || q.get('page') === 'integrasi'
+  })()
   // Landing default: Overview (command center). Data periode tetap di-restore
   // otomatis oleh QuadrantContext di latar belakang, terlepas halaman awal.
-  const [currentPage, setCurrentPage] = useState('overview')
+  const [currentPage, setCurrentPage] = useState(wantsIntegrasi ? 'settings' : 'overview')
 
   // Produk yang sedang dibuka di kalkulator (null = produk baru/kosong).
   // calcKey membump-remount CalculatorPage agar field ter-reset/terisi sesuai produk.
   const [editingProduct, setEditingProduct] = useState(null)
   const [calcKey, setCalcKey] = useState(0)
-  const [settingsTab, setSettingsTab] = useState('profil')
+  const [settingsTab, setSettingsTab] = useState(wantsIntegrasi ? 'integrasi' : 'profil')
+
+  // Bersihkan query deep-link sekali agar refresh tak mengulang.
+  useEffect(() => {
+    if (window.location.search) window.history.replaceState({}, '', '/')
+  }, [])
 
   function openProduct(product) {
     setEditingProduct(product)
