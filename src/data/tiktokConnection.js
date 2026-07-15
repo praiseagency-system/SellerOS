@@ -35,6 +35,15 @@ export async function saveConnection(tok, wsId = getCurrentWorkspaceId()) {
   if (error) throw error
 }
 
+// Simpan advertiser/toko terpilih (pemetaan 1 workspace ↔ 1 advertiser).
+export async function saveAdvertiser({ advertiser_id, advertiser_name }, wsId = getCurrentWorkspaceId()) {
+  if (!wsId) throw new Error('Workspace tidak aktif.')
+  const { error } = await supabase.from('tiktok_connections')
+    .update({ advertiser_id, advertiser_name, updated_at: new Date().toISOString() })
+    .eq('workspace_id', wsId)
+  if (error) throw error
+}
+
 // Putuskan koneksi (hapus baris).
 export async function deleteConnection(wsId = getCurrentWorkspaceId()) {
   if (!wsId) return

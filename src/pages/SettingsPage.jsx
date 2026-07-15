@@ -8,8 +8,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { useIdentity } from '../contexts/IdentityContext'
 import { fileToAvatarDataUrl } from '../data/localIdentity'
 import { supabase } from '../lib/supabase'
-import { createPkce, buildAuthorizeUrl, refreshAccessToken, stashOAuthSession } from '../lib/tiktokOAuth'
-import { getConnection, saveConnection, deleteConnection } from '../data/tiktokConnection'
+import { createPkce, buildAuthorizeUrl, refreshAccessToken, stashOAuthSession, fetchAdvertisers } from '../lib/tiktokOAuth'
+import { getConnection, saveConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: User },
@@ -308,6 +308,7 @@ function IntegrasiTab({ currentWorkspace }) {
           <Loader2 className="w-4 h-4 animate-spin" /> Memuat status…
         </div>
       ) : conn ? (
+        <div className="space-y-3">
         <div className={`rounded-xl border p-4 ${expired ? 'border-amber-500/25 bg-amber-500/5' : 'border-green-500/25 bg-green-500/5'}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3 min-w-0">
@@ -336,6 +337,10 @@ function IntegrasiTab({ currentWorkspace }) {
             </button>
           </div>
         </div>
+
+        {/* Pemetaan advertiser/toko: 1 workspace ↔ 1 advertiser */}
+        <AdvertiserSection conn={conn} wsId={wsId} onSaved={async () => applyConn(await getConnection(wsId))} />
+        </div>
       ) : (
         <button onClick={connect} disabled={busy}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
@@ -354,6 +359,73 @@ function IntegrasiTab({ currentWorkspace }) {
         </div>
       )}
     </section>
+  )
+}
+
+// Pemetaan advertiser/toko untuk workspace (1 workspace ↔ 1 advertiser).
+// Enumerasi lewat proxy serverless (MCP kena CORS dari browser).
+function AdvertiserSection({ conn, wsId, onSaved }) {
+  const [list, setList] = useState(null)
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  async function load() {
+    setPicking(true); setErr(null); setBusy(true)
+    try { setList(await fetchAdvertisers(conn.access_token)) }
+    catch (e) { setErr(e.message || 'Gagal memuat daftar akun.') }
+    finally { setBusy(false) }
+  }
+  async function choose(a) {
+    setBusy(true); setErr(null)
+    try { await saveAdvertiser(a, wsId); await onSaved(); setPicking(false); setList(null) }
+    catch (e) { setErr(e.message || 'Gagal menyimpan pilihan.') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded-xl border border-line/10 bg-fill/5 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Store className="w-4 h-4 text-blue-400" />
+        <p className="text-sm font-semibold text-ink-strong">Akun / Toko TikTok Ads</p>
+      </div>
+
+      {conn.advertiser_id ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-ink truncate">{conn.advertiser_name || conn.advertiser_id}</p>
+            <p className="text-[11px] text-ink-faint font-mono">{conn.advertiser_id}</p>
+          </div>
+          <button onClick={load} disabled={busy} className="text-xs text-blue-400 hover:underline disabled:opacity-40">Ubah</button>
+        </div>
+      ) : !picking ? (
+        <>
+          <p className="text-xs text-ink-muted mb-3">Pilih akun/toko mana yang datanya disinkron untuk workspace ini.</p>
+          <button onClick={load} disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Store className="w-3.5 h-3.5" />} Pilih toko
+          </button>
+        </>
+      ) : null}
+
+      {picking && (
+        <div className="mt-3 space-y-1.5">
+          {busy && !list && <p className="text-xs text-ink-faint flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat akun…</p>}
+          {list?.map(a => {
+            const active = conn.advertiser_id === a.advertiser_id
+            return (
+              <button key={a.advertiser_id} onClick={() => choose(a)} disabled={busy}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm border transition-colors ${active ? 'border-blue-600/50 bg-blue-600/10' : 'border-line/10 hover:bg-fill/10'}`}>
+                <span className="min-w-0 truncate"><span className="text-ink font-medium">{a.advertiser_name}</span><span className="text-[11px] text-ink-faint font-mono"> · {a.advertiser_id}</span></span>
+                {active && <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" />}
+              </button>
+            )
+          })}
+          {list && list.length === 0 && <p className="text-xs text-ink-faint">Tak ada akun advertiser terlihat oleh token ini.</p>}
+        </div>
+      )}
+      {err && <p className="mt-2 text-xs text-red-300 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" />{err}</p>}
+    </div>
   )
 }
 
