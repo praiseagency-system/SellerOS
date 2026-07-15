@@ -31,16 +31,26 @@ export async function loadCreatives(importIds = null) {
   const byId = Object.fromEntries(targets.map(i => [i.id, i]))
 
   const all = []
+  const PAGE = 1000
   for (let i = 0; i < targets.length; i += 25) {
     const ids = targets.slice(i, i + 25).map(t => t.id)
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('*')
-      .in('import_id', ids)
-    if (error) throw error
-    for (const r of data || []) {
-      const imp = byId[r.import_id]
-      all.push(rowToCreative(r, imp))
+    // Paginasi WAJIB: PostgREST membatasi ~1000 baris per permintaan. Tanpa ini,
+    // rentang multi-hari (25 snapshot × ratusan creative) terpotong diam-diam →
+    // ringkasan (revenue/cost/orders) jauh lebih kecil dari sebenarnya. Ambil
+    // bertahap via .range() dengan urutan stabil (id) sampai halaman < PAGE.
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('gmvmax_creatives')
+        .select('*')
+        .in('import_id', ids)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      for (const r of data || []) {
+        const imp = byId[r.import_id]
+        all.push(rowToCreative(r, imp))
+      }
+      if (!data || data.length < PAGE) break
     }
   }
   return all
