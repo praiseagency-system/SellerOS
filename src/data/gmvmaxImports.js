@@ -24,34 +24,43 @@ export async function listImports() {
 
 // Ambil baris creatives untuk sekumpulan import (atau semua import workspace).
 // Setiap baris ditandai period/periodName dari import-nya (dipakai rollup).
+// Kolom yang benar-benar dipakai rowToCreative — HINDARI select('*') (ikut
+// menarik raw_data & kolom tak terpakai). Slim → payload lebih kecil.
+const CREATIVE_COLS =
+  'id, import_id, video_id, campaign_name, campaign_id, product_id, creative_type, ' +
+  'video_title, tiktok_account, time_posted, status, auth_type, cost, sku_orders, ' +
+  'cost_per_order, gross_revenue, roas, impressions, clicks, ctr, cvr, hook_tag'
+const PAGE = 1000
+const CONCURRENCY = 8 // permintaan paralel maksimum ke Supabase
+
 export async function loadCreatives(importIds = null) {
   const imports = await listImports()
   const targets = importIds ? imports.filter(i => importIds.includes(i.id)) : imports
   if (targets.length === 0) return []
-  const byId = Object.fromEntries(targets.map(i => [i.id, i]))
 
-  const all = []
-  const PAGE = 1000
-  for (let i = 0; i < targets.length; i += 25) {
-    const ids = targets.slice(i, i + 25).map(t => t.id)
-    // Paginasi WAJIB: PostgREST membatasi ~1000 baris per permintaan. Tanpa ini,
-    // rentang multi-hari (25 snapshot × ratusan creative) terpotong diam-diam →
-    // ringkasan (revenue/cost/orders) jauh lebih kecil dari sebenarnya. Ambil
-    // bertahap via .range() dengan urutan stabil (id) sampai halaman < PAGE.
+  // Ambil creatives PER IMPORT, PARALEL (konkuren terbatas) — jauh lebih cepat
+  // dari sekuensial. Tiap import di-paginasi defensif (PostgREST cap ~1000
+  // baris/permintaan) agar hari ber-creative >1000 tak terpotong diam-diam.
+  async function fetchOne(imp) {
+    const out = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from('gmvmax_creatives')
-        .select('*')
-        .in('import_id', ids)
+        .select(CREATIVE_COLS)
+        .eq('import_id', imp.id)
         .order('id', { ascending: true })
         .range(from, from + PAGE - 1)
       if (error) throw error
-      for (const r of data || []) {
-        const imp = byId[r.import_id]
-        all.push(rowToCreative(r, imp))
-      }
+      for (const r of data || []) out.push(rowToCreative(r, imp))
       if (!data || data.length < PAGE) break
     }
+    return out
+  }
+
+  const all = []
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    const batch = await Promise.all(targets.slice(i, i + CONCURRENCY).map(fetchOne))
+    for (const rows of batch) all.push(...rows)
   }
   return all
 }
