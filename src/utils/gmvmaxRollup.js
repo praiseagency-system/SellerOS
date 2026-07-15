@@ -66,6 +66,44 @@ function finalize(a) {
   }
 }
 
+// ─── Channel GMV Max (Video / Product card / Live) ───────────────────────────
+// Sinyal: campaign LIVE (nama campaign memuat token "LIVE") = channel Live;
+// sisanya creative_type Video → 'video', selain itu → 'card'. Dipusatkan di sini
+// agar mudah diganti ke promotion_type bila kelak tersimpan per baris.
+export function channelOf(r) {
+  if (/\blive\b/i.test(r.campaignName || '')) return 'live'
+  return r.creativeType === 'Video' ? 'video' : 'card'
+}
+export const CHANNELS = ['video', 'card', 'live']
+export const CHANNEL_LABEL = { video: 'Video', card: 'Product card', live: 'Live' }
+
+// Rollup metrik per channel + share revenue. → { video, card, live, total }.
+export function rollupChannels(rows) {
+  const agg = { video: blankAgg(), card: blankAgg(), live: blankAgg() }
+  for (const r of rows) addInto(agg[channelOf(r)], r)
+  const out = {}
+  let total = 0
+  for (const k of CHANNELS) { out[k] = finalize(agg[k]); total += out[k].revenue }
+  out.total = total
+  for (const k of CHANNELS) out[k].share = total > 0 ? out[k].revenue / total : 0
+  return out
+}
+
+// Tren revenue harian per channel (untuk grafik stacked). → [{ date, video, card, live, total }]
+export function channelDailyTrend(rows) {
+  const byDate = new Map()
+  for (const r of rows) {
+    const d = r.snapshotDate
+    if (!d) continue
+    let e = byDate.get(d)
+    if (!e) { e = { date: d, video: 0, card: 0, live: 0, total: 0 }; byDate.set(d, e) }
+    const v = r.grossRevenue ?? 0
+    e[channelOf(r)] += v
+    e.total += v
+  }
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1))
+}
+
 const periodOf = (r) => r.period || 'all'
 
 // ─── Per video (lifetime + per-periode) ──────────────────────────────────────

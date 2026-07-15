@@ -4,7 +4,7 @@ import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronsLeft, ChevronsRight, ChevronDown,
   BarChart3, Menu, Package, Megaphone, Home, Activity, Settings, Sparkles,
-  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket
+  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket, Layers
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -23,6 +23,7 @@ const NAV = [
     section: 'GMV MAX ADS',
     items: [
       { id: 'gmv_dashboard', icon: LayoutDashboard },
+      { id: 'gmv_channel',   icon: Layers },
       { id: 'gmv_monitoring', icon: LineChart, children: [
         { id: 'gmv_input',    icon: Upload },
         { id: 'gmv_overview', icon: PlaySquare },

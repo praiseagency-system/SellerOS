@@ -1,7 +1,7 @@
 // Performa Produk — rollup GMV Max per produk (semua creative). Nama produk
 // diambil dari menu Produk lewat kunci product_id = kode_produk.
 import { useState, useMemo } from 'react'
-import { Search, Package, Wallet, TrendingUp, Target, ShoppingCart, PlayCircle } from 'lucide-react'
+import { Search, Package, Wallet, TrendingUp, Target, ShoppingCart, PlayCircle, Info } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX, DeliveryPills, useSortableRows, SortTh } from '../../components/gmvmax/ui'
 import ProductDetailModal from '../../components/gmvmax/ProductDetailModal'
@@ -80,6 +80,11 @@ export default function ProductPage({ onOpenUpload }) {
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-ink-muted">{list.length} produk · <span className="text-emerald-500">{matched}</span> ketemu nama di menu Produk</p>
       </div>
+
+      <p className="text-[11px] text-ink-faint flex items-start gap-1.5 leading-relaxed -mt-1">
+        <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+        Revenue di sini = channel <span className="text-ink-muted">Video</span> per-produk saja. Iklan <span className="text-ink-muted">Product card</span> &amp; <span className="text-ink-muted">Live</span> bersifat level-campaign (tanpa product_id) → tak terpecah per-produk. Total lintas channel ada di menu <span className="text-blue-400">Channel</span>.
+      </p>
 
       <div className="relative">
         <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
