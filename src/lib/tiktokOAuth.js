@@ -12,13 +12,16 @@ export const TIKTOK_OAUTH = {
   tokenEndpoint: `${BASE}/token`,
   revocationEndpoint: `${BASE}/revoke`,
   serverUrl: 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer',
-  clientId: '2a5ee48c8590c3a9f9c4ed2f21301f79',
+  clientId: '8d6ac659da5fed5e13725951c9d9b749',
   scope: 'mcp:tt4b',
 }
 
 // redirect_uri HARUS sama persis dgn yang didaftarkan (per origin).
+// Path SATU segmen ('/tiktok-callback', bukan '/oauth/tiktok/callback') supaya
+// aset relative-base './' (vite base './', dipakai GitHub Pages subpath) tetap
+// resolve ke /assets — path multi-segmen memecah resolusi aset → blank page.
 export function redirectUri() {
-  return `${window.location.origin}/oauth/tiktok/callback`
+  return `${window.location.origin}/tiktok-callback`
 }
 
 // ── PKCE ───────────────────────────────────────────────────────────────────
