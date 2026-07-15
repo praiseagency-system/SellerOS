@@ -35,6 +35,12 @@ create index if not exists tiktok_connections_ws_idx
 
 alter table public.tiktok_connections enable row level security;
 
+-- GRANT tabel: RLS mengatur baris, tapi role API tetap butuh privilege tabel.
+-- authenticated = user login (dibatasi lagi oleh policy owner-only di bawah);
+-- service_role = worker server-side (bypass RLS).
+grant select, insert, update, delete on public.tiktok_connections to authenticated;
+grant all on public.tiktok_connections to service_role;
+
 -- OWNER-ONLY: hanya pemilik workspace. TIDAK ada policy admin-read (token sensitif).
 drop policy if exists tiktok_connections_owner_all on public.tiktok_connections;
 create policy tiktok_connections_owner_all on public.tiktok_connections
