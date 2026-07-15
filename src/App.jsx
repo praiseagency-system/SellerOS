@@ -35,7 +35,8 @@ const PAGE_META = {
 export default function App() {
   const { loading, user } = useAuth()
   // Callback OAuth TikTok — tangani sebelum gate biasa (sesi Supabase persist).
-  if (window.location.pathname === '/oauth/tiktok/callback') return <TiktokCallback />
+  // Path 1 segmen ('/tiktok-callback') agar aset relative-base tetap resolve.
+  if (window.location.pathname === '/tiktok-callback') return <TiktokCallback />
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-app">
