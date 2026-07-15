@@ -284,6 +284,26 @@ function creativeToRow(importId, r) {
   }
 }
 
+// Normalisasi status pengiriman ke SATU bahasa (Inggris) — file import bisa
+// campur ID/EN. Peta varian Indonesia + typo → kanonik Inggris; nilai tak
+// dikenal di-uppercase apa adanya. normDeliveryStatus tetap jalan (case-insensitive).
+const STATUS_EN = {
+  'ditayangkan': 'DELIVERING', 'delivering': 'DELIVERING',
+  'dalam antrean': 'IN_QUEUE', 'antrean': 'IN_QUEUE', 'in_queue': 'IN_QUEUE', 'in queue': 'IN_QUEUE',
+  'mempelajari': 'LEARNING', 'learning': 'LEARNING',
+  'perlu otorisasi': 'AUTHORIZATION_NEEDED', 'authorization_needed': 'AUTHORIZATION_NEEDED', 'authorization needed': 'AUTHORIZATION_NEEDED',
+  'tidak aktif': 'NOT_ACTIVE', 'not_active': 'NOT_ACTIVE', 'not active': 'NOT_ACTIVE',
+  'tidak ditayangkan': 'NOT_DELIVERING', 'not_delivering': 'NOT_DELIVERING', 'not delivering': 'NOT_DELIVERING', 'not_deliverying': 'NOT_DELIVERING',
+  'dikecualikan': 'EXCLUDED', 'excluded': 'EXCLUDED',
+  'ditolak': 'REJECTED', 'rejected': 'REJECTED',
+  'tidak tersedia': 'UNAVAILABLE', 'unavailable': 'UNAVAILABLE',
+}
+export function normalizeStatus(raw) {
+  if (raw == null || raw === '') return raw
+  const k = String(raw).toLowerCase().trim()
+  return STATUS_EN[k] || String(raw).toUpperCase()
+}
+
 function rowToCreative(row, imp) {
   return {
     videoId: row.video_id,
@@ -294,7 +314,7 @@ function rowToCreative(row, imp) {
     videoTitle: row.video_title,
     tiktokAccount: row.tiktok_account,
     timePosted: row.time_posted,
-    status: row.status,
+    status: normalizeStatus(row.status),
     authType: row.auth_type,
     cost: num(row.cost), skuOrders: num(row.sku_orders), costPerOrder: num(row.cost_per_order),
     grossRevenue: num(row.gross_revenue), roas: num(row.roas),
