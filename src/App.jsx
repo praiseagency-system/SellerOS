@@ -23,7 +23,6 @@ const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
   gmv_dashboard: { title: 'GMV Max Ads', subtitle: 'Ringkasan performa GMV MAX' },
   gmv_overview:  { title: 'Performa Video', subtitle: 'Semua video: filter status/kandidat scale + rekomendasi aksi' },
-  gmv_channel:   { title: 'Channel', subtitle: 'Perbandingan channel: Video · Product card · Live' },
   gmv_creator:   { title: 'Creator', subtitle: 'Leaderboard kreator per performa' },
   gmv_product:   { title: 'Performa Produk', subtitle: 'Rollup GMV Max per produk (nama dari menu Produk)' },
   gmv_insight:   { title: 'AI Insight', subtitle: 'Rekomendasi otomatis berbasis data' },

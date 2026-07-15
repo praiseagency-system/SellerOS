@@ -1,12 +1,13 @@
 // Dashboard GMV Max — ringkasan performa (video-only), meniru layout Lacak:
 // strip "Hari ini" + grafik tren + 3 kartu total + 3 kartu tier + 3 top-list.
 import { useState, useEffect } from 'react'
-import { Wallet, TrendingUp, ShoppingCart, CalendarDays, ArrowRight } from 'lucide-react'
+import { Wallet, TrendingUp, ShoppingCart, CalendarDays } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { StatCompact, DeltaBadge, SectionTitle, TrendBars, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
+import { StatCompact, DeltaBadge, SectionTitle, fmtRp, fmtRpC, fmtRoasX, VideoLabel, EmptyState } from '../../components/gmvmax/ui'
+import ChannelBreakdown from '../../components/gmvmax/ChannelBreakdown'
 
-export default function DashboardPage({ onOpenUpload, onNavigate }) {
-  const { dashboard: d, typeTotals: tt, hasData, prev, periodName, dailyDelta: dd, trend, period, channels } = useGmvMax()
+export default function DashboardPage({ onOpenUpload }) {
+  const { dashboard: d, typeTotals: tt, hasData, prev, periodName, dailyDelta: dd } = useGmvMax()
   if (!hasData) return <EmptyState title="Belum ada data GMV Max"
     desc="Upload file export creative TikTok Shop untuk mulai melacak performa."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -24,13 +25,6 @@ export default function DashboardPage({ onOpenUpload, onNavigate }) {
       )}
 
       {dd && (dd.cost > 0 || dd.revenue > 0) && <DailyStrip dd={dd} />}
-      {period !== 'all' && trend.length > 1 && (
-        <div className="glass-card rounded-xl p-4">
-          <SectionTitle right={<Legend />}>Tren harian bulan ini</SectionTitle>
-          <TrendBars series={trend} />
-          <p className="text-xs text-ink-faint mt-2">Angka per hari = spend &amp; revenue hari itu (dari file harian yang diupload).</p>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <StatCompact icon={TrendingUp} label="Total Revenue" value={fmtRp(tt.all.revenue)}
@@ -44,7 +38,7 @@ export default function DashboardPage({ onOpenUpload, onNavigate }) {
           sub={`Video ${tt.video.orders.toLocaleString('id-ID')} · Card ${tt.card.orders.toLocaleString('id-ID')}`} />
       </div>
 
-      <ChannelStrip channels={channels} onNavigate={onNavigate} />
+      <ChannelBreakdown />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <TierCard tone="green" label="Bagus (Tinggi)" tier={tiers.bagus}
@@ -92,48 +86,6 @@ function Cell({ label, value, tone = 'ink' }) {
       <p className="text-xs text-ink-faint mb-0.5">{label}</p>
       <p className={`text-lg font-bold ${CELL_TONE[tone]}`}>{value}</p>
     </div>
-  )
-}
-
-function Legend() {
-  return (
-    <div className="flex items-center gap-3 text-xs text-ink-faint">
-      <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Revenue</span>
-      <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> Cost</span>
-    </div>
-  )
-}
-
-// Strip ringkas perbandingan channel (B) — klik → halaman Channel (A).
-function ChannelStrip({ channels, onNavigate }) {
-  const total = channels?.total || 0
-  if (!total) return null
-  const CH = [
-    { key: 'video', label: 'Video', bar: 'bg-blue-500' },
-    { key: 'card', label: 'Product card', bar: 'bg-emerald-500' },
-    { key: 'live', label: 'Live', bar: 'bg-orange-500' },
-  ]
-  const pct = (v) => (total > 0 ? (v / total) * 100 : 0)
-  return (
-    <button onClick={() => onNavigate?.('gmv_channel')}
-      className="w-full glass-card rounded-xl p-3.5 text-left hover:border-blue-600/40 transition-colors group">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-medium uppercase tracking-widest text-ink-muted">Channel · Video / Card / Live</span>
-        <span className="text-xs text-blue-400 inline-flex items-center gap-1 opacity-80 group-hover:opacity-100">Detail <ArrowRight className="w-3 h-3" /></span>
-      </div>
-      <div className="flex h-2.5 rounded-full overflow-hidden mb-2">
-        {CH.map(c => <div key={c.key} className={c.bar} style={{ width: `${pct(channels[c.key].revenue)}%` }} />)}
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {CH.map(c => (
-          <div key={c.key} className="min-w-0">
-            <p className="text-[11px] text-ink-faint flex items-center gap-1"><span className={`w-2 h-2 rounded-sm ${c.bar}`} />{c.label}</p>
-            <p className="text-sm font-semibold text-ink-strong tabular-nums">{fmtRpC(channels[c.key].revenue)}</p>
-            <p className="text-[10px] text-ink-faint">{pct(channels[c.key].revenue).toFixed(0)}% · {fmtRoasX(channels[c.key].roas)}</p>
-          </div>
-        ))}
-      </div>
-    </button>
   )
 }
 
