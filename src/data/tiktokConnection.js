@@ -3,6 +3,7 @@
 // self-refresh. Satu baris per workspace.
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
+import { TIKTOK_OAUTH } from '../lib/tiktokOAuth'
 
 // Ambil koneksi workspace aktif (atau null bila belum connect).
 export async function getConnection(wsId = getCurrentWorkspaceId()) {
@@ -22,7 +23,7 @@ export async function saveConnection(tok, wsId = getCurrentWorkspaceId()) {
   const { data: userRes } = await supabase.auth.getUser()
   const { error } = await supabase.from('tiktok_connections').upsert({
     workspace_id: wsId,
-    client_id: tok.clientId || undefined,
+    client_id: tok.clientId || TIKTOK_OAUTH.clientId,
     scope: tok.scope,
     token_type: tok.tokenType,
     access_token: tok.accessToken,
