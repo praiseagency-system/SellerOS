@@ -143,3 +143,9 @@ html.light .glass-modal {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgb(var(--c-fill) / 0.15); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-fill) / 0.25); }
+
+/* Tabel yang meluber ke samping: scrollbar horizontal lebih tebal & jelas agar
+   mudah digeser pakai mouse (dipasangkan scroll-roda di App). */
+.overflow-x-auto::-webkit-scrollbar { height: 9px; }
+.overflow-x-auto::-webkit-scrollbar-thumb { background: rgb(var(--c-fill) / 0.30); border-radius: 5px; }
+.overflow-x-auto::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-fill) / 0.48); }

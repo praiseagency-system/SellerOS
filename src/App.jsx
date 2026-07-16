@@ -71,6 +71,34 @@ function MainApp() {
     if (window.location.search) window.history.replaceState({}, '', '/')
   }, [])
 
+  // Scroll horizontal pakai roda mouse (tanpa trackpad): saat kursor di atas
+  // tabel/area yang meluber ke samping, roda vertikal menggeser ke samping.
+  // Edge-aware — di ujung kiri/kanan, scroll halaman lanjut normal. Shift+roda
+  // (native horizontal) & gerak trackpad horizontal dibiarkan apa adanya.
+  useEffect(() => {
+    function onWheel(e) {
+      if (e.shiftKey || e.deltaY === 0 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+      let el = e.target
+      while (el && el.nodeType === 1 && el !== document.body) {
+        if (el.scrollWidth > el.clientWidth + 1) {
+          const ox = getComputedStyle(el).overflowX
+          if (ox === 'auto' || ox === 'scroll') {
+            const atStart = el.scrollLeft <= 0
+            const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1
+            if ((e.deltaY > 0 && !atEnd) || (e.deltaY < 0 && !atStart)) {
+              el.scrollLeft += e.deltaY
+              e.preventDefault()
+            }
+            return
+          }
+        }
+        el = el.parentElement
+      }
+    }
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => window.removeEventListener('wheel', onWheel)
+  }, [])
+
   function openProduct(product) {
     setEditingProduct(product)
     setCalcKey(k => k + 1)

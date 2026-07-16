@@ -58,7 +58,7 @@ export default function ProductPage({ onOpenUpload }) {
 
   const matched = list.filter(p => p.name).length
   return (
-    <div className="p-6 space-y-4 max-w-6xl mx-auto">
+    <div className="p-6 space-y-4 max-w-7xl mx-auto">
       {periodName && prev && (
         <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
       )}
