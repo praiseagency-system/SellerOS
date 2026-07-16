@@ -350,7 +350,9 @@ export default function Layout({
   }
 
   return (
-    <div className="app-glow flex min-h-screen bg-app text-ink">
+    // Tinggi shell dikunci ke viewport (h-screen + overflow-hidden) agar sidebar
+    // & topbar TETAP di tempat; hanya <main> yang scroll (overflow-auto).
+    <div className="app-glow flex h-screen overflow-hidden bg-app text-ink">
       {/* Desktop sidebar — panel kaca (full glass chrome) */}
       <aside
         className={`hidden lg:flex flex-col glass-panel border-r border-line/10 relative z-10 transition-all duration-300 ${
