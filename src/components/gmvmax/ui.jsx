@@ -2,7 +2,7 @@
 // Komponen UI bersama modul GMV Max — memakai token tema (bg-surface, text-ink,
 // accent) agar selaras palet Praise. Gaya kartu/badge meniru dashboard Praise.
 import { useState, useMemo } from 'react'
-import { ExternalLink, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { ExternalLink, ChevronUp, ChevronDown, ChevronsUpDown, Copy, Check } from 'lucide-react'
 import { fmtNum, fmtCompact } from '../../utils/quadrantUtils'
 import { roasBadge, STATUS_META } from '../../utils/gmvmaxClassify'
 
@@ -275,13 +275,27 @@ export function VideoLabel({ title, account, videoId, compact, linkVideo }) {
 
 // Tautan video ID yang bisa diklik — untuk kolom "VIDEO ID" tersendiri.
 export function VideoIdLink({ videoId, account, full }) {
+  const [copied, setCopied] = useState(false)
   if (!videoId) return <span className="text-ink-faint">—</span>
+  const copy = async (e) => {
+    e.stopPropagation(); e.preventDefault()
+    try {
+      await navigator.clipboard.writeText(String(videoId))
+      setCopied(true); setTimeout(() => setCopied(false), 1200)
+    } catch { /* clipboard tak tersedia */ }
+  }
   return (
-    <a href={tiktokVideoUrl(videoId, account)} target="_blank" rel="noopener noreferrer"
-      onClick={e => e.stopPropagation()} title={`Buka video ${videoId} di TikTok`}
-      className="inline-flex items-center gap-1 text-accent hover:underline font-mono text-xs">
-      <span className={full ? '' : 'truncate max-w-[7rem]'}>{videoId}</span>
-      <ExternalLink className="w-3 h-3 shrink-0" />
-    </a>
+    <span className="inline-flex items-center gap-1">
+      <a href={tiktokVideoUrl(videoId, account)} target="_blank" rel="noopener noreferrer"
+        onClick={e => e.stopPropagation()} title={`Buka video ${videoId} di TikTok`}
+        className="inline-flex items-center gap-1 text-accent hover:underline font-mono text-xs">
+        <span className={full ? '' : 'truncate max-w-[7rem]'}>{videoId}</span>
+        <ExternalLink className="w-3 h-3 shrink-0" />
+      </a>
+      <button onClick={copy} title={copied ? 'Tersalin' : 'Salin ID video'}
+        className="shrink-0 text-ink-faint hover:text-ink transition-colors" aria-label="Salin ID video">
+        {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+      </button>
+    </span>
   )
 }
