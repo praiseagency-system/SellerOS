@@ -22,6 +22,7 @@ const PAGE_KEYS = ['overview', 'quadrant', 'calculator', 'products', 'performanc
 const PAGE_META = {
   settings: { title: 'Pengaturan', subtitle: 'Akun & privasi data' },
   gmv_dashboard: { title: 'GMV Max Ads', subtitle: 'Ringkasan performa GMV MAX' },
+  gmv_campaign:  { title: 'Campaign Ads', subtitle: 'Budget, target ROAS & auto-budget per campaign + riwayat perubahan' },
   gmv_overview:  { title: 'Performa Video', subtitle: 'Semua video: filter status/kandidat scale + rekomendasi aksi' },
   gmv_creator:   { title: 'Creator', subtitle: 'Leaderboard kreator per performa' },
   gmv_product:   { title: 'Performa Produk', subtitle: 'Rollup GMV Max per produk (nama dari menu Produk)' },
