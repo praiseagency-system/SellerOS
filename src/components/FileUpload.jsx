@@ -157,7 +157,7 @@ export default function FileUpload({ onUpload, isLoading, error, pendingPrevSess
             </div>
           </div>
 
-          <div className="border-t border-gray-100" />
+          <div className="border-t border-line/10" />
 
           {/* Mode toggle */}
           <div>
