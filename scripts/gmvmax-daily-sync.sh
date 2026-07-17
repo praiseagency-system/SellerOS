@@ -48,4 +48,19 @@ fi
 echo "===== $(date '+%F %T') SUCCESS gmvmaxsync target=$TARGET runbook_exit=0 verify=OK ====="
 # (5) Sinkron token segar ke VPS shadow — NON-FATAL ke OLD (kegagalan sync tak menggagalkan OLD).
 GMVMAX_SYNC_DATE="$TARGET" "$REPO/scripts/gmvmax-token-sync.sh" || echo "----- token-sync exit=$? (NON-FATAL ke OLD) -----"
+
+# (6) Picu shadow VPS SEGERA setelah OLD sukses → parity WAKTU-SAMA (jeda ~menit).
+# Ini yang bikin gate sahih: membandingkan shadow vs OLD yang ditulis berjam-jam
+# lalu SELALU MISMATCH karena TikTok memperbarui angka retroaktif (drift).
+# HANYA untuk run harian normal (TARGET = kemarin); backfill tanggal lain dilewati
+# karena unit shadow memakai `--date yesterday`. NON-FATAL ke OLD.
+if [ "$TARGET" = "$(date -v-1d +%F)" ]; then
+  if ssh -o BatchMode=yes -o ConnectTimeout=15 selleros-vps 'sudo -n systemctl start gmvmax-shadow.service' 2>/dev/null; then
+    echo "----- shadow VPS dipicu → parity waktu-sama (target=$TARGET) -----"
+  else
+    echo "----- trigger shadow GAGAL exit=$? (NON-FATAL ke OLD) -----"
+  fi
+else
+  echo "----- trigger shadow dilewati (backfill target=$TARGET ≠ kemarin) -----"
+fi
 exit 0
