@@ -170,20 +170,27 @@ function periodTrend(periods) {
 }
 
 // ─── Per campaign (video vs card dipisah, transparan) ────────────────────────
+// Kunci utama campaignId (bukan nama) agar bisa di-join ke setting campaign
+// (gmvmax_campaign_settings) yang ber-id. Nama di-trim — sumbernya kadang punya
+// spasi ekor (mis. "GMV MAX | Update "). Fallback ke nama bila id kosong.
 export function rollupCampaigns(rows) {
-  const byName = new Map()
+  const byId = new Map()
   for (const r of rows) {
-    const key = r.campaignName || '(tanpa campaign)'
-    if (!byName.has(key)) byName.set(key, { campaign: key, _video: blankAgg(), _card: blankAgg() })
-    const c = byName.get(key)
+    const name = (r.campaignName || '(tanpa campaign)').trim()
+    const key = r.campaignId || name
+    if (!byId.has(key)) byId.set(key, { campaignId: r.campaignId || null, campaign: name, _video: blankAgg(), _card: blankAgg(), _all: blankAgg() })
+    const c = byId.get(key)
     if (r.creativeType === 'Product card') addInto(c._card, r)
     else addInto(c._video, r)
+    addInto(c._all, r)
   }
-  return [...byName.values()].map(c => ({
+  return [...byId.values()].map(c => ({
+    campaignId: c.campaignId,
     campaign: c.campaign,
     video: finalize(c._video),
     card: finalize(c._card),
-  })).sort((a, b) => (b.card.revenue + b.video.revenue) - (a.card.revenue + a.video.revenue))
+    total: finalize(c._all),
+  })).sort((a, b) => b.total.revenue - a.total.revenue)
 }
 
 // ─── Per produk (semua creative; kunci product_id ↔ kode_produk menu Produk) ──

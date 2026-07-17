@@ -23,6 +23,7 @@ const NAV = [
     section: 'GMV MAX ADS',
     items: [
       { id: 'gmv_dashboard', icon: LayoutDashboard },
+      { id: 'gmv_campaign',  icon: Megaphone },
       { id: 'gmv_monitoring', icon: LineChart, children: [
         { id: 'gmv_input',    icon: Upload },
         { id: 'gmv_overview', icon: PlaySquare },

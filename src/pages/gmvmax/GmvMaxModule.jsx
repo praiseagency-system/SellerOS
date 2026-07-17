@@ -7,6 +7,7 @@ import { UploadModal } from '../../components/gmvmax/modals'
 import DateRangePicker from '../../components/gmvmax/DateRangePicker'
 import DashboardPage from './DashboardPage'
 import OverviewPage from './OverviewPage'
+import CampaignAdsPage from './CampaignAdsPage'
 import CreatorPage from './CreatorPage'
 import ProductPage from './ProductPage'
 import InsightPage from './InsightPage'
@@ -17,6 +18,7 @@ import LogPage from './LogPage'
 const PAGES = {
   gmv_dashboard: DashboardPage,
   gmv_overview: OverviewPage,
+  gmv_campaign: CampaignAdsPage,
   gmv_creator: CreatorPage,
   gmv_product: ProductPage,
   gmv_insight: InsightPage,
