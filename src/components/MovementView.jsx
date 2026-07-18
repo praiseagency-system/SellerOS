@@ -4,10 +4,10 @@ import { QUADRANT_CONFIG, fmtNum, fmtCompact } from '../utils/quadrantUtils'
 import { movementSummary } from '../utils/compareData'
 
 const MOVE_CONFIG = {
-  up:   { label: 'Naik Kuadran',  color: '#16a34a', bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',  icon: TrendingUp },
-  down: { label: 'Turun Kuadran', color: '#dc2626', bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',     icon: TrendingDown },
-  same: { label: 'Tetap',         color: '#64748b', bg: 'bg-gray-50',   badge: 'bg-gray-100 text-ink-faint',   icon: Minus },
-  new:  { label: 'Produk Baru',   color: '#0891b2', bg: 'bg-blue-50',   badge: 'bg-blue-100 text-blue-700',   icon: Sparkles },
+  up:   { label: 'Naik Kuadran',  color: '#16a34a', icon: TrendingUp },
+  down: { label: 'Turun Kuadran', color: '#dc2626', icon: TrendingDown },
+  same: { label: 'Tetap',         color: '#64748b', icon: Minus },
+  new:  { label: 'Produk Baru',   color: '#0891b2', icon: Sparkles },
 }
 
 function DeltaCell({ value, suffix = '%', decimals = 1, invert = false }) {
@@ -76,14 +76,14 @@ export default function MovementView({ products }) {
           return (
             <button key={type} onClick={() => setFilter(filter === type ? 'all' : type)}
               className={`
-                text-left rounded-2xl border p-4 transition-all bg-white
-                ${active ? 'ring-2 border-current' : 'border-gray-100 hover:border-gray-200'}
+                text-left rounded-2xl border p-4 transition-all bg-surface
+                ${active ? 'ring-2 border-current' : 'border-line/10 hover:border-line/20'}
               `}
               style={active ? { ringColor: cfg.color, borderColor: cfg.color } : {}}
             >
               <div className="flex items-center justify-between mb-2">
                 <Icon className="w-4 h-4" style={{ color: cfg.color }} />
-                <span className="text-2xl font-bold text-gray-800">{summary[type] || 0}</span>
+                <span className="text-2xl font-bold text-ink-strong">{summary[type] || 0}</span>
               </div>
               <p className="text-xs font-medium text-ink-faint">{cfg.label}</p>
             </button>
@@ -92,9 +92,9 @@ export default function MovementView({ products }) {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
-          <h3 className="font-semibold text-gray-800 text-sm">Detail Perubahan</h3>
+      <div className="bg-surface rounded-2xl border border-line/10 overflow-hidden">
+        <div className="px-5 py-3 border-b border-line/10 flex items-center gap-3">
+          <h3 className="font-semibold text-ink-strong text-sm">Detail Perubahan</h3>
           <span className="text-xs text-ink-muted">{sorted.length} produk</span>
           {filter !== 'all' && (
             <button onClick={() => setFilter('all')}
@@ -107,32 +107,33 @@ export default function MovementView({ products }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100">
+              <tr className="border-b border-line/10">
                 <th className="px-4 py-2 text-left text-xs font-medium text-ink-muted min-w-48">Produk</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-ink-muted whitespace-nowrap">Pergerakan</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Î” Traffic</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ Traffic</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Traffic Lalu</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Traffic Ini</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Î” CR</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ CR</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">CR Lalu</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">CR Ini</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Î” ROAS</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Î” Sales</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ ROAS</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ Sales</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Sales Ini</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-line/5">
               {sorted.map(p => {
                 const moveCfg = MOVE_CONFIG[p.quadrant_moved]
                 return (
-                  <tr key={p.kode_produk} className="hover:bg-gray-50 transition-colors">
+                  <tr key={p.kode_produk} className="hover:bg-fill/5 transition-colors">
                     <td className="px-4 py-3">
-                      <p className="text-xs font-medium text-gray-800 line-clamp-2 max-w-xs">{p.nama_produk}</p>
+                      <p className="text-xs font-medium text-ink line-clamp-2 max-w-xs">{p.nama_produk}</p>
                       <p className="text-xs text-ink-muted mt-0.5">{p.kode_produk}</p>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${moveCfg.badge}`}>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full w-fit"
+                          style={{ background: moveCfg.color + '22', color: moveCfg.color }}>
                           {moveCfg.label}
                         </span>
                         <QuadrantFlow prev={p.prev_quadrant} curr={p.quadrant} />

@@ -50,10 +50,10 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+    <div className="bg-surface rounded-2xl border border-line/10">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-line/10">
         <div className="flex items-center gap-3">
-          <h3 className="font-semibold text-gray-800 text-sm">
+          <h3 className="font-semibold text-ink-strong text-sm">
             Daftar Produk
             {activeQuadrant && (
               <span
@@ -75,11 +75,11 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
             placeholder="Cari produk..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
+            className="bg-fill/5 border border-line/10 rounded-lg px-3 py-1.5 text-xs text-ink-strong placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
           />
           <button
             onClick={onReset}
-            className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink border border-line/10 rounded-lg px-3 py-1.5 transition-colors"
           >
             <RotateCcw className="w-3 h-3" />
             Ganti File
@@ -90,14 +90,14 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-100">
+            <tr className="border-b border-line/10">
               {COLUMNS.map(col => (
                 <th
                   key={col.key}
                   onClick={() => col.sortable && toggleSort(col.key)}
                   className={`
                     px-4 py-3 text-left text-xs font-medium text-ink-muted whitespace-nowrap
-                    ${col.sortable ? 'cursor-pointer hover:text-gray-800 select-none' : ''}
+                    ${col.sortable ? 'cursor-pointer hover:text-ink select-none' : ''}
                     ${col.key === 'nama_produk' ? 'min-w-56' : ''}
                   `}
                 >
@@ -109,14 +109,14 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-line/5">
             {filtered.map((p, i) => {
               const cfg = QUADRANT_CONFIG[p.quadrant]
               return (
-                <tr key={p.kode_produk + i} className="hover:bg-gray-50 transition-colors">
+                <tr key={p.kode_produk + i} className="hover:bg-fill/5 transition-colors">
                   <td className="px-4 py-3">
                     <div className="max-w-xs">
-                      <p className="text-gray-800 text-xs font-medium leading-snug line-clamp-2">
+                      <p className="text-ink text-xs font-medium leading-snug line-clamp-2">
                         {p.nama_produk}
                       </p>
                       <p className="text-ink-muted text-xs mt-0.5">{p.kode_produk}</p>

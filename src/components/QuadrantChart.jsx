@@ -4,6 +4,7 @@ import {
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer, Label,
 } from 'recharts'
 import { QUADRANT_CONFIG, fmtNum } from '../utils/quadrantUtils'
+import { useTheme } from '../contexts/ThemeContext'
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null
@@ -11,34 +12,34 @@ function CustomTooltip({ active, payload }) {
   if (!p) return null
   const cfg = QUADRANT_CONFIG[p.quadrant]
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 max-w-xs">
-      <p className="text-xs font-semibold text-gray-800 leading-snug mb-2 line-clamp-2">
+    <div className="bg-surface2 border border-line/10 rounded-xl shadow-lg p-3 max-w-xs">
+      <p className="text-xs font-semibold text-ink-strong leading-snug mb-2 line-clamp-2">
         {p.nama_produk}
       </p>
       <div className="space-y-1 text-xs text-ink-faint">
         <div className="flex justify-between gap-4">
           <span>Pengunjung</span>
-          <span className="font-medium text-gray-800">{fmtNum(p.pengunjung)}</span>
+          <span className="font-medium text-ink">{fmtNum(p.pengunjung)}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span>Konversi</span>
-          <span className="font-medium text-gray-800">{p.conversion_rate?.toFixed(2)}%</span>
+          <span className="font-medium text-ink">{p.conversion_rate?.toFixed(2)}%</span>
         </div>
         {p.atc_rate !== null && (
           <div className="flex justify-between gap-4">
             <span>ATC Rate</span>
-            <span className="font-medium text-gray-800">{p.atc_rate?.toFixed(2)}%</span>
+            <span className="font-medium text-ink">{p.atc_rate?.toFixed(2)}%</span>
           </div>
         )}
         {p.pesanan !== null && (
           <div className="flex justify-between gap-4">
             <span>Pesanan</span>
-            <span className="font-medium text-gray-800">{fmtNum(p.pesanan)}</span>
+            <span className="font-medium text-ink">{fmtNum(p.pesanan)}</span>
           </div>
         )}
       </div>
       <div
-        className="mt-2 pt-2 border-t border-gray-100 text-xs font-medium"
+        className="mt-2 pt-2 border-t border-line/10 text-xs font-medium"
         style={{ color: cfg.color }}
       >
         Q{p.quadrant} · {cfg.short}
@@ -63,6 +64,10 @@ function CustomDot(props) {
 
 export default function QuadrantChart({ products, settings }) {
   const { trafficThreshold: tx, conversionThreshold: cy } = settings
+  const { isDark } = useTheme()
+  // Recharts tak bisa membaca token CSS, jadi warna sumbu/grid dipilih manual per tema.
+  const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'
+  const axisColor = isDark ? '#94a3b8' : '#64748b'
 
   const { data, maxX, maxY } = useMemo(() => {
     const data = products.map(p => ({
@@ -78,11 +83,11 @@ export default function QuadrantChart({ products, settings }) {
   }, [products, tx, cy])
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5">
-      <h3 className="font-semibold text-gray-800 mb-4 text-sm">Peta Kuadran Produk</h3>
+    <div>
+      <h3 className="font-semibold text-ink-strong mb-4 text-sm">Peta Kuadran Produk</h3>
       <ResponsiveContainer width="100%" height={460}>
         <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
 
           {/* Quadrant backgrounds */}
           <ReferenceArea x1={0} x2={tx} y1={cy} y2={maxY}
@@ -95,19 +100,19 @@ export default function QuadrantChart({ products, settings }) {
             fill={QUADRANT_CONFIG[3].fill} />
 
           {/* Threshold lines */}
-          <ReferenceLine x={tx} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5}>
+          <ReferenceLine x={tx} stroke={axisColor} strokeDasharray="6 3" strokeWidth={1.5}>
             <Label
               value={`${fmtNum(tx)} pengunjung`}
               position="insideTopRight"
-              style={{ fontSize: 10, fill: '#94a3b8' }}
+              style={{ fontSize: 10, fill: axisColor }}
               offset={6}
             />
           </ReferenceLine>
-          <ReferenceLine y={cy} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5}>
+          <ReferenceLine y={cy} stroke={axisColor} strokeDasharray="6 3" strokeWidth={1.5}>
             <Label
               value={`${cy}% konversi`}
               position="insideTopRight"
-              style={{ fontSize: 10, fill: '#94a3b8' }}
+              style={{ fontSize: 10, fill: axisColor }}
               offset={6}
             />
           </ReferenceLine>
@@ -117,12 +122,14 @@ export default function QuadrantChart({ products, settings }) {
             domain={[0, maxX]}
             tickCount={6}
             tickFormatter={v => fmtNum(v)}
+            tick={{ fontSize: 11, fill: axisColor }}
+            stroke={gridColor}
           >
             <Label
               value="Pengunjung (Traffic)"
               position="insideBottom"
               offset={-25}
-              style={{ fontSize: 12, fill: '#64748b' }}
+              style={{ fontSize: 12, fill: axisColor }}
             />
           </XAxis>
           <YAxis
@@ -130,13 +137,15 @@ export default function QuadrantChart({ products, settings }) {
             domain={[0, maxY]}
             tickFormatter={v => `${v}%`}
             width={55}
+            tick={{ fontSize: 11, fill: axisColor }}
+            stroke={gridColor}
           >
             <Label
               value="Conversion Rate (%)"
               angle={-90}
               position="insideLeft"
               offset={15}
-              style={{ fontSize: 12, fill: '#64748b' }}
+              style={{ fontSize: 12, fill: axisColor }}
             />
           </YAxis>
 
