@@ -8,13 +8,32 @@ import { findDuplicateIdentities } from './identity.mjs'
 
 const PAGE_SIZE = 1000
 const CAMPAIGN_PAGE_SIZE = 100
+export const DEFAULT_MAX_PAGES = 200
 
-// Tarik SEMUA halaman satu report; gagal EKSPLISIT bila halaman tertarik <
-// total_page (INCOMPLETE_PAGINATION → jangan truncate diam-diam).
-export async function fetchAllPages(provider, params, ctx) {
+// Cap paginasi eksplisit (Part 4). Default DEFAULT_MAX_PAGES (aman di atas data
+// produksi terpantau: ~73 halaman/creative-report). Override via env integer positif.
+// Env tak valid → throw INVALID_MAX_PAGES (fail-fast, tak diam-diam pakai default).
+export function resolveMaxPages(env = process.env) {
+  const raw = env.GMVMAX_MAX_PAGES_PER_REQUEST
+  if (raw == null || raw === '') return DEFAULT_MAX_PAGES
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n <= 0) {
+    const e = new Error(`INVALID_MAX_PAGES: GMVMAX_MAX_PAGES_PER_REQUEST harus integer positif (dapat "${raw}")`); e.code = 'INVALID_MAX_PAGES'; throw e
+  }
+  return n
+}
+
+// Tarik SEMUA halaman satu report; gagal EKSPLISIT bila (a) total_page > cap
+// (MAX_PAGES_EXCEEDED → jangan truncate diam-diam) atau (b) halaman tertarik <
+// total_page (INCOMPLETE_PAGINATION). Di bawah cap: paginasi penuh seperti biasa.
+export async function fetchAllPages(provider, params, ctx, { maxPages } = {}) {
+  const cap = maxPages ?? resolveMaxPages()
   const out = []
   let page = 1, totalPage = 1, pagesFetched = 0
   do {
+    if (pagesFetched >= cap) {
+      const e = new Error(`MAX_PAGES_EXCEEDED: ${ctx} — total_page=${totalPage} > cap ${cap} (data mungkin terpotong; ditolak eksplisit)`); e.code = 'MAX_PAGES_EXCEEDED'; throw e
+    }
     const data = await provider.callTool('gmv_max_report_get', { ...params, page, page_size: params.page_size ?? PAGE_SIZE })
     out.push(...(data.list || []))
     totalPage = data.page_info?.total_page ?? 1
