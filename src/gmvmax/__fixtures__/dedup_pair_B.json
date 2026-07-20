@@ -1,0 +1,14 @@
+{
+  "code": 0,
+  "message": "OK",
+  "request_id": "REDACTED",
+  "_note": "campaign 1836106520532993 / SPU 1732987062949872817, 2026-07-08. Berbagi item_id 7639337838043008264 dengan creative_product_attr.json (campaign 1836106675381377) — cost berbeda konteks. Subset dari respons nyata.",
+  "data": {
+    "list": [
+      { "dimensions": { "item_id": "-1" }, "metrics": { "cost": "21428", "gross_revenue": "507754", "shop_content_type": "PRODUCT_CARD", "title": "0", "tt_account_name": "0" } },
+      { "dimensions": { "item_id": "7639337838043008264" }, "metrics": { "cost": "2814", "gross_revenue": "0", "shop_content_type": "VIDEO", "tt_account_name": "Zanii", "title": "Rekomen bgt nih parfum asli! #asterixsty #exoticblue", "tt_account_authorization_type": "AFFILIATE" } },
+      { "dimensions": { "item_id": "7657454193380183304" }, "metrics": { "cost": "2042", "gross_revenue": "158000", "shop_content_type": "VIDEO", "tt_account_name": "Zanii", "title": "Ini parfum sangat rekomen bgt cuy!", "tt_account_authorization_type": "AFFILIATE" } }
+    ],
+    "page_info": { "page": 1, "page_size": 60, "total_number": 527, "total_page": 9 }
+  }
+}

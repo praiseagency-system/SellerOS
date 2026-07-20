@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "message": "OK",
+  "request_id": "REDACTED",
+  "data": {
+    "list": [
+      { "dimensions": { "item_id": "-1" }, "metrics": { "gross_revenue": "431951", "shop_content_type": "PRODUCT_CARD", "title": "0", "tt_account_name": "0", "cost": "11249" } }
+    ],
+    "page_info": { "page": 1, "page_size": 30, "total_number": 1, "total_page": 1 }
+  }
+}
