@@ -4,7 +4,7 @@ import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronsLeft, ChevronsRight, ChevronDown,
   BarChart3, Menu, Package, Megaphone, Home, Activity, Settings, Sparkles,
-  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket
+  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket, ShieldCheck
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -32,6 +32,7 @@ const NAV = [
       ] },
       { id: 'gmv_insight',   icon: Sparkles },
       { id: 'gmv_boost',     icon: Rocket },
+      { id: 'gmv_features',  icon: ShieldCheck },
       { id: 'gmv_log',       icon: ClipboardList },
       // Stub display-only — belum ada route; TIDAK terhubung ke worker/sync.
       { id: 'ads',           icon: Activity, soon: true },
@@ -386,7 +387,10 @@ export default function Layout({
       {/* Mobile sidebar overlay */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="w-64 glass-panel bg-app/85 border-r border-line/10 flex flex-col">
+          {/* Drawer solid (bukan glass): overlay di atas konten, wajib opaque biar
+              isi halaman tidak "berbayang" tembus. `.glass-panel` sebelumnya malah
+              menimpa bg jadi 3% putih via shorthand + blur tak render di build. */}
+          <div className="w-64 bg-surface border-r border-line/10 flex flex-col">
             <SidebarContent
               collapsed={false}
               toggleSidebar={null}
