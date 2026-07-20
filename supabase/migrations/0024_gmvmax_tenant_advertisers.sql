@@ -12,6 +12,12 @@
 -- Jalankan di Supabase Dashboard -> SQL Editor.
 -- ============================================================================
 
+-- Target FK komposit: id sudah PK (unik), tapi Postgres butuh unique EKSPLISIT
+-- pada (id, workspace_id) agar bisa jadi target FK komposit. Additif & idempoten;
+-- (id, workspace_id) tak pernah bentrok karena id PK.
+create unique index if not exists tiktok_connections_id_workspace_uk
+  on public.tiktok_connections (id, workspace_id);
+
 create table if not exists public.gmvmax_tenant_advertisers (
   id                   uuid primary key default gen_random_uuid(),
   workspace_id         uuid not null references public.workspaces (id) on delete cascade,
@@ -21,7 +27,9 @@ create table if not exists public.gmvmax_tenant_advertisers (
   connection_group_id  text not null,
   -- sumber token/provider utk advertiser ini. Boleh SAMA utk banyak advertiser
   -- (satu token mengotorisasi beberapa advertiser) -> tak butuh koneksi baru.
-  source_connection_id uuid references public.tiktok_connections (id) on delete set null,
+  -- NULL diizinkan (belum ada koneksi); FK komposit di bawah (MATCH SIMPLE)
+  -- otomatis tak dicek bila NULL (backward-compatible).
+  source_connection_id uuid,
   advertiser_id        text not null,
   advertiser_role      text not null default 'PRIMARY'
                          check (advertiser_role in ('PRIMARY', 'LEGACY', 'SECONDARY')),
@@ -31,12 +39,24 @@ create table if not exists public.gmvmax_tenant_advertisers (
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   -- Req 3/4: satu advertiser tercatat sekali per workspace (cegah duplikat aktif).
-  unique (workspace_id, advertiser_id)
+  -- Implikasi: satu advertiser hanya boleh milik SATU sumber logis dalam workspace.
+  unique (workspace_id, advertiser_id),
+  -- INVARIAN OWNERSHIP: source_connection_id WAJIB milik workspace yang sama.
+  -- FK komposit ke (id, workspace_id) — FK single-kolom saja TAK cukup. Menolak
+  -- membership yang menunjuk koneksi milik workspace lain (lintas-workspace).
+  -- ON DELETE NO ACTION (portable, tak butuh PG15): hapus koneksi ter-referensi
+  -- diblok → kosongkan source_connection_id membership dulu, atau hapus membership.
+  -- Hapus workspace tetap aman (cascade menghapus koneksi & membership bersama).
+  constraint gmvmax_tenant_adv_conn_same_ws
+    foreign key (source_connection_id, workspace_id)
+    references public.tiktok_connections (id, workspace_id) on delete no action
 );
 
--- Req 5: MAKS SATU advertiser PRIMARY aktif per grup.
+-- Req 5: MAKS SATU advertiser PRIMARY aktif per grup — DI-SCOPE ke workspace agar
+-- dua workspace berbeda tak bertabrakan bila kebetulan pakai connection_group_id
+-- sama (kolom bebas-teks; default = workspace_id::text tapi tak dijamin global).
 create unique index if not exists gmvmax_tenant_adv_one_active_primary
-  on public.gmvmax_tenant_advertisers (connection_group_id)
+  on public.gmvmax_tenant_advertisers (workspace_id, connection_group_id)
   where (advertiser_role = 'PRIMARY' and is_active = true);
 
 -- Req 8: index penunjang.
