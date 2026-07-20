@@ -38,8 +38,9 @@ export async function loadTenantGroups(supabase) {
   try {
     const { data, error } = await supabase
       .from('gmvmax_tenant_advertisers')
-      .select('workspace_id, connection_id, store_id, advertiser_id, advertiser_name, role, active')
-      .eq('active', true)
+      .select('workspace_id, connection_group_id, source_connection_id, store_id, advertiser_id, advertiser_role, is_active, priority, metadata')
+      .eq('is_active', true)
+      .order('priority', { ascending: true }) // PRIMARY (100) sebelum LEGACY (200)
     if (!error) for (const m of data || []) {
       if (!membersByWs.has(m.workspace_id)) membersByWs.set(m.workspace_id, [])
       membersByWs.get(m.workspace_id).push(m)
@@ -49,11 +50,12 @@ export async function loadTenantGroups(supabase) {
   return (conns || []).map((conn) => {
     const ms = membersByWs.get(conn.workspace_id)
     const advertisers = (ms && ms.length)
-      ? ms.map((m) => ({ advertiserId: m.advertiser_id, advertiserName: m.advertiser_name, role: m.role || 'primary', storeId: m.store_id || conn.store_id, connectionId: m.connection_id || conn.id }))
-      : [{ advertiserId: conn.advertiser_id, advertiserName: conn.advertiser_name, role: 'primary', storeId: conn.store_id, connectionId: conn.id }]
+      ? ms.map((m) => ({ advertiserId: m.advertiser_id, advertiserName: m.metadata?.advertiser_name ?? null, role: m.advertiser_role || 'PRIMARY', storeId: m.store_id || conn.store_id, connectionId: m.source_connection_id || conn.id }))
+      : [{ advertiserId: conn.advertiser_id, advertiserName: conn.advertiser_name, role: 'PRIMARY', storeId: conn.store_id, connectionId: conn.id }]
+    const connectionGroupId = (ms && ms[0]?.connection_group_id) || conn.workspace_id
     return {
       workspaceId: conn.workspace_id, storeId: conn.store_id,
-      connectionGroupId: conn.workspace_id, connectionRow: conn, advertisers,
+      connectionGroupId, connectionRow: conn, advertisers,
     }
   })
 }

@@ -1,71 +1,71 @@
 -- ============================================================================
--- GMV Max — MULTI-ADVERTISER per tenant (Phase 2B). ADITIF & aman.
+-- GMV Max — MULTI-ADVERTISER membership MODEL (Phase 2B). SCHEMA-ONLY.
 --
--- Masalah: satu store bisa dilaporkan oleh >1 advertiser (mis. Dasfelix migrasi
--- akun ads 7214 lama -> 7663 baru, STORE SAMA). Canonical production sudah
--- menjumlahkan keduanya (registry advertisers.mjs), tapi jalur data-driven
--- (tiktok_connections) hanya menyimpan 1 advertiser -> shadow parity tak lengkap.
+-- Model reusable: satu workspace/store -> satu connection_group -> 1..N advertiser
+-- source. Menangani store yang dilaporkan >1 advertiser (mis. migrasi akun ads:
+-- PRIMARY baru + LEGACY lama, store & token SAMA). TIDAK ada seed produksi di sini
+-- (konfigurasi tenant hidup di ops/seed_gmvmax_tenant_advertisers.sql).
 --
--- Solusi: tabel keanggotaan EKSPLISIT (bukan hardcode di worker). Satu logical
--- tenant = satu workspace (+store); punya 1..N advertiser, masing-masing merujuk
--- connection (sumber token) sendiri. Backward-compatible: workspace TANPA baris di
--- sini tetap jalan single-advertiser dari tiktok_connections (AsterixSty tak berubah).
---
--- RLS owner-only + admin_can_view (selaras gmvmax_* lain). Tak ada token di sini.
+-- Additif, idempoten, backward-compatible (workspace tanpa baris -> worker tetap
+-- single-advertiser dari tiktok_connections). Tak menyimpan token/payload.
+-- RLS: owner READ-ONLY; tulis HANYA service_role/ops (bukan browser). anon ditolak.
 -- Jalankan di Supabase Dashboard -> SQL Editor.
 -- ============================================================================
 
 create table if not exists public.gmvmax_tenant_advertisers (
-  id              uuid primary key default gen_random_uuid(),
-  workspace_id    uuid not null references public.workspaces (id) on delete cascade,
-  -- sumber token/provider utk advertiser ini (biasanya sama utk 1 workspace, tapi
-  -- boleh beda bila advertiser diotorisasi token lain). NULL -> pakai koneksi
-  -- utama workspace di tiktok_connections.
-  connection_id   uuid references public.tiktok_connections (id) on delete set null,
-  store_id        text not null,
-  advertiser_id   text not null,
-  advertiser_name text,
-  role            text,                       -- 'primary' | 'legacy' | 'secondary' (lineage)
-  active          boolean not null default true,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now(),
+  id                   uuid primary key default gen_random_uuid(),
+  workspace_id         uuid not null references public.workspaces (id) on delete cascade,
+  store_id             text not null,
+  -- grup logis (1 hasil tenant). Default = workspace_id::text; boleh dipisah bila
+  -- satu workspace punya >1 store/tenant terpisah.
+  connection_group_id  text not null,
+  -- sumber token/provider utk advertiser ini. Boleh SAMA utk banyak advertiser
+  -- (satu token mengotorisasi beberapa advertiser) -> tak butuh koneksi baru.
+  source_connection_id uuid references public.tiktok_connections (id) on delete set null,
+  advertiser_id        text not null,
+  advertiser_role      text not null default 'PRIMARY'
+                         check (advertiser_role in ('PRIMARY', 'LEGACY', 'SECONDARY')),
+  is_active            boolean not null default true,
+  priority             integer not null default 100 check (priority >= 0 and priority <= 100000),
+  metadata             jsonb,               -- {advertiser_name, note, ...} — non-rahasia
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
+  -- Req 3/4: satu advertiser tercatat sekali per workspace (cegah duplikat aktif).
   unique (workspace_id, advertiser_id)
 );
 
-create index if not exists gmvmax_tenant_advertisers_ws_idx
-  on public.gmvmax_tenant_advertisers (workspace_id, active);
+-- Req 5: MAKS SATU advertiser PRIMARY aktif per grup.
+create unique index if not exists gmvmax_tenant_adv_one_active_primary
+  on public.gmvmax_tenant_advertisers (connection_group_id)
+  where (advertiser_role = 'PRIMARY' and is_active = true);
+
+-- Req 8: index penunjang.
+create index if not exists gmvmax_tenant_adv_ws_active_idx  on public.gmvmax_tenant_advertisers (workspace_id, is_active);
+create index if not exists gmvmax_tenant_adv_group_idx      on public.gmvmax_tenant_advertisers (connection_group_id);
+create index if not exists gmvmax_tenant_adv_store_idx      on public.gmvmax_tenant_advertisers (store_id);
+create index if not exists gmvmax_tenant_adv_conn_idx       on public.gmvmax_tenant_advertisers (source_connection_id);
+create index if not exists gmvmax_tenant_adv_advertiser_idx on public.gmvmax_tenant_advertisers (advertiser_id);
 
 alter table public.gmvmax_tenant_advertisers enable row level security;
 
-grant select, insert, update, delete on public.gmvmax_tenant_advertisers to authenticated;
-grant all on public.gmvmax_tenant_advertisers to service_role;
+-- GRANT: owner (authenticated) hanya SELECT; tak ada insert/update/delete grant ->
+-- browser TAK bisa menulis membership. service_role kelola penuh (ops/worker).
+grant select on public.gmvmax_tenant_advertisers to authenticated;
+grant all    on public.gmvmax_tenant_advertisers to service_role;
 
-drop policy if exists gmvmax_tenant_advertisers_owner_all on public.gmvmax_tenant_advertisers;
-create policy gmvmax_tenant_advertisers_owner_all on public.gmvmax_tenant_advertisers
-  for all using (
-    exists (select 1 from public.workspaces w where w.id = workspace_id and w.user_id = auth.uid())
-  ) with check (
+-- Owner boleh BACA membership workspace-nya sendiri (bukan lintas-workspace).
+drop policy if exists gmvmax_tenant_advertisers_owner_read on public.gmvmax_tenant_advertisers;
+create policy gmvmax_tenant_advertisers_owner_read on public.gmvmax_tenant_advertisers
+  for select using (
     exists (select 1 from public.workspaces w where w.id = workspace_id and w.user_id = auth.uid())
   );
 
+-- Admin (consent-based) boleh baca — selaras kebijakan admin lain.
 drop policy if exists gmvmax_tenant_advertisers_admin_read on public.gmvmax_tenant_advertisers;
 create policy gmvmax_tenant_advertisers_admin_read on public.gmvmax_tenant_advertisers
   for select using (
     exists (select 1 from public.workspaces w where w.id = workspace_id and public.admin_can_view(w.user_id))
   );
 
--- ── SEED konfigurasi tenant saat ini (config, BUKAN hardcode di worker) ──────
--- Dasfelix: DUA advertiser pada store 7494949073431268328 (akun bermigrasi).
-insert into public.gmvmax_tenant_advertisers (workspace_id, store_id, advertiser_id, advertiser_name, role, active)
-values
-  ('c420074f-d4a6-4e6d-bf8e-2d0234b575d7', '7494949073431268328', '7663429402298089480', 'Dasfelix (akun baru)',   'primary', true),
-  ('c420074f-d4a6-4e6d-bf8e-2d0234b575d7', '7494949073431268328', '7214793879483170817', 'Dasfelix Store (lama)',   'legacy',  true)
-on conflict (workspace_id, advertiser_id) do update
-  set store_id = excluded.store_id, advertiser_name = excluded.advertiser_name, role = excluded.role, active = excluded.active, updated_at = now();
-
--- AsterixSty: SATU advertiser (eksplisit; tetap identik dgn fallback single).
-insert into public.gmvmax_tenant_advertisers (workspace_id, store_id, advertiser_id, advertiser_name, role, active)
-values
-  ('10280d7b-2994-4a40-b639-2d88e0e2018b', '7495201716088572081', '7313535999831769090', 'AsterixSty', 'primary', true)
-on conflict (workspace_id, advertiser_id) do update
-  set store_id = excluded.store_id, advertiser_name = excluded.advertiser_name, role = excluded.role, active = excluded.active, updated_at = now();
+-- SENGAJA: TIDAK ada policy insert/update/delete utk authenticated -> owner tak
+-- bisa menulis membership dari browser (RLS default-deny). Tulis via service_role.
