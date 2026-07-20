@@ -21,7 +21,8 @@ import { loadMcpTokenFromSupabase } from './providers/supabaseTokenStore.mjs'
 import { fetchRegistryInputs, fetchAuthorizedAdvertiserIds } from './featureRegistryFetch.mjs'
 import { persistRegistry, resolveWorkspaceOwner } from './featureRegistryWriter.mjs'
 import { makeRunId } from './reporter.mjs'
-import { runAllTenantsShadow, recordShadowRun, WORKER_VERSION } from './multiTenant.mjs'
+import { runAllTenantGroupsShadow, recordShadowRun, WORKER_VERSION, buildMeta } from './multiTenant.mjs'
+import { loadTenantGroups } from './connections.mjs'
 import { acquireLock, releaseLock } from './lock.mjs'
 // CATATAN: engine.mjs / parity.mjs / campaignSettings.mjs di-LAZY-import di main()
 // (hanya saat --with-canonical / --with-settings). Alasan: (1) jalur no-op (flag
@@ -84,11 +85,12 @@ async function main() {
 
   let exitCode = 1
   try {
-    // Discovery data-driven: baris LENGKAP tiktok_connections (butuh token utk provider).
-    const { data: rows, error } = await sb.from('tiktok_connections').select('*')
-    if (error) {
-      safeLog({ event: 'CONNECTIONS_READ_FAILED', message: error.message }, console.error)
-    } else {
+    // Discovery data-driven: GRUP tenant (1 workspace/store, 1..N advertiser) dari
+    // tiktok_connections + gmvmax_tenant_advertisers (Phase 2B). Butuh token utk provider.
+    let groups = null
+    try { groups = await loadTenantGroups(sb) }
+    catch (e) { safeLog({ event: 'CONNECTIONS_READ_FAILED', message: e.message }, console.error) }
+    if (groups) {
       // providerFactory: bangun provider per-tenant dari token workspace (self-refresh).
       // Token di-register sebagai secret → tak pernah muncul di log.
       const providerFactory = async (conn) => {
@@ -116,12 +118,12 @@ async function main() {
         sleep: (ms) => new Promise(r => setTimeout(r, ms)),
       }
 
-      const { summary } = await runAllTenantsShadow({
-        sb, date, connectionRows: rows, providerFactory, deps,
+      const { summary } = await runAllTenantGroupsShadow({
+        sb, date, groups, providerFactory, deps,
         withCanonical, withSettings,
         interTenantDelayMs: Number(process.env.GMVMAX_INTER_TENANT_DELAY_MS || 3000),
         tenantTimeoutMs: Number(process.env.GMVMAX_TENANT_TIMEOUT_MS || 180000), // 3 mnt/tenant
-        now, record: true,
+        record: true, trace: buildMeta(),
       })
 
       // Exit: 0 hanya bila tak ada kegagalan keras (failed/dataIncomplete). Partial/skip OK.

@@ -246,7 +246,9 @@ test('19. sync run direkam per-tenant (mode SHADOW)', async () => {
 
 test('19b. recordShadowRun graceful fallback bila kolom 0023 belum ada', async () => {
   let calls = 0
-  const sb = { from: () => ({ insert: (row) => { calls++; if (calls === 1 && 'eligibility_status' in row) return Promise.resolve({ error: { message: "column \"eligibility_status\" does not exist" } }); return Promise.resolve({ error: null }) } }) }
+  // Simulasikan kolom 0023/0025 belum ada: TOLAK payload apa pun yg memuatnya
+  // (bukan berdasar urutan call) → tier full & rich gagal, tier base sukses.
+  const sb = { from: () => ({ insert: (row) => { calls++; if ('eligibility_status' in row || 'git_sha' in row) return Promise.resolve({ error: { message: 'column does not exist' } }); return Promise.resolve({ error: null }) } }) }
   const res = await recordShadowRun(sb, { workspaceId: 'WS-A', advertiserId: 'ADV1', status: 'SUCCESS', registryRecords: 10, startedAt: 't', finishedAt: 't2' }, '2026-07-20')
   assert.equal(res.recorded, true); assert.equal(res.schema, 'base')
 })

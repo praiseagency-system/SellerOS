@@ -19,8 +19,20 @@
 // (workspace_id, connection_id, advertiser_id, store_id) dialirkan eksplisit —
 // TIDAK ADA state advertiser global yang mutable.
 import { FORBIDDEN_MUTATION_TOOLS } from './featureRegistry.mjs'
+import { findDuplicateIdentities } from './identity.mjs'
 
-export const WORKER_VERSION = 'mt-shadow-0.1.0'
+export const WORKER_VERSION = 'mt-shadow-0.2.0'
+
+// Metadata build/rilis (traceability) — di-inject via env saat deploy/one-shot.
+// TIDAK berisi rahasia. NULL bila tak di-set (backward-compatible).
+export function buildMeta(env = process.env) {
+  return {
+    gitSha: env.GMVMAX_GIT_SHA || null,
+    releaseId: env.GMVMAX_RELEASE_ID || null,
+    bundleChecksum: env.GMVMAX_BUNDLE_CHECKSUM || null,
+    workerVersion: WORKER_VERSION,
+  }
+}
 
 // ── Status koneksi (Part 2) ──────────────────────────────────────────────────
 export const CONNECTION_STATUS = Object.freeze({
@@ -126,6 +138,7 @@ export async function runTenantShadow(conn, {
   provider, sb, date, authorizedAdvertiserIds = [], deps,
   withCanonical = false, withSettings = false,
   tenantTimeoutMs = 0, // 0 = tak dibatasi (test); entrypoint set nilai nyata
+  skipParity = false,  // grup multi-advertiser: parity dihitung di level grup (bukan per-advertiser)
 } = {}) {
   const runId = deps.makeRunId ? deps.makeRunId() : `mt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   const startedAt = new Date().toISOString()
@@ -198,8 +211,10 @@ export async function runTenantShadow(conn, {
         R.productRows = snap.meta?.normalizedRowCount ?? 0
         R.campaignsProcessed = snap.meta?.campaignCount ?? 0
         R.canonicalTotals = snap.totals
-        // Parity vs OLD (canonical terakhir) — read-only, tak overwrite.
-        if (deps.loadOldSnapshot && deps.compareParity) {
+        R.canonicalSnapshot = snap // disimpan utk merge grup multi-advertiser
+        // Parity vs OLD (canonical terakhir) — read-only, tak overwrite. Dilewati
+        // saat skipParity (grup) → parity dihitung sekali di level grup atas merge.
+        if (!skipParity && deps.loadOldSnapshot && deps.compareParity) {
           try {
             const old = await deps.loadOldSnapshot(sb, conn.workspaceId, date)
             R.parity = old ? deps.compareParity(old.rows, snap.rows).status : 'NO_OLD_BASELINE'
@@ -258,21 +273,27 @@ export async function recordShadowRun(sb, r, date, { log = () => {} } = {}) {
       warnings: r.warnings, connection_id: r.connectionId,
     },
   }
-  try {
-    const { error } = await sb.from('gmvmax_sync_runs').insert(rich)
-    if (error) throw new Error(error.message)
-    return { recorded: true, schema: 'rich' }
-  } catch (e) {
-    // Kolom 0023 belum ada (PGRST204/42703) → fallback kolom dasar 0021.
+  // Tier penuh (traceability + lineage 0025). advertiser_lineage/merge_summary tak
+  // memuat token/payload (hanya ID advertiser ter-masking + status/hitungan).
+  const full = {
+    ...rich,
+    git_sha: r.gitSha ?? null, release_id: r.releaseId ?? null, bundle_checksum: r.bundleChecksum ?? null,
+    connection_group_id: r.connectionGroupId ?? null,
+    advertiser_sources_expected: r.advertiserSourcesExpected ?? null,
+    advertiser_sources_succeeded: r.advertiserSourcesSucceeded ?? null,
+    advertiser_sources_failed: r.advertiserSourcesFailed ?? null,
+    advertiser_lineage: r.advertiserLineage ?? null,
+    merge_summary: r.mergeSummary ?? null,
+  }
+  // 3-tier fallback: full (0023+0025) → rich (0023) → base (0021). Toleran migrasi
+  // belum di-apply tanpa menggagalkan run.
+  for (const [schema, payload] of [['full', full], ['rich', rich], ['base', base]]) {
     try {
-      const { error } = await sb.from('gmvmax_sync_runs').insert(base)
+      const { error } = await sb.from('gmvmax_sync_runs').insert(payload)
       if (error) throw new Error(error.message)
-      log({ event: 'SYNC_RUN_RICH_UNAVAILABLE', level: 'warn', note: 'migrasi 0023 belum di-apply → audit kolom dasar', detail: e.message.slice(0, 120) })
-      return { recorded: true, schema: 'base' }
-    } catch (e2) {
-      log({ event: 'SYNC_RUN_AUDIT_FAILED', level: 'warn', advertiser_id: maskId(r.advertiserId), message: e2.message }, 'error')
-      return { recorded: false, error: e2.message }
-    }
+      if (schema !== 'full') log({ event: 'SYNC_RUN_SCHEMA_FALLBACK', level: 'warn', schema, note: 'migrasi 0023/0025 belum lengkap → skema turun' })
+      return { recorded: true, schema }
+    } catch (e) { if (schema === 'base') { log({ event: 'SYNC_RUN_AUDIT_FAILED', level: 'warn', advertiser_id: maskId(r.advertiserId), message: e.message }, 'error'); return { recorded: false, error: e.message } } }
   }
 }
 
@@ -350,6 +371,129 @@ export function summarize(results) {
     dataIncomplete: by[TENANT_RESULT.DATA_INCOMPLETE] || 0,
     byStatus: by,
   }
+}
+
+// ── Phase 2B: MERGE snapshot beberapa advertiser (satu store/tenant) ─────────
+// Identitas kanonik = (campaignId, productId, videoId). Advertiser berbeda punya
+// campaign_id berbeda → concat aman. Tiap baris DIBERI lineage sourceAdvertiserId.
+// Duplikat sejati (identity sama dari >1 advertiser) = tumpang-tindih tak terduga
+// → JANGAN jumlahkan buta; ditandai supaya status jadi DATA_INCOMPLETE.
+export function mergeAdvertiserSnapshots(parts) {
+  const ok = parts.filter(p => p.snapshot)
+  const rows = []
+  for (const p of ok) for (const r of (p.snapshot.rows || [])) rows.push({ ...r, sourceAdvertiserId: p.advertiserId, sourceRole: p.role ?? null })
+  const dups = findDuplicateIdentities(rows.filter(r => !r.isSystem))
+  const totals = { cost: 0, revenue: 0, orders: 0, roas: null }
+  for (const p of ok) { totals.cost += p.snapshot.totals.cost || 0; totals.revenue += p.snapshot.totals.revenue || 0; totals.orders += p.snapshot.totals.orders || 0 }
+  totals.roas = totals.cost > 0 ? totals.revenue / totals.cost : null
+  return {
+    rows, totals, duplicates: dups,
+    mergeSummary: {
+      sources: ok.length, distinct_rows: rows.length,
+      duplicate_identities: dups.length, duplicates_removed: 0, // concat distinct; TIDAK buang buta
+      combined_totals: totals,
+    },
+    meta: { completeness: rows.length > 0 ? 'COMPLETE_WITH_ROWS' : 'COMPLETE_ZERO_DATA', mergedFrom: ok.length },
+  }
+}
+
+// ── Phase 2B: proses SATU logical tenant (grup) = 1..N advertiser → 1 snapshot.
+// group: { workspaceId, storeId, connectionGroupId, connectionRow, advertisers:[{advertiserId,advertiserName,role,storeId,connectionId}] }
+// deps + providerForConnection(connectionId, group) → provider (token per-koneksi,
+// di-cache; advertiser pada koneksi sama berbagi provider). TIDAK PERNAH throw.
+export async function runTenantGroupShadow(group, {
+  sb, date, deps, withCanonical = false, withSettings = false, tenantTimeoutMs = 0, providerForConnection, trace = {},
+} = {}) {
+  const runId = deps.makeRunId ? deps.makeRunId() : `mt-${Date.now()}`
+  const startedAt = new Date().toISOString()
+  const t0 = deps.now ? deps.now() : Date.now()
+  const log = deps.log || (() => {})
+  const OK = new Set([TENANT_RESULT.SUCCESS, TENANT_RESULT.PARTIAL_SUCCESS])
+  const lineage = [], snapshots = []
+  let anyOk = false, anyFail = false, dataIncomplete = false
+  let registryRecords = 0, registryChanges = 0
+
+  for (const adv of group.advertisers) {
+    let provider
+    try { provider = await providerForConnection(adv.connectionId, group) }
+    catch (e) { anyFail = true; lineage.push({ advertiser_id: maskId(adv.advertiserId), role: adv.role ?? null, status: TENANT_RESULT.TOKEN_FAILED, error: e.message?.slice(0, 120) ?? null }); continue }
+
+    let authIds = []
+    if (deps.fetchAuthorizedAdvertiserIds) { try { authIds = await deps.fetchAuthorizedAdvertiserIds(provider) } catch { authIds = [] } }
+    const conn = {
+      workspaceId: group.workspaceId, connectionId: adv.connectionId,
+      advertiserId: adv.advertiserId, storeId: adv.storeId ?? group.storeId,
+      storeAuthorizedBcId: group.connectionRow?.store_authorized_bc_id ?? null,
+    }
+    const sub = await runTenantShadow(conn, { provider, sb, date, authorizedAdvertiserIds: authIds, deps, withCanonical, withSettings, tenantTimeoutMs, skipParity: true })
+    registryRecords += sub.registryRecords || 0; registryChanges += sub.registryChanges || 0
+    lineage.push({ advertiser_id: maskId(adv.advertiserId), role: adv.role ?? null, status: sub.status, pages: sub.pagesFetched ?? 0, rows: sub.creativeRows ?? 0, error: sub.errors?.[0]?.slice(0, 120) ?? null })
+    if (OK.has(sub.status)) { anyOk = true; if (sub.canonicalSnapshot) snapshots.push({ advertiserId: adv.advertiserId, role: adv.role, snapshot: sub.canonicalSnapshot }) }
+    else { anyFail = true; if (sub.status === TENANT_RESULT.DATA_INCOMPLETE) dataIncomplete = true }
+  }
+
+  const merged = mergeAdvertiserSnapshots(snapshots)
+  const mergeDup = merged.duplicates.length > 0
+  let parity = null
+  if (withCanonical && !mergeDup && deps.loadOldSnapshot && deps.compareParity) {
+    try { const old = await deps.loadOldSnapshot(sb, group.workspaceId, date); parity = old ? deps.compareParity(old.rows, merged.rows).status : 'NO_OLD_BASELINE' }
+    catch { /* non-fatal */ }
+  }
+
+  const expected = group.advertisers.length
+  const succeeded = snapshots.length
+  let status
+  if (mergeDup || dataIncomplete) status = TENANT_RESULT.DATA_INCOMPLETE
+  else if (anyFail && anyOk) status = TENANT_RESULT.PARTIAL_SUCCESS
+  else if (anyFail && !anyOk) status = TENANT_RESULT.API_ERROR
+  else status = TENANT_RESULT.SUCCESS
+
+  const R = {
+    runId, mode: 'SHADOW', workspaceId: group.workspaceId, connectionGroupId: group.connectionGroupId ?? group.workspaceId,
+    advertiserId: group.advertisers.map(a => a.advertiserId).join('+'), storeId: group.storeId,
+    startedAt, finishedAt: new Date().toISOString(), durationMs: (deps.now ? deps.now() : Date.now()) - t0,
+    status, parity, eligibilityStatus: succeeded > 0 ? ELIGIBILITY.ELIGIBLE : ELIGIBILITY.NOT_AVAILABLE,
+    registryRecords, registryChanges, canonicalTotals: merged.totals,
+    creativeRows: merged.rows.filter(r => !r.isSystem).length, productRows: merged.rows.length, campaignsProcessed: null,
+    advertiserSourcesExpected: expected, advertiserSourcesSucceeded: succeeded, advertiserSourcesFailed: expected - succeeded,
+    advertiserLineage: lineage, mergeSummary: merged.mergeSummary,
+    gitSha: trace.gitSha ?? null, releaseId: trace.releaseId ?? null, bundleChecksum: trace.bundleChecksum ?? null,
+    errors: lineage.filter(l => l.error).map(l => `${l.advertiser_id}: ${l.error}`),
+    warnings: mergeDup ? [`MERGE_DUPLICATE_IDENTITY: ${merged.duplicates.length}`] : [],
+    errorCode: mergeDup ? 'MERGE_DUPLICATE_IDENTITY' : null,
+  }
+  log({ event: 'MT_GROUP_DONE', run_id: runId, workspace_id: group.workspaceId, advertisers_expected: expected, advertisers_succeeded: succeeded, status, parity, duplicate_identities: merged.duplicates.length, duration_ms: R.durationMs })
+  return R
+}
+
+// ── Phase 2B: orkestrasi SEMUA grup tenant. Konkurensi 1 + jeda antar-grup. ───
+// groups: hasil loadTenantGroups(). providerFactory(conn) sama seperti Phase 1
+// (load token per-workspace). Provider di-cache per (workspace|connectionId).
+export async function runAllTenantGroupsShadow({
+  sb, date, groups, providerFactory, deps, withCanonical = false, withSettings = false,
+  interTenantDelayMs = 3000, tenantTimeoutMs = 0, record = true, trace = {},
+} = {}) {
+  const log = deps.log || (() => {})
+  const sleep = deps.sleep || ((ms) => new Promise(r => setTimeout(r, ms)))
+  log({ event: 'MT_DISCOVER_GROUPS', groups: (groups || []).length, detail: (groups || []).map(g => ({ workspace_id: g.workspaceId, advertisers: g.advertisers.length })) })
+  const results = []
+  for (let i = 0; i < (groups || []).length; i++) {
+    if (i > 0 && interTenantDelayMs) await sleep(interTenantDelayMs)
+    const group = groups[i]
+    const cache = new Map()
+    const providerForConnection = async (connectionId, g) => {
+      const key = connectionId || g.workspaceId
+      if (cache.has(key)) return cache.get(key)
+      const p = await providerFactory({ workspaceId: g.workspaceId, connectionId })
+      cache.set(key, p); return p
+    }
+    const r = await runTenantGroupShadow(group, { sb, date, deps, withCanonical, withSettings, tenantTimeoutMs, providerForConnection, trace })
+    if (record && deps.recordShadowRun) await deps.recordShadowRun(sb, r, date, { log })
+    results.push(r)
+  }
+  const summary = summarize(results)
+  log({ event: 'MT_BATCH_SUMMARY', ...summary })
+  return { results, summary }
 }
 
 // Guard eksplisit: modul ini tak boleh mereferensikan tool mutasi (uji di test #16).
