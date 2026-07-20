@@ -5,8 +5,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
 import { readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 
-const TMP = '/private/tmp/claude-501/-Users-macbook-claude'
+const TMP = tmpdir()
 const OUT = `${TMP}/vpsshadow.bundle.mjs`
 const META = `${TMP}/vpsshadow.meta.json`
 

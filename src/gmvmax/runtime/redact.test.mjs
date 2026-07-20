@@ -3,6 +3,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { redact, safeStringify, scrubString, registerSecret, clearSecrets } from './redact.mjs'
 
 const FAKE = 'FAKESECRET_deadbeef_0123456789'
@@ -67,7 +69,7 @@ test('1D circular aman', () => {
 
 test('1D grep artefak: 0 kemunculan secret di file log ter-serialize', () => {
   clearSecrets(); registerSecret(FAKE); registerSecret(FAKE_SVC)
-  const artifact = '/private/tmp/claude-501/-Users-macbook-claude/redact-artifact.log'
+  const artifact = join(tmpdir(), 'redact-artifact.log')
   const payloads = [
     { event: 'MCP_REQUEST', headers: { Authorization: `Bearer ${FAKE}` } },
     { event: 'DB_ERROR', supabaseKey: FAKE_SVC, detail: `failed using ${FAKE_SVC}` },
