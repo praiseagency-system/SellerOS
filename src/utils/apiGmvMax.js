@@ -29,7 +29,7 @@
 //  5. net_cost & roas_bid TIDAK valid di creative-level (metric campaign-level) —
 //     minta hanya lewat API_CAMPAIGN_METRICS. campaign_name juga campaign-level →
 //     disuplai via ctx dari daftar campaign, bukan dari metric report.
-import { parseNum, deriveHook } from './parseGmvMax'
+import { parseNum, deriveHook } from './parseGmvMax.js'
 
 // Rate dikirim sudah dalam persen (lihat fakta #1). Set true hanya bila suatu saat
 // API berubah mengirim rasio 0..1.

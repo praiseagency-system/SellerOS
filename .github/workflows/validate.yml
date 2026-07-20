@@ -1,0 +1,59 @@
+name: Validate (PR)
+
+# Validasi Pull Request (BUKAN deploy). Menjalankan worker tests + worker-scoped
+# lint + Vite build + VPS bundle build + secret-pattern scan.
+#
+# CATATAN SENGAJA: TIDAK menjalankan `eslint .` penuh — repo punya 6 error UI
+# react-hooks lama yang TIDAK terkait perubahan ini (lihat PR #20). Hanya
+# `npx eslint src/gmvmax` (worker) yang di-gate. Perbaikan UI = pekerjaan terpisah.
+#
+# Workflow ini TIDAK: deploy, akses Supabase, akses TikTok, konek ke VPS,
+# meng-upload dist-vps sebagai release, atau mengubah repo. Tanpa secret produksi.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Worker tests (raw Node, full suite)
+        run: node --test $(find src/gmvmax -name '*.test.mjs')
+
+      - name: Worker-scoped lint (src/gmvmax)
+        run: npx eslint src/gmvmax
+
+      - name: Vite build
+        run: npm run build
+
+      - name: VPS bundle build (shadow)
+        run: bash scripts/gmvmax-vps-build.sh
+
+      - name: Verify expected bundle exists
+        run: test -f dist-vps/gmvmax-vps-shadow.mjs && echo "shadow bundle present"
+
+      - name: Lightweight secret-pattern scan (worker + runtime source)
+        run: |
+          set -e
+          PAT='eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9]{10,}|-----BEGIN (RSA|OPENSSH|EC|PRIVATE)|SUPABASE_SECRET_KEY[[:space:]]*=[[:space:]]*[A-Za-z0-9]{20,}'
+          if grep -rEnI "$PAT" src/gmvmax src/utils/apiGmvMax.js src/utils/parseGmvMax.js supabase/migrations docs \
+               | grep -viE 'redact|denylist|example|placeholder|\.test\.mjs'; then
+            echo "::error::potential secret pattern found in committed source"
+            exit 1
+          fi
+          echo "secret-pattern scan clean"

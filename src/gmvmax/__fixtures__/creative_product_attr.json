@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "message": "OK",
+  "request_id": "REDACTED",
+  "data": {
+    "list": [
+      { "dimensions": { "item_id": "-1" }, "metrics": { "cost": "721738", "cost_per_order": "8295", "creative_delivery_status": "DELIVERING", "orders": "87", "product_click_rate": "3.02", "shop_content_type": "PRODUCT_CARD", "tt_account_authorization_type": "UNSET", "ad_conversion_rate": "3.27", "roi": "10.44", "title": "0", "tt_account_name": "0", "tt_account_profile_image_url": "0", "ad_video_view_rate_p100": "0.00", "product_clicks": "825", "ad_video_view_rate_2s": "52.00", "gross_revenue": "7533894", "product_impressions": "27311" } },
+      { "dimensions": { "item_id": "7639337838043008264" }, "metrics": { "product_impressions": "41517", "cost": "353298", "cost_per_order": "25235", "title": "Rekomen bgt nih parfum asli! #asterixsty #exoticblue", "tt_account_profile_image_url": "https://p16-common-sign.tiktokcdn.com/x.webp", "ad_video_view_rate_2s": "48.65", "shop_content_type": "VIDEO", "tt_account_name": "Zanii", "ad_conversion_rate": "0.55", "ad_video_view_rate_p100": "2.02", "orders": "14", "product_clicks": "3114", "roi": "3.33", "tt_account_authorization_type": "AFFILIATE", "creative_delivery_status": "EXCLUDED", "gross_revenue": "1176364", "product_click_rate": "7.50" } },
+      { "dimensions": { "item_id": "7657454193380183304" }, "metrics": { "creative_delivery_status": "DELIVERING", "shop_content_type": "VIDEO", "tt_account_authorization_type": "AFFILIATE", "tt_account_name": "Zanii", "cost": "191095", "product_impressions": "28843", "ad_conversion_rate": "0.46", "ad_video_view_rate_2s": "38.83", "orders": "13", "product_click_rate": "9.84", "product_clicks": "2839", "gross_revenue": "1178790", "roi": "6.17", "title": "Ini parfum sangat rekomen bgt cuy!", "ad_video_view_rate_p100": "2.19", "cost_per_order": "14699" } }
+    ],
+    "page_info": { "total_number": 3, "total_page": 1, "page": 1, "page_size": 1000 }
+  }
+}

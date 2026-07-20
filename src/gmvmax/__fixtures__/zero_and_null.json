@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "message": "OK",
+  "request_id": "REDACTED",
+  "_note": "Kasus tepi disarikan dari respons nyata: (a) baris cost 0 & impresi 0 → dibuang filter active; (b) baris tanpa sebagian metric (gross_revenue/orders hilang) → null, bukan 0.",
+  "data": {
+    "list": [
+      { "dimensions": { "item_id": "7659326868918717717" }, "metrics": { "cost": "0", "gross_revenue": "0", "orders": "0", "product_impressions": "0", "shop_content_type": "VIDEO", "tt_account_name": "someone", "title": "no activity" } },
+      { "dimensions": { "item_id": "7659384014490602759" }, "metrics": { "cost": "251", "gross_revenue": "157750", "shop_content_type": "VIDEO", "tt_account_name": "buyerX", "title": "missing orders and impressions", "tt_account_authorization_type": "AFFILIATE" } }
+    ],
+    "page_info": { "page": 1, "page_size": 60, "total_number": 2, "total_page": 1 }
+  }
+}
