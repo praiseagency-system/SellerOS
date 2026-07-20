@@ -14,6 +14,7 @@ import InsightPage from './InsightPage'
 import BoostPage from './BoostPage'
 import InputPage from './InputPage'
 import LogPage from './LogPage'
+import FeatureRegistryPage from './FeatureRegistryPage'
 
 const PAGES = {
   gmv_dashboard: DashboardPage,
@@ -25,6 +26,7 @@ const PAGES = {
   gmv_boost: BoostPage,
   gmv_log: LogPage,
   gmv_input: InputPage,
+  gmv_features: FeatureRegistryPage,
 }
 
 export default function GmvMaxModule({ page, onNavigate }) {

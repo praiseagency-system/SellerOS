@@ -28,6 +28,7 @@ const PAGE_META = {
   gmv_product:   { title: 'Performa Produk', subtitle: 'Rollup GMV Max per produk (nama dari menu Produk)' },
   gmv_insight:   { title: 'AI Insight', subtitle: 'Rekomendasi otomatis berbasis data' },
   gmv_boost:     { title: 'Boost Center', subtitle: 'Rekomendasi & pipeline kode boost video jempolan' },
+  gmv_features:  { title: 'Feature Registry', subtitle: 'Kapabilitas GMV Max terverifikasi read-only per workspace (Phase 1)' },
   gmv_log:       { title: 'Log Optimasi', subtitle: 'Jurnal tindakan optimasi ber-timestamp' },
   gmv_input:     { title: 'Import Data', subtitle: 'Upload, tabel mentah & riwayat upload GMV Max' },
 }
