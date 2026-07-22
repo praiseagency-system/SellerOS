@@ -17,6 +17,7 @@ function rowToCampaign(r) {
     items: Array.isArray(r.items) ? r.items : [],
     productIds: Array.isArray(r.product_ids) ? r.product_ids : [],
     voucherConfig: (r.voucher_config && typeof r.voucher_config === 'object') ? r.voucher_config : {},
+    approvals: (r.approvals && typeof r.approvals === 'object') ? r.approvals : {},
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -36,6 +37,7 @@ function toRow(c) {
     items,
     product_ids: productIds.length ? productIds : (Array.isArray(c.productIds) ? c.productIds : []),
     voucher_config: (c.voucherConfig && typeof c.voucherConfig === 'object') ? c.voucherConfig : {},
+    approvals: (c.approvals && typeof c.approvals === 'object') ? c.approvals : {},
   }
 }
 
