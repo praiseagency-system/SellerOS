@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
-  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink,
+  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder,
 } from 'lucide-react'
 
 // Normalisasi URL untuk href (tambah https:// bila skema tak ada).
@@ -156,6 +156,21 @@ export default function CampaignPanel({ products }) {
   }, [])
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products])
+  // Nama campaign induk yang sudah ada (autocomplete + pengelompokan daftar).
+  const parentSuggestions = useMemo(
+    () => [...new Set(campaigns.map(c => (c.parentCampaign || '').trim()).filter(Boolean))],
+    [campaigns],
+  )
+  // Kelompokkan campaign per induk, urutan sesuai kemunculan pertama.
+  const grouped = useMemo(() => {
+    const order = [], map = new Map()
+    for (const c of campaigns) {
+      const key = (c.parentCampaign || '').trim()
+      if (!map.has(key)) { map.set(key, []); order.push(key) }
+      map.get(key).push(c)
+    }
+    return order.map(key => ({ key: key || '__none__', parent: key, items: map.get(key) }))
+  }, [campaigns])
 
   async function handleSave(form) {
     try { await saveCampaign(form); setEditing(null); await reload() }
@@ -170,7 +185,7 @@ export default function CampaignPanel({ products }) {
   // Editor full-page menggantikan daftar saat membuat/mengedit.
   if (editing) {
     return <CampaignEditor initial={editing} products={products} productMap={productMap}
-      onSave={handleSave} onClose={() => setEditing(null)} />
+      parentSuggestions={parentSuggestions} onSave={handleSave} onClose={() => setEditing(null)} />
   }
 
   return (
@@ -200,8 +215,18 @@ export default function CampaignPanel({ products }) {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {campaigns.map(c => {
+        <div className="space-y-5">
+          {grouped.map(g => (
+            <div key={g.key}>
+              {g.parent && (
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <Folder className="w-4 h-4 text-ink-faint flex-shrink-0" />
+                  <p className="text-[13px] font-semibold text-ink-strong truncate">{g.parent}</p>
+                  <span className="text-[11px] text-ink-faint flex-shrink-0">· {g.items.length} sub-campaign</span>
+                </div>
+              )}
+              <div className="space-y-3">
+          {g.items.map(c => {
             const agg = campaignAgg(c.items || [], productMap)
             const mon = monitorCampaign(c, storeLines, productMap)
             const open = expanded === c.id
@@ -309,14 +334,18 @@ export default function CampaignPanel({ products }) {
               </div>
             )
           })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
+function CampaignEditor({ initial, products, productMap, parentSuggestions = [], onSave, onClose }) {
   const [name, setName]           = useState(initial.name ?? '')
+  const [parentCampaign, setParent] = useState(initial.parentCampaign ?? '')
   const [platform, setPlatform]   = useState(initial.platform ?? 'tiktok')
   const [description, setDesc]    = useState(initial.description ?? '')
   const [link, setLink]           = useState(initial.link ?? '')
@@ -391,7 +420,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig() })
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig() })
     setBusy(false)
   }
 
@@ -412,6 +441,17 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
 
       {/* Nama + platform + tanggal */}
       <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <Folder className="w-3.5 h-3.5 inline mr-1" />Campaign Induk <span className="font-normal text-ink-faint">(opsional — campaign besar yang menaungi, mis. "Gajian Sale Juli &amp; 8.8")</span>
+          </label>
+          <input value={parentCampaign} onChange={e => setParent(e.target.value)} list="campaign-parents"
+            placeholder="mis. Gajian Sale Juli & 8.8"
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          <datalist id="campaign-parents">
+            {parentSuggestions.map(s => <option key={s} value={s} />)}
+          </datalist>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-1">
             <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
@@ -621,31 +661,36 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
       </div>
 
       {showPicker && (
-        <ProductPicker products={products} enrolledIds={enrolledIds}
+        <ProductPicker products={products} enrolledIds={enrolledIds} platform={platform}
           onAdd={addProduct} onClose={() => setShowPicker(false)} />
       )}
     </div>
   )
 }
 
-function ProductPicker({ products, enrolledIds, onAdd, onClose }) {
+function ProductPicker({ products, enrolledIds, platform, onAdd, onClose }) {
   const [q, setQ] = useState('')
+  // Hanya tampilkan produk dari marketplace yang sama dengan platform campaign.
+  const onPlatform = useMemo(
+    () => products.filter(p => (p.platform || 'shopee') === platform),
+    [products, platform],
+  )
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return s ? products.filter(p => p.name.toLowerCase().includes(s)) : products
-  }, [products, q])
+    return s ? onPlatform.filter(p => p.name.toLowerCase().includes(s)) : onPlatform
+  }, [onPlatform, q])
   return (
-    <Modal title="Tambah Produk ke Campaign" subtitle="Semua varian produk akan ikut (harga default dari price list)"
+    <Modal title="Tambah Produk ke Campaign" subtitle={`Produk ${PLATFORM_LABEL[platform] || platform} · semua varian ikut (harga default dari price list)`}
       onClose={onClose} maxWidth="max-w-md">
       <div className="p-5">
         <div className="relative mb-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-faint" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari produk..." autoFocus
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Cari produk ${PLATFORM_LABEL[platform] || platform}...`} autoFocus
             className="w-full bg-fill/5 border border-line/10 rounded-xl pl-9 pr-3 py-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
         </div>
         <div className="border border-line/10 rounded-xl divide-y divide-line/8 max-h-72 overflow-auto">
           {filtered.length === 0 ? (
-            <p className="text-xs text-ink-faint text-center py-6 flex flex-col items-center gap-1"><Package className="w-4 h-4" />Tidak ada produk</p>
+            <p className="text-xs text-ink-faint text-center py-6 flex flex-col items-center gap-1"><Package className="w-4 h-4" />{onPlatform.length === 0 ? `Belum ada produk ${PLATFORM_LABEL[platform] || platform}` : 'Tidak ada produk cocok'}</p>
           ) : filtered.map(p => {
             const added = enrolledIds.has(p.id)
             return (
