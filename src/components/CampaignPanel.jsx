@@ -50,6 +50,27 @@ function campaignStatus(c) {
   return { key: 'running', label: 'Berjalan', cls: 'bg-green-500/12 text-green-300' }
 }
 
+// Persetujuan per produk (sounding ke atasan/client). Default 'pending'.
+const APPROVAL = {
+  pending:  { label: 'Menunggu',  cls: 'bg-amber-500/12 text-amber-300',  icon: 'clock' },
+  approved: { label: 'Disetujui', cls: 'bg-green-500/12 text-green-300',  icon: 'check' },
+  rejected: { label: 'Ditolak',   cls: 'bg-red-500/12 text-red-300',      icon: 'x' },
+}
+function approvalStatusOf(approvals, productId) {
+  return approvals?.[productId]?.status || 'pending'
+}
+function approvalSummary(c) {
+  const ids = [...new Set((c.items || []).map(it => it.productId))]
+  const appr = c.approvals || {}
+  let approved = 0, rejected = 0
+  for (const id of ids) {
+    const s = appr[id]?.status
+    if (s === 'approved') approved++
+    else if (s === 'rejected') rejected++
+  }
+  return { total: ids.length, approved, rejected, pending: ids.length - approved - rejected }
+}
+
 // Margin sebuah item (varian pada harga campaign) berdasarkan produknya.
 // sellerPerUnit: beban voucher co-funded yang ditanggung penjual per unit (Rp),
 // dipotong dari harga jual seperti field `voucher` di kalkulator. Default 0.
@@ -270,6 +291,13 @@ export default function CampaignPanel({ products }) {
                             Co-funded · {voucherList(c.voucherConfig).length} voucher
                           </span>
                         )}
+                        {(() => { const ap = approvalSummary(c)
+                          if (!ap.total) return null
+                          const cls = ap.approved === ap.total ? 'bg-green-500/12 text-green-300'
+                            : ap.rejected > 0 ? 'bg-red-500/12 text-red-300' : 'bg-amber-500/12 text-amber-300'
+                          const txt = ap.approved === ap.total ? 'Semua disetujui'
+                            : `${ap.approved}/${ap.total} disetujui${ap.rejected ? ` · ${ap.rejected} ditolak` : ''}`
+                          return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${cls}`}>{txt}</span> })()}
                       </div>
                       <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
                         <CalendarRange className="w-3 h-3" />{dateRange(c)} · {agg.products} produk · {agg.count} varian
@@ -309,6 +337,10 @@ export default function CampaignPanel({ products }) {
                               <p className="text-ink-strong truncate text-[13px]">{it.name || '(varian)'}{gone && <span className="text-ink-faint"> · produk dihapus</span>}</p>
                               <p className="text-[11px] text-ink-faint truncate">{it.sku || 'tanpa SKU'}</p>
                             </div>
+                            {i === (c.items || []).findIndex(x => x.productId === it.productId) && (() => {
+                              const st = approvalStatusOf(c.approvals, it.productId)
+                              return <span title={c.approvals?.[it.productId]?.note || undefined} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
+                            })()}
                             <span className="text-[13px] font-semibold text-ink-strong tabular-nums flex-shrink-0">{fmt(+it.price)}</span>
                             <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
                           </div>
@@ -372,6 +404,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [startDate, setStart]     = useState(initial.startDate ?? '')
   const [endDate, setEnd]         = useState(initial.endDate ?? '')
   const [items, setItems]         = useState(initial.items ?? [])
+  const [approvals, setApprovals] = useState(initial.approvals ?? {})
   const [campaignType, setCampaignType] = useState(initial.voucherConfig?.kind ?? 'normal')
   const [vouchers, setVouchers]   = useState(() => {
     const vs = initial.voucherConfig?.vouchers
@@ -433,6 +466,12 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
     setItems(prev => [...prev.filter(it => it.productId !== p.id), ...add])
   }
   function removeProduct(productId) { setItems(prev => prev.filter(it => it.productId !== productId)) }
+  function setApproval(productId, status) {
+    setApprovals(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), status, at: new Date().toISOString() } }))
+  }
+  function setApprovalNote(productId, note) {
+    setApprovals(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), note } }))
+  }
   function setPrice(productId, varIdx, price) {
     setItems(prev => prev.map(it => (it.productId === productId && it.varIdx === varIdx) ? { ...it, price } : it))
   }
@@ -440,7 +479,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig() })
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals })
     setBusy(false)
   }
 
@@ -640,6 +679,25 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                       {p ? p.name : '(produk dihapus)'} <span className="text-ink-faint font-normal">· {its.length} varian</span>
                     </p>
                     <button onClick={() => removeProduct(productId)} className="text-ink-faint hover:text-red-400 flex-shrink-0"><X className="w-4 h-4" /></button>
+                  </div>
+                  {/* Persetujuan per produk */}
+                  <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                    <span className="text-[10px] font-medium text-ink-faint">Persetujuan:</span>
+                    <div className="inline-flex rounded-lg border border-line/12 overflow-hidden">
+                      {['approved', 'pending', 'rejected'].map(st => {
+                        const active = approvalStatusOf(approvals, productId) === st
+                        const on = { approved: 'bg-green-600 text-white', pending: 'bg-amber-500 text-black', rejected: 'bg-red-600 text-white' }[st]
+                        return (
+                          <button key={st} type="button" onClick={() => setApproval(productId, st)}
+                            className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${active ? on : 'text-ink-muted hover:text-ink hover:bg-fill/8'}`}>
+                            {APPROVAL[st].label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <input value={approvals[productId]?.note ?? ''} onChange={e => setApprovalNote(productId, e.target.value)}
+                      placeholder="catatan (opsional, mis. alasan tolak / revisi)"
+                      className="flex-1 min-w-[160px] bg-fill/5 border border-line/10 rounded-lg px-2.5 py-1 text-[11px] text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
                   </div>
                   <div className="space-y-1.5">
                     {its.map((it, vi) => {
