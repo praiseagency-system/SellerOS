@@ -39,6 +39,17 @@ function dateRange(c) {
   return 'tanpa tanggal'
 }
 
+// Status campaign relatif ke hari ini (dari window tanggal).
+function campaignStatus(c) {
+  const now = Date.now()
+  const start = c.startDate ? new Date(c.startDate + 'T00:00:00').getTime() : null
+  const end   = c.endDate   ? new Date(c.endDate   + 'T23:59:59').getTime() : null
+  if (!start && !end) return { key: 'draft',     label: 'Tanpa tanggal', cls: 'bg-gray-600/20 text-gray-400' }
+  if (start && now < start) return { key: 'scheduled', label: 'Terjadwal', cls: 'bg-blue-600/12 text-blue-300' }
+  if (end && now > end)     return { key: 'ended',     label: 'Selesai',   cls: 'bg-gray-600/20 text-gray-400' }
+  return { key: 'running', label: 'Berjalan', cls: 'bg-green-500/12 text-green-300' }
+}
+
 // Margin sebuah item (varian pada harga campaign) berdasarkan produknya.
 // sellerPerUnit: beban voucher co-funded yang ditanggung penjual per unit (Rp),
 // dipotong dari harga jual seperti field `voucher` di kalkulator. Default 0.
@@ -191,7 +202,12 @@ export default function CampaignPanel({ products }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-4">
-        <p className="text-sm text-ink-muted">{campaigns.length} campaign · proyeksi margin di harga campaign per varian</p>
+        <p className="text-sm text-ink-muted">
+          {campaigns.length} campaign terdaftar
+          {(() => { const r = campaigns.filter(c => campaignStatus(c).key === 'running').length
+            return r > 0 ? <> · <span className="text-green-400 font-medium">{r} berjalan</span></> : null })()}
+          {' '}· proyeksi margin di harga campaign per varian
+        </p>
         <button onClick={() => setEditing({})}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
           <Plus className="w-4 h-4" /> Campaign Baru
@@ -245,6 +261,10 @@ export default function CampaignPanel({ products }) {
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${PLATFORM_CLS[c.platform] || PLATFORM_CLS.tiktok}`}>
                           {PLATFORM_LABEL[c.platform] || c.platform}
                         </span>
+                        {(() => { const st = campaignStatus(c)
+                          return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 inline-flex items-center gap-1 ${st.cls}`}>
+                            {st.key === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />}{st.label}
+                          </span> })()}
                         {c.voucherConfig?.kind === 'cofunded' && voucherList(c.voucherConfig).length > 0 && (
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 bg-blue-600/12 text-blue-300">
                             Co-funded · {voucherList(c.voucherConfig).length} voucher
@@ -732,7 +752,7 @@ function NumField({ label, value, onChange, prefix, suffix, w = 'w-28' }) {
 function VoucherLines({ item, productMap, vouchers, kind, showHeader }) {
   if (!vouchers.length || !(+item.price > 0)) return null
   const cofunded = kind === 'cofunded'
-  const cols = cofunded ? '46px 1fr 1fr 52px' : '46px 1fr 1fr'
+  const cols = cofunded ? '44px 1fr 1fr 1fr 50px' : '44px 1fr 1fr'
   return (
     <div className="mt-1.5 mb-1">
       {showHeader && (
@@ -740,6 +760,7 @@ function VoucherLines({ item, productMap, vouchers, kind, showHeader }) {
           <span>Voucher</span>
           <span>Beli untuk dapat</span>
           <span>Harga customer</span>
+          {cofunded && <span>Beban penjual</span>}
           {cofunded && <span className="text-right">Margin</span>}
         </div>
       )}
@@ -753,6 +774,7 @@ function VoucherLines({ item, productMap, vouchers, kind, showHeader }) {
               <span className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-blue-600/12 text-blue-300 font-semibold tabular-nums">{fmtPct(v.discPct)}</span>
               <span className="text-ink-faint tabular-nums">{eff.pcs} pcs</span>
               <span className="text-ink-strong font-semibold tabular-nums">{fmt(eff.custPerUnit)}</span>
+              {cofunded && <span title={`total ${fmt(eff.sellerCost)} untuk ${eff.pcs} pcs`} className="text-amber-300/90 tabular-nums">{fmt(eff.sellerPerUnit)}<span className="text-ink-faint">/pcs</span></span>}
               {cofunded && <span className={`text-right font-semibold tabular-nums ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>}
             </div>
           )
