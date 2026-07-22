@@ -1,8 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
-  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText,
+  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink,
 } from 'lucide-react'
+
+// Normalisasi URL untuk href (tambah https:// bila skema tak ada).
+function hrefOf(url) {
+  const s = (url || '').trim()
+  if (!s) return null
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`
+}
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign } from '../data/campaigns'
 import { loadStore } from '../data/storeDataset'
@@ -234,6 +241,10 @@ export default function CampaignPanel({ products }) {
                         <AlertTriangle className="w-3 h-3" />{agg.losing > 0 ? `${agg.losing} rugi` : `${agg.noPrice} no harga`}
                       </span>
                     )}
+                    {hrefOf(c.link) && (
+                      <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer" title="Buka link campaign"
+                        className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>
+                    )}
                     <button title="Edit" onClick={() => setEditing(c)} className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-fill/8 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                     <button title="Hapus" onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg text-ink-faint hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
@@ -256,7 +267,7 @@ export default function CampaignPanel({ products }) {
                             <span className="text-[13px] font-semibold text-ink-strong tabular-nums flex-shrink-0">{fmt(+it.price)}</span>
                             <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
                           </div>
-                          {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={c.voucherConfig?.kind || 'normal'} />}
+                          {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={c.voucherConfig?.kind || 'normal'} showHeader={i === 0} />}
                         </div>
                       )
                     })}
@@ -308,6 +319,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
   const [name, setName]           = useState(initial.name ?? '')
   const [platform, setPlatform]   = useState(initial.platform ?? 'tiktok')
   const [description, setDesc]    = useState(initial.description ?? '')
+  const [link, setLink]           = useState(initial.link ?? '')
   const [startDate, setStart]     = useState(initial.startDate ?? '')
   const [endDate, setEnd]         = useState(initial.endDate ?? '')
   const [items, setItems]         = useState(initial.items ?? [])
@@ -379,7 +391,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), platform, description, startDate, endDate, items, voucherConfig: buildVoucherConfig() })
+    await onSave({ id: initial.id, name: name.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig() })
     setBusy(false)
   }
 
@@ -443,6 +455,24 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
           <textarea value={description} onChange={e => setDesc(e.target.value)} rows={2}
             placeholder="mis. Diskon 30% + gratis ongkir, berlaku untuk produk tas & dompet, min. pembelian Rp50.000"
             className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50 resize-none" />
+        </div>
+
+        {/* Link campaign */}
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <Link2 className="w-3.5 h-3.5 inline mr-1" />Link Campaign <span className="font-normal text-ink-faint">(halaman campaign di marketplace)</span>
+          </label>
+          <div className="relative flex items-center">
+            <input type="url" value={link} onChange={e => setLink(e.target.value)} inputMode="url"
+              placeholder="https://seller-id.tokopedia.com/promotion/campaign/detail/..."
+              className={`w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50 ${hrefOf(link) ? 'pr-10' : ''}`} />
+            {hrefOf(link) && (
+              <a href={hrefOf(link)} target="_blank" rel="noopener noreferrer" title="Buka link campaign"
+                className="absolute right-2.5 text-ink-faint hover:text-blue-400 transition-colors">
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
@@ -552,7 +582,7 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
                     <button onClick={() => removeProduct(productId)} className="text-ink-faint hover:text-red-400 flex-shrink-0"><X className="w-4 h-4" /></button>
                   </div>
                   <div className="space-y-1.5">
-                    {its.map(it => {
+                    {its.map((it, vi) => {
                       const m = itemMargin(it, productMap)
                       const v = p ? productVariations(p)[it.varIdx] : null
                       const normal = v ? (+v.jual || 0) : 0
@@ -570,9 +600,9 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
                                 placeholder="harga campaign"
                                 className="w-full bg-fill/5 border border-line/10 rounded-lg pl-8 pr-2 py-1.5 text-[13px] text-ink-strong tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
                             </div>
-                            <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+                            <span title={activeVouchers.length ? 'margin tanpa voucher' : undefined} className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
                           </div>
-                          <VoucherLines item={it} productMap={productMap} vouchers={activeVouchers} kind={campaignType} />
+                          <VoucherLines item={it} productMap={productMap} vouchers={activeVouchers} kind={campaignType} showHeader={vi === 0} />
                         </div>
                       )
                     })}
@@ -584,6 +614,9 @@ function CampaignEditor({ initial, products, productMap, onSave, onClose }) {
         )}
         <p className="text-[11px] text-ink-faint px-5 py-3 border-t border-line/8">
           Harga campaign default dari "Harga Campaign" tiap varian (price list), bisa diubah khusus campaign ini. Margin dihitung dari HPP &amp; biaya varian.
+          {campaignType === 'cofunded' && activeVouchers.length > 0 && (
+            <> Angka % besar di kanan tiap varian = margin <b>tanpa voucher</b>; kolom "Harga customer" &amp; margin per tier ada di bawahnya (asumsi customer beli varian itu sampai lolos min. pesanan).</>
+          )}
         </p>
       </div>
 
@@ -648,30 +681,38 @@ function NumField({ label, value, onChange, prefix, suffix, w = 'w-28' }) {
   )
 }
 
-// Rincian per-varian untuk tiap tier voucher: pcs untuk dapat voucher, harga
-// yang diterima customer, dan (co-funded) margin setelah beban penjual.
-function VoucherLines({ item, productMap, vouchers, kind }) {
+// Rincian per-varian untuk tiap tier voucher, tabel berlabel: berapa pcs untuk
+// dapat voucher, harga yang diterima customer, dan (co-funded) margin setelah
+// beban penjual. Header kolom hanya dirender sekali (showHeader) agar rapi.
+function VoucherLines({ item, productMap, vouchers, kind, showHeader }) {
   if (!vouchers.length || !(+item.price > 0)) return null
+  const cofunded = kind === 'cofunded'
+  const cols = cofunded ? '46px 1fr 1fr 52px' : '46px 1fr 1fr'
   return (
-    <div className="mt-1.5 space-y-1">
-      {vouchers.map((v, i) => {
-        const eff = voucherEffect(v, item.price)
-        if (!eff) return null
-        const m = kind === 'cofunded' ? itemMargin(item, productMap, eff.sellerPerUnit) : null
-        return (
-          <div key={i} className="flex items-center gap-2 text-[11px] text-ink-faint">
-            <span className="inline-flex items-center justify-center min-w-[36px] px-1 py-0.5 rounded bg-blue-600/12 text-blue-300 font-semibold tabular-nums">{fmtPct(v.discPct)}</span>
-            {(+v.minOrder || 0) > 0 && <span className="tabular-nums text-ink-muted">{eff.pcs} pcs</span>}
-            <span className="tabular-nums">cust <b className="text-ink-muted font-semibold">{fmt(eff.custPerUnit)}</b></span>
-            {kind === 'cofunded' && (
-              <>
-                <span className="tabular-nums">beban {fmt(eff.sellerPerUnit)}</span>
-                <span className={`ml-auto font-semibold tabular-nums ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
-              </>
-            )}
-          </div>
-        )
-      })}
+    <div className="mt-1.5 mb-1">
+      {showHeader && (
+        <div className="grid gap-2 text-[10px] text-ink-faint pb-1" style={{ gridTemplateColumns: cols }}>
+          <span>Voucher</span>
+          <span>Beli untuk dapat</span>
+          <span>Harga customer</span>
+          {cofunded && <span className="text-right">Margin</span>}
+        </div>
+      )}
+      <div className="space-y-1">
+        {vouchers.map((v, i) => {
+          const eff = voucherEffect(v, item.price)
+          if (!eff) return null
+          const m = cofunded ? itemMargin(item, productMap, eff.sellerPerUnit) : null
+          return (
+            <div key={i} className="grid gap-2 items-center text-[11px]" style={{ gridTemplateColumns: cols }}>
+              <span className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-blue-600/12 text-blue-300 font-semibold tabular-nums">{fmtPct(v.discPct)}</span>
+              <span className="text-ink-faint tabular-nums">{eff.pcs} pcs</span>
+              <span className="text-ink-strong font-semibold tabular-nums">{fmt(eff.custPerUnit)}</span>
+              {cofunded && <span className={`text-right font-semibold tabular-nums ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
