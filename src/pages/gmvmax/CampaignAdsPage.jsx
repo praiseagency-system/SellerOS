@@ -50,10 +50,15 @@ export default function CampaignAdsPage({ onOpenUpload }) {
 
   const sum = useMemo(() => {
     const act = merged.filter(m => isOn(m.s?.operation_status))
+    // Budget "aktif" = HANYA campaign ENABLE yang benar-benar BELANJA (spend > 0).
+    // Campaign ENABLE tapi spend 0 tak menyerap budget → tak dihitung, biar angka
+    // mencerminkan budget yang benar-benar jalan (bukan kapasitas terpasang).
+    const spending = act.filter(m => (m.p?.total.cost || 0) > 0)
     return {
       total: merged.length,
       aktif: act.length,
-      budget: act.reduce((a, m) => a + (Number(m.s?.budget) || 0), 0),
+      spendingCount: spending.length,
+      budget: spending.reduce((a, m) => a + (Number(m.s?.budget) || 0), 0),
       spend: merged.reduce((a, m) => a + (m.p?.total.cost || 0), 0),
       revenue: merged.reduce((a, m) => a + (m.p?.total.revenue || 0), 0),
     }
@@ -79,7 +84,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={Megaphone} tone="violet" label="Campaign" value={n(sum.total)} sub={`${n(sum.aktif)} aktif`} />
-        <StatCard icon={Wallet} tone="amber" label="Budget harian (aktif)" value={fmtRpC(sum.budget)} sub="jumlah budget campaign ENABLE" />
+        <StatCard icon={Wallet} tone="amber" label="Budget harian (aktif)" value={fmtRpC(sum.budget)} sub={`${n(sum.spendingCount)} campaign belanja (spend > 0)`} />
         <StatCard icon={TrendingUp} tone="green" label="Revenue periode" value={fmtRpC(sum.revenue)} sub={`spend ${fmtRpC(sum.spend)}`} />
         <StatCard icon={Target} tone="blue" label="ROAS periode" value={fmtRoasX(roas)} />
       </div>
