@@ -114,6 +114,7 @@ const growthCls = n => (n == null ? 'text-ink-faint' : n >= 0 ? 'text-green-400'
 
 export default function StorePerformancePage() {
   const [store, setStore] = useState({ files: [], lines: [] })
+  const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('ringkasan')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -137,6 +138,7 @@ export default function StorePerformancePage() {
     loadStore()
       .then(s => { if (active) setStore(s) })
       .catch(e => { console.error(e); if (active) setError('Gagal memuat data toko.') })
+      .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
 
@@ -217,7 +219,7 @@ export default function StorePerformancePage() {
               {store.dupRemoved > 0 && <span className="text-amber-400"> · {fmtNum(store.dupRemoved)} duplikat digabung</span>}
             </p>
           ) : (
-            <p className="text-xs text-ink-faint">Belum ada data terimport</p>
+            <p className="text-xs text-ink-faint">{loading ? 'Memuat data toko…' : 'Belum ada data terimport'}</p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -231,7 +233,12 @@ export default function StorePerformancePage() {
         </div>
       </div>
 
-      {!stats ? (
+      {loading ? (
+        <div className="mt-6 bg-surface rounded-2xl border border-line/10 shadow-sm flex flex-col items-center justify-center text-center p-12 min-h-[260px]">
+          <div className="w-8 h-8 rounded-full border-2 border-blue-500/30 border-t-blue-500 animate-spin mb-3" />
+          <p className="text-sm text-ink-muted">Memuat data toko…</p>
+        </div>
+      ) : !stats ? (
         <div className="mt-6 bg-surface rounded-2xl border border-line/10 shadow-sm flex flex-col items-center justify-center text-center p-12 min-h-[260px]">
           <div className="w-12 h-12 rounded-2xl bg-blue-600/10 flex items-center justify-center mb-3">
             <TrendingUp className="w-6 h-6 text-blue-500" />
