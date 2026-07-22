@@ -4,9 +4,13 @@
 import { rowIdentity } from './identity.mjs'
 
 // Baca snapshot OLD dari Supabase → rows dalam bentuk kanonik (camelCase subset).
+// HANYA versi current: sejak versioning (0029) satu (ws,date) punya banyak versi
+// (lama di-supersede, tak dihapus). Tanpa filter is_current, .maybeSingle() ERROR
+// saat ≥2 versi → parity read gagal (NO_OLD_BASELINE spuriios) atau membanding versi
+// keliru. Partial-unique (ws,date) WHERE is_current → tepat 1 baris.
 export async function loadOldSnapshot(sb, workspaceId, date) {
   const { data: imp, error: e1 } = await sb.from('gmvmax_imports')
-    .select('id,name,snapshot_date,totals,created_at').eq('workspace_id', workspaceId).eq('snapshot_date', date).maybeSingle()
+    .select('id,name,snapshot_date,totals,created_at').eq('workspace_id', workspaceId).eq('snapshot_date', date).eq('is_current', true).maybeSingle()
   if (e1) throw new Error(`loadOldSnapshot import: ${e1.message}`)
   if (!imp) return null
   const rows = []
