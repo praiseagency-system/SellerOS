@@ -85,7 +85,7 @@ export async function generateDecisionIntelligence({ workspaceId, storeId, date,
   const skill6 = runSkill6({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
   const skill7 = runSkill7({ dailyFacts: daily, skill2Output: skill2, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
   const skill8 = runSkill8({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
-  const skill9 = runSkill9({ skill1Output: skill1, skill2Output: skill2, skill3Output: skill3, skill4Output: skill4, generatedAt: gen })
+  const skill9 = runSkill9({ skill1Output: skill1, skill2Output: skill2, skill3Output: skill3, skill4Output: skill4, skill5Output: skill5, skill6Output: skill6, skill7Output: skill7, skill8Output: skill8, generatedAt: gen })
 
   const byNum = { 1: skill1, 2: skill2, 3: skill3, 4: skill4, 5: skill5, 6: skill6, 7: skill7, 8: skill8, 9: skill9 }
   const envelopeNums = new Set([1, 2])
