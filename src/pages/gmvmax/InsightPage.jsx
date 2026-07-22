@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, fmtRpC, fmtRoasX, tiktokVideoUrl, VideoIdLink } from '../../components/gmvmax/ui'
 import DecisionPanel from '../../components/gmvmax/DecisionPanel'
+import ExperimentPanel from '../../components/gmvmax/ExperimentPanel'
 
 const TABS = [
   { id: 'di', label: 'Decision Intelligence' },
+  { id: 'exp', label: 'Eksperimen' },
   { id: 'insight', label: 'Insight' },
   { id: 'plan', label: 'Action Plan' },
   { id: 'framework', label: 'Winning Framework' },
@@ -22,14 +24,18 @@ const ACTION_BADGE = {
 export default function InsightPage({ onOpenUpload }) {
   const { insights, hasData } = useGmvMax()
   const [tab, setTab] = useState('insight')
+  const [expDraft, setExpDraft] = useState(null)   // draft eksperimen dari DecisionPanel
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
 
+  // Tombol "Jadikan eksperimen" di DecisionPanel → bawa draft ke tab Eksperimen.
+  const startExperiment = (draft) => { setExpDraft(draft); setTab('exp') }
+
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
       <p className="text-sm text-ink-faint -mt-2">Analisis pola data GMV MAX — bukan model AI eksternal.</p>
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 flex-wrap">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
@@ -37,7 +43,8 @@ export default function InsightPage({ onOpenUpload }) {
         ))}
       </div>
 
-      {tab === 'di' && <DecisionPanel />}
+      {tab === 'di' && <DecisionPanel onExperiment={startExperiment} />}
+      {tab === 'exp' && <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} />}
       {tab === 'insight' && <InsightCards cards={insights.cards} />}
       {tab === 'plan' && <ActionPlan steps={insights.plan} />}
       {tab === 'framework' && <Framework items={insights.framework} />}

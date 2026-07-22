@@ -58,7 +58,10 @@ const DECISION_READY = { OBSERVE_ONLY: 'hanya untuk observasi', SCALE_READY: 'si
 const Card = ({ children, className = '' }) => <div className={`rounded-xl border border-line/20 bg-surface p-4 ${className}`}>{children}</div>
 const H = ({ children, sub }) => <div className="mb-3"><span className="text-sm font-semibold text-ink-strong">{children}</span>{sub && <span className="text-xs text-ink-muted font-normal"> {sub}</span>}</div>
 
-export default function DecisionPanel() {
+// Peta status rekomendasi → jenis eksperimen (untuk tombol "Jadikan eksperimen").
+const STATUS_TO_EXP = { SCALE: 'MANUAL_BOOST', BOOST: 'MANUAL_BOOST', OBSERVE: 'OTHER_APPROVED', KILL: 'CREATIVE_EXCLUSION', MAINTAIN: 'OTHER_APPROVED' }
+
+export default function DecisionPanel({ onExperiment }) {
   const [s, setS] = useState({ loading: true })
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -220,6 +223,18 @@ export default function DecisionPanel() {
                     {a.success_metric && <span className="text-ink-muted"><span className="text-emerald-400">Sukses bila:</span> {a.success_metric}</span>}
                     {a.stop_condition && <span className="text-ink-muted"><span className="text-red-400">Stop bila:</span> {a.stop_condition}</span>}
                   </div>
+                )}
+                {onExperiment && (
+                  <button
+                    onClick={() => onExperiment({
+                      experiment_type: STATUS_TO_EXP[a.status] || 'OTHER_APPROVED',
+                      treatment: a.title_en || a.title,
+                      stop_condition: a.stop_condition || '',
+                      notes: a.explanation || '',
+                    })}
+                    className="mt-2.5 text-xs text-accent border border-accent/30 bg-accent/10 rounded-lg px-2.5 py-1 hover:bg-accent/15">
+                    + Jadikan eksperimen
+                  </button>
                 )}
               </Card>
             ))}
