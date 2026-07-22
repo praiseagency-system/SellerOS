@@ -28,6 +28,7 @@ import { findDuplicateIdentities } from './identity.mjs'
 import { findAdvertiser, eligibleAdvertisers, groupByWorkspace } from './advertisers.mjs'
 import { loadEligibleConnections } from './connections.mjs'
 import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
+import { generateAndPersistDecisions } from './decisions.mjs'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const labelFor = (date) => { const [y, m, d] = date.split('-'); return `${+d} ${MONTHS[+m - 1]} ${y} (API)` }
@@ -115,6 +116,20 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
           const { written } = await persistCampaignSettings(sb, { workspaceId, date, rows: csRows })
           safeLog({ event: 'CAMPAIGN_SETTINGS_CAPTURED', workspace_id: workspaceId, advertiser_id: en.advertiserId, count: written, snapshot_date: date })
         } catch (e) { safeLog({ event: 'CAMPAIGN_SETTINGS_FAILED', workspace_id: workspaceId, advertiser_id: en.advertiserId, level: 'warn', message: e.message }, console.error) }
+      }
+    }
+
+    // 5) Decision Intelligence (NON-FATAL, di balik flag). Generate + persist
+    //    output Skills 1/2/3/4/9 utk snapshot yang BARU ditulis. Gagal generate
+    //    TIDAK menjatuhkan commit (kanonik sudah aman). Default OFF sampai
+    //    GMVMAX_GENERATE_DECISIONS=1 (cutover bertahap seperti versioned writer).
+    if (!dryRun && w.written === true && process.env.GMVMAX_GENERATE_DECISIONS === '1') {
+      try {
+        const storeId = entries[0]?.storeId
+        const gd = await generateAndPersistDecisions({ sb, workspaceId, storeId, date })
+        safeLog({ event: 'GEN_DECISIONS_OK', workspace_id: workspaceId, snapshot_date: date, persisted: gd.persisted, validation_ok: gd.validation_ok, missing_inputs: gd.missing_inputs })
+      } catch (e) {
+        safeLog({ event: 'GEN_DECISIONS_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
       }
     }
 
