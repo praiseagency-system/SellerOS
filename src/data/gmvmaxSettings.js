@@ -23,7 +23,22 @@ export async function getThresholds() {
     killFloor: data.kill_floor != null ? Number(data.kill_floor) : DEFAULT_THRESHOLDS.killFloor,
     // Ambang ROI penilaian eksperimen (0033). null = belum diset → vonis konservatif.
     experimentRoiFloor: data.experiment_roi_floor != null ? Number(data.experiment_roi_floor) : null,
+    // Ambang perubahan material Skill 3 (0034), dalam PERSEN. null = deskriptif saja.
+    gmvMaterialPct: data.gmv_material_pct != null ? Number(data.gmv_material_pct) : null,
+    roiMaterialPct: data.roi_material_pct != null ? Number(data.roi_material_pct) : null,
   }
+}
+
+// Simpan HANYA ambang material (persen). null = reset (kembali deskriptif).
+export async function saveMaterialThresholds({ gmvMaterialPct, roiMaterialPct }) {
+  const wsId = getCurrentWorkspaceId()
+  if (!wsId) throw new Error('Workspace tidak aktif.')
+  const norm = (v) => { if (v == null || v === '') return null; const n = Number(v); if (!Number.isFinite(n) || n < 0) throw new Error('Nilai % tidak valid.'); return n }
+  const { error } = await supabase.from('gmvmax_settings').upsert({
+    workspace_id: wsId, gmv_material_pct: norm(gmvMaterialPct), roi_material_pct: norm(roiMaterialPct),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'workspace_id' })
+  if (error) throw error
 }
 
 // Simpan HANYA ambang ROI eksperimen (kolom lain tak tersentuh). null = reset.

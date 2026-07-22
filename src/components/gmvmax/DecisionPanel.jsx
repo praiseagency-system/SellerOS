@@ -5,6 +5,7 @@
 // & EXECUTION_ALLOWED=false. Tak ada tombol eksekusi.
 import { useEffect, useState } from 'react'
 import { loadLatestDecision, markReviewed, dismissDecision, snoozeDecision, clearReview } from '../../data/gmvmaxDecisions'
+import { getThresholds, saveMaterialThresholds } from '../../data/gmvmaxSettings'
 import { EmptyState } from './ui'
 
 // Nama modul (skill) dalam bahasa manusia — dari docs/gmvmax-skills.
@@ -175,7 +176,10 @@ export default function DecisionPanel({ onExperiment }) {
 
       {/* Perubahan hari ini (Skill 3) */}
       <div>
-        <H sub={`— ${s3?.event_count ?? 0} catatan (deskriptif, bukan alarm)`}>Perubahan hari ini</H>
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+          <H sub={`— ${s3?.event_count ?? 0} catatan`}>Perubahan hari ini</H>
+          <MaterialThresholdSetting />
+        </div>
         {(s3?.events || []).length ? (
           <div className="rounded-xl border border-line/20 bg-surface overflow-hidden">
             {(s3.events).slice(0, 8).map((e, i) => (
@@ -378,4 +382,47 @@ function ReviewBar({ review, busy, onReviewed, onDismiss, onSnooze, onClear }) {
         <button disabled={busy} onClick={onDismiss} className="text-xs text-ink-muted bg-fill/5 border border-line/20 rounded-lg px-2.5 py-1 hover:bg-fill/10 disabled:opacity-50">✕ Dismiss</button>
       </div>
     </>)
+}
+
+// Setelan ambang perubahan material (Tier 1). Owner isi % → Skill 3 memancarkan
+// event ber-severity (server, pada generate harian berikutnya). Kosong = deskriptif.
+function MaterialThresholdSetting() {
+  const [t, setT] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [gmv, setGmv] = useState('')
+  const [roi, setRoi] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+  useEffect(() => {
+    getThresholds().then(x => {
+      setT(x); setGmv(x.gmvMaterialPct == null ? '' : String(x.gmvMaterialPct)); setRoi(x.roiMaterialPct == null ? '' : String(x.roiMaterialPct))
+    }).catch(() => {})
+  }, [])
+  async function save() {
+    setSaving(true); setMsg(null)
+    try {
+      await saveMaterialThresholds({ gmvMaterialPct: gmv, roiMaterialPct: roi })
+      setT(x => ({ ...(x || {}), gmvMaterialPct: gmv === '' ? null : Number(gmv), roiMaterialPct: roi === '' ? null : Number(roi) }))
+      setMsg('Tersimpan — berlaku pada generate harian berikutnya')
+    } catch (e) { setMsg(e.message) } finally { setSaving(false) }
+  }
+  const isSet = t && (t.gmvMaterialPct != null || t.roiMaterialPct != null)
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(o => !o)} className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5">
+        Ambang material{isSet ? ` · GMV ${t.gmvMaterialPct ?? '—'}% / ROI ${t.roiMaterialPct ?? '—'}%` : ' (belum diset)'} ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-10 w-72 rounded-xl border border-line/20 bg-surface shadow-lg p-3 text-sm space-y-2">
+          <p className="text-[11px] text-ink-muted">Perubahan ≥ ambang (vs H-1) jadi event ber-severity (turun=HIGH, naik=MEDIUM). Kosong = deskriptif saja.</p>
+          <label className="flex items-center gap-2"><span className="text-xs text-ink-muted w-14">GMV %</span><input type="number" min="0" step="1" value={gmv} onChange={e => setGmv(e.target.value)} placeholder="mis. 20" className="flex-1 px-2 py-1 rounded-lg bg-fill/5 border border-line/15 text-sm text-ink" /></label>
+          <label className="flex items-center gap-2"><span className="text-xs text-ink-muted w-14">ROI %</span><input type="number" min="0" step="1" value={roi} onChange={e => setRoi(e.target.value)} placeholder="mis. 15" className="flex-1 px-2 py-1 rounded-lg bg-fill/5 border border-line/15 text-sm text-ink" /></label>
+          <div className="flex items-center gap-2">
+            <button disabled={saving} onClick={save} className="text-xs px-3 py-1 rounded-lg bg-accent/15 text-accent font-medium disabled:opacity-50">Simpan</button>
+            {msg && <span className="text-[11px] text-ink-faint">{msg}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }

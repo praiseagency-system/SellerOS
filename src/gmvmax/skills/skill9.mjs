@@ -21,6 +21,7 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0,
 export function runSkill9(input) {
   const {
     skill1Output = null, skill2Output = null, skill3Output = null, skill4Output = null,
+    skill5Output = null, skill6Output = null, skill7Output = null, skill8Output = null,
     existingActions = [], cooldowns = [], generatedAt = new Date().toISOString(),
   } = input || {}
 
@@ -74,6 +75,45 @@ export function runSkill9(input) {
       source_rule: 'GMVMAX-S4-CAUSE-002',
     }))
   }
+
+  // (6) Skill 5 — setelan optimasi yang perlu diamati (OBSERVE saja; ambang TBD).
+  for (const r of (skill5Output?.recommendations || [])) {
+    if (r.recommendation !== 'OBSERVE') continue
+    candidates.push(mkAction(ctx, {
+      objective: `observe_optimization_${slug(r.campaign_id || 'store')}`, action_type: 'OBSERVATION',
+      status: ActionStatus.OBSERVE, safetyRank: 6, risk: 'LOW', confidence: r.confidence || Confidence.LOW,
+      title: `Amati setelan optimasi: ${r.campaign_name || r.campaign_id}`, title_en: `Observe optimization: ${r.campaign_name || r.campaign_id}`,
+      explanation: (r.risks || []).join('; ') || 'Amati sebelum menilai Target ROI.',
+      evidence_ids: [], source_skills: ['GMVMAX_SKILL_05'],
+      expected_impact: 'kesiapan menilai Target ROI', success_metric: 'atribusi matang', stop_condition: 'ambang evaluasi disetujui',
+      scope_type: ScopeType.CAMPAIGN, scope_id: r.campaign_id, source_rule: 'GMVMAX-S5-GATE-002',
+    }))
+  }
+
+  // (7) Skill 7 — konsentrasi afiliasi/pasokan kreatif untuk dipantau (observasi).
+  const sh = skill7Output?.supply_health
+  if (sh && isNum(sh.top_affiliate_share) && (sh.affiliate_count || 0) > 1)
+    candidates.push(mkAction(ctx, {
+      objective: 'observe_affiliate_concentration', action_type: 'OBSERVATION',
+      status: ActionStatus.OBSERVE, safetyRank: 7, risk: 'LOW', confidence: Confidence.LOW,
+      title: 'Pantau konsentrasi afiliasi / pasokan kreatif', title_en: 'Monitor affiliate/creative concentration',
+      explanation: `Afiliasi teratas ${sh.top_affiliate} ~${Math.round(sh.top_affiliate_share * 100)}% revenue; ambang risiko konsentrasi belum disetujui.`,
+      evidence_ids: [], source_skills: ['GMVMAX_SKILL_07'],
+      expected_impact: 'kesadaran risiko konsentrasi', success_metric: 'diversifikasi pasokan', stop_condition: 'ambang konsentrasi disetujui',
+      source_rule: 'GMVMAX-S7-AFFILIATE-001',
+    }))
+
+  // (8) Skill 8 — kumpulkan data sesi LIVE (observasi; analisis LIVE terblokir).
+  if (skill8Output?.live_activity_detected && skill8Output?.readiness === 'BLOCKED')
+    candidates.push(mkAction(ctx, {
+      objective: 'collect_live_session_data', action_type: 'OBSERVATION',
+      status: ActionStatus.OBSERVE, safetyRank: 7, risk: 'LOW', confidence: Confidence.DATA_INSUFFICIENT,
+      title: 'Kumpulkan data sesi LIVE', title_en: 'Collect LIVE session data',
+      explanation: 'Aktivitas LIVE terdeteksi tapi data level-sesi (host/viewers/durasi) belum ada → analisis LIVE terblokir.',
+      evidence_ids: [], source_skills: ['GMVMAX_SKILL_08'],
+      expected_impact: 'membuka analisis LIVE', success_metric: 'data sesi LIVE tersedia', stop_condition: 'sumber data LIVE andal',
+      source_rule: 'GMVMAX-S8-READINESS-001',
+    }))
 
   // Existing unresolved actions — drop expired (S9-EXPIRY-001), carry the rest.
   for (const a of existingActions || []) {
