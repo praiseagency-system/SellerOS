@@ -35,8 +35,41 @@ function sumProducts(arr) {
   return s
 }
 
+// Banner rekonsiliasi: halaman ini HANYA channel Video (ter-atribusi per-produk).
+// Product card + Live level-campaign (tanpa product_id) tak terpecah per-produk.
+// Menampilkan Video + (Card+Live) = Total semua channel supaya nyambung ke Dashboard.
+function ReconBanner({ ch }) {
+  const video = ch.video || {}, card = ch.card || {}, live = ch.live || {}
+  const notSplitRev = (card.revenue || 0) + (live.revenue || 0)
+  const notSplitOrd = (card.orders || 0) + (live.orders || 0)
+  const totalOrd = (video.orders || 0) + notSplitOrd
+  return (
+    <div className="glass-card rounded-xl p-4">
+      <div className="flex items-stretch gap-3 flex-wrap">
+        <div className="flex-1 min-w-[150px]">
+          <div className="flex items-center gap-1.5 text-[11px] text-ink-muted mb-1"><span className="w-2 h-2 rounded-sm bg-blue-500" /> Di halaman ini · Video</div>
+          <p className="text-lg font-bold text-ink-strong tabular-nums">{fmtRp(video.revenue || 0)}</p>
+          <p className="text-[11px] text-ink-faint">{n(video.orders || 0)} order · per-produk</p>
+        </div>
+        <div className="flex items-center text-ink-faint text-lg">+</div>
+        <div className="flex-[1.4] min-w-[200px]">
+          <div className="flex items-center gap-1.5 text-[11px] text-ink-muted mb-1"><span className="w-2 h-2 rounded-sm bg-emerald-500" /><span className="w-2 h-2 rounded-sm bg-orange-500" /> Tak terpecah · Product card + Live</div>
+          <p className="text-lg font-bold text-ink tabular-nums">{fmtRp(notSplitRev)}</p>
+          <p className="text-[11px] text-ink-faint">{n(notSplitOrd)} order · level-campaign, tanpa product_id</p>
+        </div>
+        <div className="flex items-center text-ink-faint text-lg">=</div>
+        <div className="flex-1 min-w-[150px] border-l border-line/10 pl-3">
+          <p className="text-[11px] text-ink-muted mb-1">Total semua channel · = Dashboard</p>
+          <p className="text-lg font-bold text-emerald-400 tabular-nums">{fmtRp(ch.total || 0)}</p>
+          <p className="text-[11px] text-ink-faint">{n(totalOrd)} order</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProductPage({ onOpenUpload }) {
-  const { products, videos, boost, thresholds, hasData, prev, periodName, requestBoost, updateBoost } = useGmvMax()
+  const { products, videos, boost, thresholds, hasData, prev, periodName, channels, requestBoost, updateBoost } = useGmvMax()
   const [q, setQ] = useState('')
   const [detail, setDetail] = useState(null)   // produk yang dibuka modal detailnya
 
@@ -62,12 +95,13 @@ export default function ProductPage({ onOpenUpload }) {
       {periodName && prev && (
         <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
       )}
+      {channels?.total > 0 && <ReconBanner ch={channels} />}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard icon={Package} tone="violet" label="Total Produk" value={n(sum.produk)} sub={`${n(sum.video)} video`}
           delta={<DeltaBadge cur={sum.produk} prev={prevSum?.produk} />} />
         <StatCard icon={Wallet} tone="amber" label="Total Cost" value={fmtRpC(sum.cost)}
           delta={<DeltaBadge cur={sum.cost} prev={prevSum?.cost} fmt={fmtRpC} goodDown />} />
-        <StatCard icon={TrendingUp} tone="green" label="Revenue (GMV)" value={fmtRpC(sum.revenue)}
+        <StatCard icon={TrendingUp} tone="green" label="Revenue (Video)" value={fmtRpC(sum.revenue)}
           delta={<DeltaBadge cur={sum.revenue} prev={prevSum?.revenue} fmt={fmtRpC} />} />
         <StatCard icon={Target} tone="blue" label="ROAS" value={fmtRoasX(sum.roas)}
           delta={<DeltaBadge cur={sum.roas} prev={prevSum?.roas} fmt={(v) => v.toFixed(1) + 'x'} />} />
