@@ -132,7 +132,8 @@ export function normalizeSheet(aoa, sourceHint) {
     months.add(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`)
     lines.push({
       o: orderId,
-      m: marketplace,
+      m: marketplace,        // Purchase Channel (TikTok) / 'Shopee' — dipakai untuk rincian channel
+      src: source,           // sumber file: 'shopee' | 'tiktok' — dasar marketplace kanonik
       t: dt.getTime(),
       w: weekOfMonth(dt),
       day: dt.getDay(),       // 0=Min

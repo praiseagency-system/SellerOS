@@ -3,6 +3,7 @@
 // 1 row per workspace; blob {files, lines} disimpan di kolom `data` jsonb.
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
+import { dedupeLines } from '../utils/storeData'
 
 const EMPTY = { files: [], lines: [] }
 
@@ -15,7 +16,11 @@ export async function loadStore() {
     .eq('workspace_id', wsId)
     .maybeSingle()
   if (error) throw error
-  return data?.data || { ...EMPTY }
+  const blob = data?.data || { ...EMPTY }
+  // Dedup saat baca: memperbaiki data lama yang mungkin mengandung baris dobel
+  // dari import file tumpang-tindih, tanpa perlu re-import.
+  const { lines, removed } = dedupeLines(blob.lines || [])
+  return { ...blob, lines, dupRemoved: removed }
 }
 
 export async function saveStore(next) {
