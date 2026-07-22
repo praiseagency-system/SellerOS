@@ -75,11 +75,23 @@ export async function generateDecisionIntelligence({ workspaceId, storeId, date,
   })
   daily.deterministic_signature = dailySignature(daily)
 
+  // Ambang bisnis per-workspace (Tier 1 / worksheet 97) → ruleConfig Skill 3.
+  // Disimpan PERSEN di gmvmax_settings → dikonversi ke fraksi. Kosong = deskriptif
+  // (konservatif); nilai HANYA dari keputusan owner (tak pernah default TBD).
+  const s3RuleConfig = {}
+  if (sb) {
+    try {
+      const { data: cfg } = await sb.from('gmvmax_settings').select('gmv_material_pct,roi_material_pct').eq('workspace_id', workspaceId).maybeSingle()
+      if (cfg?.gmv_material_pct != null) s3RuleConfig.gmvMaterialPct = Number(cfg.gmv_material_pct) / 100
+      if (cfg?.roi_material_pct != null) s3RuleConfig.roiMaterialPct = Number(cfg.roi_material_pct) / 100
+    } catch { /* kolom/tabel belum ada → tetap deskriptif */ }
+  }
+
   // Skill dependency order is fixed: 1 → 2 → 3 → 4 → 9. We always compute the
   // dependency chain; `skills` only filters what is RETURNED/persisted.
   const skill1 = runSkill1({ workspaceId, storeId, date, daily, businessStructure: inputs.businessStructure, liveDataAvailable: inputs.liveDataAvailable, generatedAt: gen })
   const skill2 = runSkill2({ workspaceId, storeId, date, daily, priorSnapshots: inputs.priorSnapshots, sourceBreakdown: inputs.sourceBreakdown, generatedAt: gen })
-  const skill3 = runSkill3({ dailyFacts: daily, skill1Output: skill1, skill2Output: skill2, generatedAt: gen })
+  const skill3 = runSkill3({ dailyFacts: daily, skill1Output: skill1, skill2Output: skill2, ruleConfig: s3RuleConfig, generatedAt: gen })
   const skill4 = runSkill4({ dailyFacts: daily, skill2Output: skill2, skill3Output: skill3, generatedAt: gen })
   const skill5 = runSkill5({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, generatedAt: gen })
   const skill6 = runSkill6({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
