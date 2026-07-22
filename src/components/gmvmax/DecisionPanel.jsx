@@ -97,6 +97,7 @@ export default function DecisionPanel({ onExperiment }) {
   const s3 = s.skills.GMVMAX_SKILL_03?.payload, s4 = s.skills.GMVMAX_SKILL_04?.payload
   const s5 = s.skills.GMVMAX_SKILL_05?.payload
   const s6 = s.skills.GMVMAX_SKILL_06?.payload
+  const s7 = s.skills.GMVMAX_SKILL_07?.payload
   const s9 = s.skills.GMVMAX_SKILL_09?.payload
   const audit = s2?.attribution_audit || {}
   const dq = s.dataQuality || {}
@@ -284,6 +285,24 @@ export default function DecisionPanel({ onExperiment }) {
             ))}
           </div>
           <p className="text-[11px] text-ink-faint mt-1.5">Semua <b>HOLD</b> — usulan naik/turun budget disabled sampai bobot skor, cap harian &amp; break-even disetujui. Peringkat = observasional (by ROI), bukan keputusan alokasi.</p>
+        </div>
+      )}
+
+      {/* Pasokan Kreatif & Afiliasi (Skill 7) */}
+      {s7?.supply_health && (
+        <div>
+          <H sub="— fakta supply-health (ambang winner/fatigue belum disetujui)">Pasokan Kreatif &amp; Afiliasi (Skill 7)</H>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[['Kreatif', s7.supply_health.creative_count], ['Delivering', s7.supply_health.delivering], ['Afiliasi', s7.supply_health.affiliate_count], ['Produk', s7.supply_health.product_count]].map(([l, v]) => (
+              <div key={l} className="rounded-lg border border-line/15 bg-fill/[0.03] p-3">
+                <div className="text-[11px] text-ink-faint">{l}</div>
+                <div className="text-lg font-bold text-ink-strong">{v ?? '—'}</div>
+              </div>
+            ))}
+          </div>
+          {s7.supply_health.top_affiliate && (
+            <p className="text-[11px] text-ink-muted mt-2">Afiliasi teratas: <b className="text-ink">{s7.supply_health.top_affiliate}</b>{s7.supply_health.top_affiliate_share != null ? ` (${(s7.supply_health.top_affiliate_share * 100).toFixed(0)}% revenue)` : ''} · learning {s7.supply_health.learning} · antre {s7.supply_health.in_queue}</p>
+          )}
         </div>
       )}
 
