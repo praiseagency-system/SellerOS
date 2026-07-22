@@ -221,6 +221,65 @@ export function rollupProducts(rows) {
   })).sort((a, b) => b.revenue - a.revenue)
 }
 
+// Per PRODUK dari channel PRODUCT CARD saja (bukan Video/Live). Baris Product card
+// = agregat per-campaign TANPA product_id; dialokasikan ke produk berdasarkan
+// PORSI REVENUE VIDEO tiap produk dalam campaign yang sama (fallback: rata bila
+// campaign tanpa revenue video). Live (nama campaign memuat "LIVE") dikecualikan
+// sepenuhnya. Produk tanpa iklan Product-card → tak muncul (revenue 0).
+// Catatan: untuk campaign multi-produk, angka per-produk bersifat ALOKASI (estimasi).
+export function rollupProductsCard(rows) {
+  const camps = new Map()             // campaign → { card agg, vidRev per produk }
+  const info = new Map()              // produk → { videos, vidStatus, campaigns }
+  for (const r of rows) {
+    const cid = r.campaignId || r.campaignName || '__none__'
+    let c = camps.get(cid)
+    if (!c) { c = { card: blankAgg(), vidRev: new Map() }; camps.set(cid, c) }
+    if (channelOf(r) === 'card') addInto(c.card, r)
+    if (r.creativeType === 'Video' && r.productId) {
+      c.vidRev.set(r.productId, (c.vidRev.get(r.productId) || 0) + (r.grossRevenue ?? 0))
+      let pi = info.get(r.productId)
+      if (!pi) { pi = { videos: new Set(), vidStatus: new Map(), campaigns: new Set() }; info.set(r.productId, pi) }
+      if (r.videoId) {
+        pi.videos.add(r.videoId)
+        const canon = normDeliveryStatus(r.status), per = periodOf(r)
+        const cur = pi.vidStatus.get(r.videoId)
+        if (!cur || per > cur.period || (per === cur.period && deliveryRank(canon) > deliveryRank(cur.canon))) pi.vidStatus.set(r.videoId, { period: per, canon })
+      }
+      if (r.campaignName) pi.campaigns.add(r.campaignName)
+    }
+  }
+  const byProduct = new Map()         // produk → { cost, revenue, orders } (alokasi card)
+  for (const c of camps.values()) {
+    if (c.card.revenue === 0 && c.card.cost === 0 && c.card.orders === 0) continue
+    const entries = [...c.vidRev.entries()]
+    if (!entries.length) continue     // card campaign tanpa produk video → tak terpetakan
+    const tot = entries.reduce((s, [, v]) => s + v, 0)
+    const weights = tot > 0 ? entries.map(([p, v]) => [p, v / tot]) : entries.map(([p]) => [p, 1 / entries.length])
+    for (const [pid, w] of weights) {
+      let a = byProduct.get(pid)
+      if (!a) { a = { cost: 0, revenue: 0, orders: 0 }; byProduct.set(pid, a) }
+      a.cost += c.card.cost * w
+      a.revenue += c.card.revenue * w
+      a.orders += c.card.orders * w
+    }
+  }
+  return [...byProduct.entries()].map(([productId, a]) => {
+    const pi = info.get(productId) || { videos: new Set(), vidStatus: new Map(), campaigns: new Set() }
+    const orders = Math.round(a.orders)
+    return {
+      productId,
+      videoCount: pi.videos.size,
+      statusCounts: tallyDelivery(pi.vidStatus),
+      campaigns: [...pi.campaigns],
+      cost: a.cost, revenue: a.revenue, orders,
+      roas: a.cost > 0 ? a.revenue / a.cost : null,
+      cpo: orders > 0 ? a.cost / orders : null,
+      ctr: null, cvr: null, funnel: {}, count: pi.videos.size,
+      allocated: true, // penanda angka hasil alokasi (untuk UI bila perlu)
+    }
+  }).sort((a, b) => b.revenue - a.revenue)
+}
+
 // ─── Per kreator (video only; null → "Akun toko") ────────────────────────────
 export function rollupCreators(rows, thresholds = DEFAULT_THRESHOLDS) {
   const videos = rows.filter(r => r.creativeType === 'Video')

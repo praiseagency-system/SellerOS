@@ -18,7 +18,7 @@ import { listProducts } from '../data/calcProducts'
 import { enrichVideos } from '../utils/gmvmaxEnrich'
 import { DEFAULT_THRESHOLDS } from '../utils/gmvmaxClassify'
 import {
-  rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, rollupProducts, dashboardSummary,
+  rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, rollupProducts, rollupProductsCard, dashboardSummary,
   rollupChannels, channelDailyTrend,
 } from '../utils/gmvmaxRollup'
 import { insightCards, actionPlan, winningFramework } from '../utils/gmvmaxInsights'
@@ -248,6 +248,11 @@ export function GmvMaxProvider({ children }) {
   const products = useMemo(() => rollupProducts(rows).map(p => ({
     ...p, name: (p.productId && productNames[p.productId]) || null,
   })), [rows, productNames])
+  // Performa Produk memakai ini: revenue per-produk dari channel PRODUCT CARD saja
+  // (dialokasikan via porsi video, Live dikecualikan). Lihat rollupProductsCard.
+  const productsCard = useMemo(() => rollupProductsCard(rows).map(p => ({
+    ...p, name: (p.productId && productNames[p.productId]) || null,
+  })), [rows, productNames])
   const dashboard = useMemo(() => dashboardSummary(videos, thresholds), [videos, thresholds])
   const typeTotals = useMemo(() => typeTotalsOf(rows), [rows])
   // Perbandingan per channel (Video / Product card / Live) + tren harian stacked.
@@ -270,6 +275,7 @@ export function GmvMaxProvider({ children }) {
       videos: rollupVideos(prevRows, thresholds),
       creators: rollupCreators(prevRows, thresholds),
       products: rollupProducts(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
+      productsCard: rollupProductsCard(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
       typeTotals: typeTotalsOf(prevRows),
       channels: rollupChannels(prevRows),
     }
@@ -440,7 +446,7 @@ export function GmvMaxProvider({ children }) {
     range: effectiveRange, setRange: setCustomRange, rangePresets, dateBounds,
     windowDays, setWindowDays, windows: WINDOWS,
     prev, dailyDelta, trend,
-    videos, campaigns, creators, hooks, products, dashboard, typeTotals, insights,
+    videos, campaigns, creators, hooks, products, productsCard, dashboard, typeTotals, insights,
     channels, channelTrend,
     hasData: imports.length > 0,
     loading, busy, creativesLoading, error,

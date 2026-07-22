@@ -36,13 +36,14 @@ function sumProducts(arr) {
 }
 
 export default function ProductPage({ onOpenUpload }) {
-  const { products, videos, boost, thresholds, hasData, prev, periodName, requestBoost, updateBoost } = useGmvMax()
+  const { productsCard, videos, boost, thresholds, hasData, prev, periodName, requestBoost, updateBoost } = useGmvMax()
   const [q, setQ] = useState('')
   const [detail, setDetail] = useState(null)   // produk yang dibuka modal detailnya
 
   // Kartu meringkas seluruh produk periode ini (tak terpengaruh pencarian);
   // kotak cari hanya menyaring tabel di bawahnya — seperti Monitoring Praise.
-  const base = useMemo(() => productBase(products), [products])
+  // Revenue = channel PRODUCT CARD (dialokasikan per-produk); Video & Live tak dihitung.
+  const base = useMemo(() => productBase(productsCard), [productsCard])
   const list = useMemo(() => {
     if (!q.trim()) return base
     const s = q.toLowerCase()
@@ -50,7 +51,7 @@ export default function ProductPage({ onOpenUpload }) {
   }, [base, q])
 
   const sum = useMemo(() => sumProducts(base), [base])
-  const prevSum = useMemo(() => (prev ? sumProducts(productBase(prev.products)) : null), [prev])
+  const prevSum = useMemo(() => (prev ? sumProducts(productBase(prev.productsCard || [])) : null), [prev])
   const { sorted, sort, toggle } = useSortableRows(list, PRODUCT_SORT)
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
@@ -83,7 +84,7 @@ export default function ProductPage({ onOpenUpload }) {
 
       <p className="text-[11px] text-ink-faint flex items-start gap-1.5 leading-relaxed -mt-1">
         <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-        Revenue di sini = channel <span className="text-ink-muted">Video</span> per-produk saja. Iklan <span className="text-ink-muted">Product card</span> &amp; <span className="text-ink-muted">Live</span> bersifat level-campaign (tanpa product_id) → tak terpecah per-produk. Total lintas channel ada di menu <span className="text-blue-400">Channel</span>.
+        Revenue di sini = channel <span className="text-ink-muted">Product card</span> saja (Video &amp; Live tak dihitung). Baris Product card bersifat level-campaign (tanpa product_id) → dialokasikan ke produk berdasarkan porsi revenue video tiap produk dalam campaign-nya; untuk campaign multi-produk angka bersifat <span className="text-ink-muted">estimasi</span>. Produk tanpa iklan Product card tak muncul.
       </p>
 
       <div className="relative">
