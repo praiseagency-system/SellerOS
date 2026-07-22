@@ -36,9 +36,19 @@ async function loadSeries(sb, { workspaceId, from, to, subject }) {
   return series
 }
 
+// ruleConfig per-workspace: roiFloor dari gmvmax_settings (owner set via menu).
+// null/absent → classifyOutcome tetap konservatif (jangan isi TBD).
+async function loadRuleConfig(sb, workspaceId) {
+  const { data } = await sb.from('gmvmax_settings')
+    .select('experiment_roi_floor').eq('workspace_id', workspaceId).maybeSingle()
+  const rf = data?.experiment_roi_floor
+  return rf != null && Number.isFinite(Number(rf)) ? { roiFloor: Number(rf) } : {}
+}
+
 // Evaluasi semua eksperimen RUNNING satu workspace. Update checkpoints + conclusion
 // (status TETAP RUNNING — tak auto-menyimpulkan; owner yang menutup). Idempoten.
-export async function evaluateExperiments({ sb, workspaceId, ruleConfig = {} }) {
+export async function evaluateExperiments({ sb, workspaceId, ruleConfig }) {
+  if (!ruleConfig) ruleConfig = await loadRuleConfig(sb, workspaceId)
   const { data: exps, error } = await sb.from('gmvmax_experiments')
     .select('*').eq('workspace_id', workspaceId).eq('status', 'RUNNING')
   if (error) { if (/relation .* does not exist|find the table/i.test(error.message || '')) return { updated: 0, absent: true }; throw error }

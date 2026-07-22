@@ -21,7 +21,22 @@ export async function getThresholds() {
     spendFloor: Number(data.spend_floor),
     // Fallback ke default bila kolom belum ada (migration 0016 belum jalan).
     killFloor: data.kill_floor != null ? Number(data.kill_floor) : DEFAULT_THRESHOLDS.killFloor,
+    // Ambang ROI penilaian eksperimen (0033). null = belum diset → vonis konservatif.
+    experimentRoiFloor: data.experiment_roi_floor != null ? Number(data.experiment_roi_floor) : null,
   }
+}
+
+// Simpan HANYA ambang ROI eksperimen (kolom lain tak tersentuh). null = reset.
+export async function saveExperimentRoiFloor(value) {
+  const wsId = getCurrentWorkspaceId()
+  if (!wsId) throw new Error('Workspace tidak aktif.')
+  const v = value == null || value === '' ? null : Number(value)
+  if (v != null && (!Number.isFinite(v) || v < 0)) throw new Error('Nilai roiFloor tidak valid.')
+  const { error } = await supabase.from('gmvmax_settings').upsert({
+    workspace_id: wsId, experiment_roi_floor: v, updated_at: new Date().toISOString(),
+  }, { onConflict: 'workspace_id' })
+  if (error) throw error
+  return v
 }
 
 export async function saveThresholds(t) {
