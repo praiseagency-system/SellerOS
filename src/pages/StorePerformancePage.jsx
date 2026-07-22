@@ -11,7 +11,7 @@ import {
 import { ingestFile } from '../utils/storeIngest'
 import { mergeUpload, removeFileFrom, blendedLogistics } from '../utils/storeData'
 import { loadStore, saveStore, clearStore } from '../data/storeDataset'
-import { computeStore, quickInsights } from '../utils/storeAnalytics'
+import { computeStore, quickInsights, marketplaceOf } from '../utils/storeAnalytics'
 import { listVouchers } from '../data/vouchers'
 import { matchVouchersToAmount } from '../utils/voucher'
 import Modal from '../components/Modal'
@@ -151,11 +151,11 @@ export default function StorePerformancePage() {
   }, [store, period])
 
   // Daftar marketplace yang ada di periode terpilih (untuk filter bila >1 sumber).
-  const mpOptions = useMemo(() => [...new Set(periodLines.map(l => l.m))].sort(), [periodLines])
+  const mpOptions = useMemo(() => [...new Set(periodLines.map(marketplaceOf))].sort(), [periodLines])
   const mp = mpOptions.includes(mpFilter) ? mpFilter : 'all'
 
   const stats = useMemo(() => {
-    const lines = mp === 'all' ? periodLines : periodLines.filter(l => l.m === mp)
+    const lines = mp === 'all' ? periodLines : periodLines.filter(l => marketplaceOf(l) === mp)
     return lines.length ? computeStore(lines) : null
   }, [periodLines, mp])
   const insights = useMemo(() => (stats ? quickInsights(stats) : []), [stats])
@@ -212,7 +212,9 @@ export default function StorePerformancePage() {
           {store.files.length > 0 ? (
             <p className="text-xs text-ink-muted">
               <span className="font-semibold text-ink">{store.files.length} file</span>
-              {' · '}{fmtNum(store.lines.length)} baris{stats ? ` · ${stats.months.join(', ')}` : ''}
+              {' · '}{fmtNum(store.lines.length)} baris
+              {monthOptions.length > 1 && <span> · data {monthLabel(monthOptions[0])}–{monthLabel(monthOptions.at(-1))}</span>}
+              {store.dupRemoved > 0 && <span className="text-amber-400"> · {fmtNum(store.dupRemoved)} duplikat digabung</span>}
             </p>
           ) : (
             <p className="text-xs text-ink-faint">Belum ada data terimport</p>

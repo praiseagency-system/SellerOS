@@ -1,6 +1,15 @@
 // Analitik pure dari baris ternormalisasi (lihat storeIngest.js untuk bentuk baris).
 // Hanya baris valid (l.ok) yang dihitung untuk GMV/orders.
 
+// Marketplace kanonik untuk pengelompokan/filter. TikTok Shop & Tokopedia satu
+// platform sejak merger → digabung "TikTok" (kolom Purchase Channel `l.m` yang
+// membedakannya tetap tersimpan untuk rincian channel). Shopee tetap sendiri.
+// Data lama tanpa `l.src` diinfer dari `l.m`.
+export function marketplaceOf(l) {
+  const src = l.src || ((l.m || '').toLowerCase().includes('shopee') ? 'shopee' : 'tiktok')
+  return src === 'shopee' ? 'Shopee' : 'TikTok'
+}
+
 function aggBucket(lines, keyFn) {
   const map = new Map()
   for (const l of lines) {
@@ -28,8 +37,8 @@ export function computeStore(lines) {
     cancelRate: (orders + cancelledOrders) ? (cancelledOrders / (orders + cancelledOrders)) * 100 : 0,
   }
 
-  // Marketplace
-  const mpMap = aggBucket(valid, l => l.m)
+  // Marketplace (kanonik: TikTok+Tokopedia digabung, lihat marketplaceOf)
+  const mpMap = aggBucket(valid, marketplaceOf)
   const marketplaces = [...mpMap.entries()].map(([name, b]) => ({
     name, gmv: b.gmv, units: b.units, orders: b.orderSet.size, buyers: b.buyerSet.size,
     aov: b.orderSet.size ? b.gmv / b.orderSet.size : 0,
