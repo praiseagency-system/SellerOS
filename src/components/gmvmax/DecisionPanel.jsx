@@ -98,6 +98,7 @@ export default function DecisionPanel({ onExperiment }) {
   const s5 = s.skills.GMVMAX_SKILL_05?.payload
   const s6 = s.skills.GMVMAX_SKILL_06?.payload
   const s7 = s.skills.GMVMAX_SKILL_07?.payload
+  const s8 = s.skills.GMVMAX_SKILL_08?.payload
   const s9 = s.skills.GMVMAX_SKILL_09?.payload
   const audit = s2?.attribution_audit || {}
   const dq = s.dataQuality || {}
@@ -303,6 +304,19 @@ export default function DecisionPanel({ onExperiment }) {
           {s7.supply_health.top_affiliate && (
             <p className="text-[11px] text-ink-muted mt-2">Afiliasi teratas: <b className="text-ink">{s7.supply_health.top_affiliate}</b>{s7.supply_health.top_affiliate_share != null ? ` (${(s7.supply_health.top_affiliate_share * 100).toFixed(0)}% revenue)` : ''} · learning {s7.supply_health.learning} · antre {s7.supply_health.in_queue}</p>
           )}
+        </div>
+      )}
+
+      {/* LIVE GMV Max (Skill 8) — kerangka, data sesi belum tersedia */}
+      {s8 && (
+        <div className="rounded-xl border border-line/15 bg-fill/[0.03] p-3 flex items-start gap-2.5 text-sm">
+          <span className="text-[11px] px-2 py-0.5 rounded-md text-ink-muted bg-fill/10 mt-0.5">LIVE · {s8.readiness}</span>
+          <div className="flex-1">
+            <span className="text-ink font-medium">Pertumbuhan LIVE (Skill 8)</span>
+            <p className="text-[11px] text-ink-muted mt-0.5">
+              {s8.live_activity_detected ? 'Aktivitas LIVE terdeteksi, tapi ' : ''}data sesi LIVE (host/viewers/durasi/atribusi-sesi) belum tersedia → analisis LIVE belum bisa. Tak menyimpulkan LIVE dari data campaign store-wide. Kumpulkan data sesi dulu.
+            </p>
+          </div>
         </div>
       )}
 

@@ -13,6 +13,7 @@ import { runSkill4 } from './skill4.mjs'
 import { runSkill5 } from './skill5.mjs'
 import { runSkill6 } from './skill6.mjs'
 import { runSkill7 } from './skill7.mjs'
+import { runSkill8 } from './skill8.mjs'
 import { runSkill9 } from './skill9.mjs'
 import { loadDecisionInputs, redactError } from './loader.mjs'
 import { ruleMetaFor } from './ruleRegistry.mjs'
@@ -83,12 +84,13 @@ export async function generateDecisionIntelligence({ workspaceId, storeId, date,
   const skill5 = runSkill5({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, generatedAt: gen })
   const skill6 = runSkill6({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
   const skill7 = runSkill7({ dailyFacts: daily, skill2Output: skill2, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
+  const skill8 = runSkill8({ dailyFacts: daily, skill2Output: skill2, campaignSettings: inputs.campaignSettings, creatives: inputs.canonicalData?.creatives, generatedAt: gen })
   const skill9 = runSkill9({ skill1Output: skill1, skill2Output: skill2, skill3Output: skill3, skill4Output: skill4, generatedAt: gen })
 
-  const byNum = { 1: skill1, 2: skill2, 3: skill3, 4: skill4, 5: skill5, 6: skill6, 7: skill7, 9: skill9 }
+  const byNum = { 1: skill1, 2: skill2, 3: skill3, 4: skill4, 5: skill5, 6: skill6, 7: skill7, 8: skill8, 9: skill9 }
   const envelopeNums = new Set([1, 2])
   const errors = []
-  for (const n of [1, 2, 3, 4, 5, 6, 7, 9]) {
+  for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
     const errs = validateDecisionOutput(byNum[n], { envelope: envelopeNums.has(n) })
     for (const e of errs) errors.push(`SKILL_${n}: ${e}`)
   }
@@ -99,7 +101,7 @@ export async function generateDecisionIntelligence({ workspaceId, storeId, date,
     workspace_id: workspaceId, store_id: storeId, date, generated_at: gen,
     source_snapshot_ids: inputs.source_snapshot_ids, missing_inputs: inputs.missing_inputs,
     daily_signature: daily.deterministic_signature,
-    daily, skill1, skill2, skill3, skill4, skill5, skill6, skill7, skill9,
+    daily, skill1, skill2, skill3, skill4, skill5, skill6, skill7, skill8, skill9,
     requested_skills: skills, validation, persisted: false, execution_allowed: false,
   }
 
@@ -125,7 +127,7 @@ async function persistOutputs({ sb, result, gen }) {
   const { error: fe } = await sb.from('gmvmax_daily_facts').upsert(factRow, { onConflict: 'workspace_id,store_id,fact_date,deterministic_signature' })
   if (fe) throw new Error(`PERSIST_ERROR: daily_facts — ${redactError(fe)}`)
 
-  const rows = [result.skill1, result.skill2, result.skill3, result.skill4, result.skill5, result.skill6, result.skill7, result.skill9].map(o => skillRow(o, result, gen))
+  const rows = [result.skill1, result.skill2, result.skill3, result.skill4, result.skill5, result.skill6, result.skill7, result.skill8, result.skill9].map(o => skillRow(o, result, gen))
   const { error: se } = await sb.from('gmvmax_skill_outputs').upsert(rows, { onConflict: 'workspace_id,store_id,output_date,skill_code,scope_type,scope_id,deterministic_signature' })
   if (se) throw new Error(`PERSIST_ERROR: skill_outputs — ${redactError(se)}`)
   return true
