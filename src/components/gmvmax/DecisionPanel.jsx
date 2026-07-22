@@ -96,6 +96,7 @@ export default function DecisionPanel({ onExperiment }) {
   const s1 = s.skills.GMVMAX_SKILL_01?.payload, s2 = s.skills.GMVMAX_SKILL_02?.payload
   const s3 = s.skills.GMVMAX_SKILL_03?.payload, s4 = s.skills.GMVMAX_SKILL_04?.payload
   const s5 = s.skills.GMVMAX_SKILL_05?.payload
+  const s6 = s.skills.GMVMAX_SKILL_06?.payload
   const s9 = s.skills.GMVMAX_SKILL_09?.payload
   const audit = s2?.attribution_audit || {}
   const dq = s.dataQuality || {}
@@ -265,6 +266,24 @@ export default function DecisionPanel({ onExperiment }) {
             ))}
           </div>
           <p className="text-[11px] text-ink-faint mt-1.5">Belum ada usulan nilai — formula &amp; ambang bisnis (min sample, cooldown, Target ROI) belum disetujui. Tak ada eksekusi.</p>
+        </div>
+      )}
+
+      {/* Alokasi Modal (Skill 6) — peringkat observasional, ter-gate */}
+      {!!(s6?.recommendations || []).length && (
+        <div>
+          <H sub={`— ${s6.recommendation_count} campaign · peringkat by ROI (observasional)`}>Alokasi Modal (Skill 6)</H>
+          <div className="rounded-xl border border-line/20 bg-surface overflow-hidden">
+            {s6.recommendations.slice(0, 10).map((r, i) => (
+              <div key={r.scope_id || i} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${i > 0 ? 'border-t border-line/10' : ''}`}>
+                <span className="text-[11px] text-ink-faint w-6 text-right">{r.rank != null ? `#${r.rank}` : '—'}</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-md text-ink-muted bg-fill/10">{r.classification}</span>
+                <span className="text-ink flex-1 truncate">{r.campaign_name || r.scope_id}</span>
+                <span className="text-xs text-ink-muted whitespace-nowrap">ROI {r.observed?.roi != null ? `${Number(r.observed.roi).toFixed(1)}x` : '—'} · budget {r.current_budget != null ? `Rp${Number(r.current_budget).toLocaleString('id-ID')}` : '—'}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-ink-faint mt-1.5">Semua <b>HOLD</b> — usulan naik/turun budget disabled sampai bobot skor, cap harian &amp; break-even disetujui. Peringkat = observasional (by ROI), bukan keputusan alokasi.</p>
         </div>
       )}
 
