@@ -39,9 +39,28 @@ const CREATIVE_COLS =
 const PAGE = 1000
 const CONCURRENCY = 8 // permintaan paralel maksimum ke Supabase
 
+// Metadata import untuk sekumpulan id (APA ADANYA — TANPA filter is_current).
+// Dipakai saat pemanggil sudah menentukan id target (mis. neededIds dari context).
+// Menyaring id-eksplisit lewat listImports (yang kini filter is_current) BERBAHAYA:
+// bila versi current berubah di belakang halaman terbuka (mis. commit harian bikin
+// v2), id lama (v1) yang masih dipegang halaman hilang dari daftar → creatives
+// kosong → dashboard blank walau data ada. Resolusi by-id lolos dari masalah itu.
+async function importsByIds(ids) {
+  const wsId = getCurrentWorkspaceId()
+  if (!wsId || !ids?.length) return []
+  const out = []
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase
+      .from('gmvmax_imports').select('*')
+      .eq('workspace_id', wsId).in('id', ids.slice(i, i + 100))
+    if (error) throw error
+    out.push(...(data || []))
+  }
+  return out
+}
+
 export async function loadCreatives(importIds = null) {
-  const imports = await listImports()
-  const targets = importIds ? imports.filter(i => importIds.includes(i.id)) : imports
+  const targets = importIds ? await importsByIds(importIds) : await listImports()
   if (targets.length === 0) return []
 
   // Ambil creatives PER IMPORT, PARALEL (konkuren terbatas) — jauh lebih cepat
