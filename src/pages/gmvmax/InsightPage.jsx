@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, fmtRpC, fmtRoasX, tiktokVideoUrl, VideoIdLink } from '../../components/gmvmax/ui'
+import DecisionPanel from '../../components/gmvmax/DecisionPanel'
 
 const TABS = [
+  { id: 'di', label: 'Decision Intelligence' },
   { id: 'insight', label: 'Insight' },
   { id: 'plan', label: 'Action Plan' },
   { id: 'framework', label: 'Winning Framework' },
@@ -35,6 +37,7 @@ export default function InsightPage({ onOpenUpload }) {
         ))}
       </div>
 
+      {tab === 'di' && <DecisionPanel />}
       {tab === 'insight' && <InsightCards cards={insights.cards} />}
       {tab === 'plan' && <ActionPlan steps={insights.plan} />}
       {tab === 'framework' && <Framework items={insights.framework} />}
