@@ -54,6 +54,9 @@ const MISS_LABEL = {
 const missLabel = (m) => MISS_LABEL[m] || String(m).replace(/_/g, ' ')
 
 const DECISION_READY = { OBSERVE_ONLY: 'hanya untuk observasi', SCALE_READY: 'siap untuk keputusan scale', DECISION_READY: 'siap untuk keputusan' }
+// Skill 5 — rekomendasi setelan optimasi per campaign.
+const OPT = { HOLD: 'text-emerald-400 bg-emerald-500/10', OBSERVE: 'text-amber-400 bg-amber-500/10', DO_NOT_CHANGE: 'text-red-400 bg-red-500/10' }
+const OPT_LABEL = { HOLD: 'Pertahankan', OBSERVE: 'Amati', DO_NOT_CHANGE: 'Jangan ubah' }
 
 const Card = ({ children, className = '' }) => <div className={`rounded-xl border border-line/20 bg-surface p-4 ${className}`}>{children}</div>
 const H = ({ children, sub }) => <div className="mb-3"><span className="text-sm font-semibold text-ink-strong">{children}</span>{sub && <span className="text-xs text-ink-muted font-normal"> {sub}</span>}</div>
@@ -92,6 +95,10 @@ export default function DecisionPanel({ onExperiment }) {
 
   const s1 = s.skills.GMVMAX_SKILL_01?.payload, s2 = s.skills.GMVMAX_SKILL_02?.payload
   const s3 = s.skills.GMVMAX_SKILL_03?.payload, s4 = s.skills.GMVMAX_SKILL_04?.payload
+  const s5 = s.skills.GMVMAX_SKILL_05?.payload
+  const s6 = s.skills.GMVMAX_SKILL_06?.payload
+  const s7 = s.skills.GMVMAX_SKILL_07?.payload
+  const s8 = s.skills.GMVMAX_SKILL_08?.payload
   const s9 = s.skills.GMVMAX_SKILL_09?.payload
   const audit = s2?.attribution_audit || {}
   const dq = s.dataQuality || {}
@@ -246,6 +253,72 @@ export default function DecisionPanel({ onExperiment }) {
           </div>
         )}
       </div>
+
+      {/* Setelan Optimasi (Skill 5) — per campaign, ter-gate */}
+      {!!(s5?.recommendations || []).length && (
+        <div>
+          <H sub={`— ${s5.recommendation_count} campaign · perlu persetujuan`}>Setelan Optimasi (Skill 5)</H>
+          <div className="rounded-xl border border-line/20 bg-surface overflow-hidden">
+            {s5.recommendations.slice(0, 10).map((r, i) => (
+              <div key={r.campaign_id || i} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${i > 0 ? 'border-t border-line/10' : ''}`}>
+                <span className={`text-[11px] px-2 py-0.5 rounded-md ${OPT[r.recommendation] || 'text-ink-muted bg-fill/10'}`}>{OPT_LABEL[r.recommendation] || r.recommendation}</span>
+                <span className="text-ink flex-1 truncate">{r.campaign_name || r.campaign_id}</span>
+                <span className="text-xs text-ink-muted whitespace-nowrap">Target ROI {r.current_target_roi != null ? `${r.current_target_roi}x` : '—'}{r.current_mode ? ` · ${r.current_mode}` : ''}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-ink-faint mt-1.5">Belum ada usulan nilai — formula &amp; ambang bisnis (min sample, cooldown, Target ROI) belum disetujui. Tak ada eksekusi.</p>
+        </div>
+      )}
+
+      {/* Alokasi Modal (Skill 6) — peringkat observasional, ter-gate */}
+      {!!(s6?.recommendations || []).length && (
+        <div>
+          <H sub={`— ${s6.recommendation_count} campaign · peringkat by ROI (observasional)`}>Alokasi Modal (Skill 6)</H>
+          <div className="rounded-xl border border-line/20 bg-surface overflow-hidden">
+            {s6.recommendations.slice(0, 10).map((r, i) => (
+              <div key={r.scope_id || i} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${i > 0 ? 'border-t border-line/10' : ''}`}>
+                <span className="text-[11px] text-ink-faint w-6 text-right">{r.rank != null ? `#${r.rank}` : '—'}</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-md text-ink-muted bg-fill/10">{r.classification}</span>
+                <span className="text-ink flex-1 truncate">{r.campaign_name || r.scope_id}</span>
+                <span className="text-xs text-ink-muted whitespace-nowrap">ROI {r.observed?.roi != null ? `${Number(r.observed.roi).toFixed(1)}x` : '—'} · budget {r.current_budget != null ? `Rp${Number(r.current_budget).toLocaleString('id-ID')}` : '—'}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-ink-faint mt-1.5">Semua <b>HOLD</b> — usulan naik/turun budget disabled sampai bobot skor, cap harian &amp; break-even disetujui. Peringkat = observasional (by ROI), bukan keputusan alokasi.</p>
+        </div>
+      )}
+
+      {/* Pasokan Kreatif & Afiliasi (Skill 7) */}
+      {s7?.supply_health && (
+        <div>
+          <H sub="— fakta supply-health (ambang winner/fatigue belum disetujui)">Pasokan Kreatif &amp; Afiliasi (Skill 7)</H>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[['Kreatif', s7.supply_health.creative_count], ['Delivering', s7.supply_health.delivering], ['Afiliasi', s7.supply_health.affiliate_count], ['Produk', s7.supply_health.product_count]].map(([l, v]) => (
+              <div key={l} className="rounded-lg border border-line/15 bg-fill/[0.03] p-3">
+                <div className="text-[11px] text-ink-faint">{l}</div>
+                <div className="text-lg font-bold text-ink-strong">{v ?? '—'}</div>
+              </div>
+            ))}
+          </div>
+          {s7.supply_health.top_affiliate && (
+            <p className="text-[11px] text-ink-muted mt-2">Afiliasi teratas: <b className="text-ink">{s7.supply_health.top_affiliate}</b>{s7.supply_health.top_affiliate_share != null ? ` (${(s7.supply_health.top_affiliate_share * 100).toFixed(0)}% revenue)` : ''} · learning {s7.supply_health.learning} · antre {s7.supply_health.in_queue}</p>
+          )}
+        </div>
+      )}
+
+      {/* LIVE GMV Max (Skill 8) — kerangka, data sesi belum tersedia */}
+      {s8 && (
+        <div className="rounded-xl border border-line/15 bg-fill/[0.03] p-3 flex items-start gap-2.5 text-sm">
+          <span className="text-[11px] px-2 py-0.5 rounded-md text-ink-muted bg-fill/10 mt-0.5">LIVE · {s8.readiness}</span>
+          <div className="flex-1">
+            <span className="text-ink font-medium">Pertumbuhan LIVE (Skill 8)</span>
+            <p className="text-[11px] text-ink-muted mt-0.5">
+              {s8.live_activity_detected ? 'Aktivitas LIVE terdeteksi, tapi ' : ''}data sesi LIVE (host/viewers/durasi/atribusi-sesi) belum tersedia → analisis LIVE belum bisa. Tak menyimpulkan LIVE dari data campaign store-wide. Kumpulkan data sesi dulu.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Detail teknis — disembunyikan */}
       <details className="group">
