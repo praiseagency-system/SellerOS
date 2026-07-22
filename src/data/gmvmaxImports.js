@@ -8,7 +8,12 @@ import { getCurrentWorkspaceId } from '../utils/workspace'
 
 const CHUNK = 500 // batasi ukuran payload insert per batch
 
-// Semua import di workspace aktif, terbaru dulu (tanpa creatives).
+// Semua import di workspace aktif, terbaru dulu (tanpa creatives). HANYA versi
+// current: sejak versioning (migrasi 0029) satu (workspace, snapshot_date) bisa
+// punya banyak baris (versi lama di-supersede, TIDAK dihapus). Tanpa filter
+// is_current, rollup menjumlah creatives dari SEMUA versi → dobel-hitung
+// cost/revenue/orders. Partial-unique (ws,date) WHERE is_current menjamin ≤1
+// current per tanggal. Baris pra-0029 & jalur writer lama default is_current=true.
 export async function listImports() {
   const wsId = getCurrentWorkspaceId()
   if (!wsId) return []
@@ -16,6 +21,7 @@ export async function listImports() {
     .from('gmvmax_imports')
     .select('*')
     .eq('workspace_id', wsId)
+    .eq('is_current', true)
     .order('snapshot_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
   if (error) throw error

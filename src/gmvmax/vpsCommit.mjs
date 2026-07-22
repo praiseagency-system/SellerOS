@@ -20,12 +20,13 @@ import { safeLog, registerSecret } from './runtime/redact.mjs'
 import { TikTokMcpProvider } from './providers/tiktokMcp.mjs'
 import { loadMcpTokenFromSupabase } from './providers/supabaseTokenStore.mjs'
 import { runSync } from './engine.mjs'
-import { writeSnapshot } from './writer.mjs'
+import { writeSnapshot, writeSnapshotVersioned } from './writer.mjs'
 import { loadOldSnapshot, compareParity } from './parity.mjs'
 import { acquireLock, releaseLock } from './lock.mjs'
 import { makeRunId } from './reporter.mjs'
 import { findDuplicateIdentities } from './identity.mjs'
 import { findAdvertiser, eligibleAdvertisers, groupByWorkspace } from './advertisers.mjs'
+import { advertiserTargetsForDate } from './sourceModel.mjs'
 import { loadEligibleConnections } from './connections.mjs'
 import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
 import { generateAndPersistDecisions } from './decisions.mjs'
@@ -104,9 +105,14 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
     } catch (e) { safeLog({ event: 'PARITY_READ_FAILED', workspace_id: workspaceId, message: e.message }, console.error) }
     safeLog({ event: 'PRE_COMMIT_PARITY', workspace_id: workspaceId, status: parity.status, row_mismatch: mismatch(parity), old_import_id: parity.old_import_id ?? null })
 
-    // 3) COMMIT atomik (writeSnapshot commit:true) atau dry-run (sb:null → tak menulis).
-    const w = await writeSnapshot({ sb: dryRun ? null : sb, workspaceId, date, name: labelFor(date), result, commit: !dryRun })
-    safeLog({ event: dryRun ? 'COMMIT_DRYRUN' : 'COMMIT_WRITTEN', workspace_id: workspaceId, advertiser_ids: advIds, ...w, run_id: runId })
+    // 3) COMMIT atomik atau dry-run (sb:null → tak menulis).
+    // CUTOVER opt-in: GMVMAX_VERSIONED_WRITER=1 → RPC versioned (no-op idempotency +
+    // versioning + lineage). Default: writer lama (delete+insert) — perilaku status quo.
+    const useVersioned = process.env.GMVMAX_VERSIONED_WRITER === '1'
+    const w = useVersioned
+      ? await writeSnapshotVersioned({ sb: dryRun ? null : sb, workspaceId, date, name: labelFor(date), result, commit: !dryRun, runId, writerKind: 'COMMIT' })
+      : await writeSnapshot({ sb: dryRun ? null : sb, workspaceId, date, name: labelFor(date), result, commit: !dryRun })
+    safeLog({ event: dryRun ? 'COMMIT_DRYRUN' : 'COMMIT_WRITTEN', workspace_id: workspaceId, advertiser_ids: advIds, writer: useVersioned ? 'versioned' : 'legacy', ...w, run_id: runId })
 
     // 4) Setting campaign (NON-FATAL) tiap advertiser — hanya saat commit.
     if (!dryRun) {
@@ -172,6 +178,16 @@ async function recordSyncRun(sb, r, date) {
   }
 }
 
+// Muat target date-effective dari gmvmax_tenant_advertisers (SEMUA baris — resolver
+// perlu yang inactive+effective_to utk hitung jendela). HANYA advertiser aktif pada
+// `date` dikembalikan; 7214 pasca-migrasi jadi historical (dikeluarkan). READ-ONLY.
+async function loadDateEffectiveTargets(sb, date) {
+  const { data, error } = await sb.from('gmvmax_tenant_advertisers')
+    .select('workspace_id,store_id,advertiser_id,advertiser_role,is_active,metadata,priority')
+  if (error) throw new Error(`TENANT_ADVERTISERS_LOAD_FAILED: ${error.message}`)
+  return advertiserTargetsForDate(data || [], date)
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const dryRun = args['dry-run'] === true
@@ -199,6 +215,7 @@ async function main() {
   let targets
   if (args.advertiser) targets = [findAdvertiser(args.advertiser)]
   else if (tenantSource === 'connections') targets = await loadEligibleConnections(sb)
+  else if (tenantSource === 'membership') targets = await loadDateEffectiveTargets(sb, date) // date-effective (7214 out pasca-migrasi)
   else targets = eligibleAdvertisers()
 
   // Kelompokkan per workspace: >1 advertiser/workspace → DIJUMLAHKAN jadi 1 snapshot

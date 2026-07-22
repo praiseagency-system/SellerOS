@@ -125,9 +125,11 @@ export function supabaseAdapter(sb) {
   const PAGE = 1000
   return {
     async getImport(ws, date) {
+      // Versi current saja (0029): filter is_current agar generate decision membaca
+      // snapshot kanonik yang benar, bukan versi lama yang sudah di-supersede.
       const { data, error } = await sb.from('gmvmax_imports')
         .select('id,currency,totals,created_at,name,source_filename,snapshot_date')
-        .eq('workspace_id', ws).eq('snapshot_date', date)
+        .eq('workspace_id', ws).eq('snapshot_date', date).eq('is_current', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       if (error) throw error
       return data || null
