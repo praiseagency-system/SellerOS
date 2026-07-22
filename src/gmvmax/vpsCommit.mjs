@@ -30,6 +30,7 @@ import { advertiserTargetsForDate } from './sourceModel.mjs'
 import { loadEligibleConnections } from './connections.mjs'
 import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
 import { generateAndPersistDecisions } from './decisions.mjs'
+import { evaluateExperiments } from './experimentEval.mjs'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const labelFor = (date) => { const [y, m, d] = date.split('-'); return `${+d} ${MONTHS[+m - 1]} ${y} (API)` }
@@ -136,6 +137,18 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
         safeLog({ event: 'GEN_DECISIONS_OK', workspace_id: workspaceId, snapshot_date: date, persisted: gd.persisted, validation_ok: gd.validation_ok, missing_inputs: gd.missing_inputs })
       } catch (e) {
         safeLog({ event: 'GEN_DECISIONS_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
+      }
+    }
+
+    // 6) Evaluasi eksperimen (#3b-server, NON-FATAL, flag). Hitung checkpoint
+    //    H+1/H+3/H+7 eksperimen RUNNING dari time-series kanonik. Default OFF
+    //    sampai GMVMAX_EVAL_EXPERIMENTS=1. Tak menyentuh kanonik.
+    if (!dryRun && process.env.GMVMAX_EVAL_EXPERIMENTS === '1') {
+      try {
+        const r = await evaluateExperiments({ sb, workspaceId })
+        safeLog({ event: 'EXP_EVAL_OK', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, absent: r.absent === true })
+      } catch (e) {
+        safeLog({ event: 'EXP_EVAL_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
       }
     }
 

@@ -59,13 +59,51 @@ export async function loadDecision(date) {
   if (df?.length) dailyFacts = df[0]
 
   const s9 = skills['GMVMAX_SKILL_09']
+  const anyRow = s9 || rows[0]
   return {
     available: true, empty: false, date,
     skills, dailyFacts,
     generatedAt: s9?.generated_at || rows[0].generated_at,
     expiresAt: s9?.expires_at || null,
+    // status triase keputusan (per output_date; kolom review sama di semua baris)
+    review: {
+      reviewed_at: anyRow.reviewed_at || null,
+      dismissed_at: anyRow.dismissed_at || null,
+      snoozed_until: anyRow.snoozed_until || null,
+    },
     // ringkasan kualitas data (dari Skill 1 blueprint bila ada)
     dataQuality: skills['GMVMAX_SKILL_01']?.payload?.blueprint?.DATA_QUALITY || dailyFacts?.data_quality || null,
     executionAllowed: false,
   }
 }
+
+// ── Triase keputusan (#3a) — WRITE hanya kolom review (RLS 0032). Menandai SEMUA
+// baris skill untuk (workspace, output_date) agar status konsisten. TIDAK menyentuh
+// payload/skill/signature (grant kolom membatasi). Tetap tanpa eksekusi apa pun.
+async function updateReview(date, patch) {
+  const wsId = getCurrentWorkspaceId()
+  if (!wsId || !date) throw new Error('workspace/tanggal tak valid')
+  const { error } = await supabase
+    .from('gmvmax_skill_outputs')
+    .update(patch)
+    .eq('workspace_id', wsId)
+    .eq('output_date', date)
+  if (error) throw error
+  return { ...patch }
+}
+
+// Sudah ditinjau (set reviewed_at, bersihkan dismiss/snooze).
+export const markReviewed = (date) =>
+  updateReview(date, { reviewed_at: new Date().toISOString(), dismissed_at: null, snoozed_until: null })
+
+// Diabaikan (dismiss).
+export const dismissDecision = (date) =>
+  updateReview(date, { dismissed_at: new Date().toISOString() })
+
+// Ditunda sampai `untilISO` (mis. +1/+3 hari).
+export const snoozeDecision = (date, untilISO) =>
+  updateReview(date, { snoozed_until: untilISO, reviewed_at: null, dismissed_at: null })
+
+// Batalkan semua status triase.
+export const clearReview = (date) =>
+  updateReview(date, { reviewed_at: null, dismissed_at: null, snoozed_until: null })
