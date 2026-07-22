@@ -54,6 +54,9 @@ const MISS_LABEL = {
 const missLabel = (m) => MISS_LABEL[m] || String(m).replace(/_/g, ' ')
 
 const DECISION_READY = { OBSERVE_ONLY: 'hanya untuk observasi', SCALE_READY: 'siap untuk keputusan scale', DECISION_READY: 'siap untuk keputusan' }
+// Skill 5 — rekomendasi setelan optimasi per campaign.
+const OPT = { HOLD: 'text-emerald-400 bg-emerald-500/10', OBSERVE: 'text-amber-400 bg-amber-500/10', DO_NOT_CHANGE: 'text-red-400 bg-red-500/10' }
+const OPT_LABEL = { HOLD: 'Pertahankan', OBSERVE: 'Amati', DO_NOT_CHANGE: 'Jangan ubah' }
 
 const Card = ({ children, className = '' }) => <div className={`rounded-xl border border-line/20 bg-surface p-4 ${className}`}>{children}</div>
 const H = ({ children, sub }) => <div className="mb-3"><span className="text-sm font-semibold text-ink-strong">{children}</span>{sub && <span className="text-xs text-ink-muted font-normal"> {sub}</span>}</div>
@@ -92,6 +95,7 @@ export default function DecisionPanel({ onExperiment }) {
 
   const s1 = s.skills.GMVMAX_SKILL_01?.payload, s2 = s.skills.GMVMAX_SKILL_02?.payload
   const s3 = s.skills.GMVMAX_SKILL_03?.payload, s4 = s.skills.GMVMAX_SKILL_04?.payload
+  const s5 = s.skills.GMVMAX_SKILL_05?.payload
   const s9 = s.skills.GMVMAX_SKILL_09?.payload
   const audit = s2?.attribution_audit || {}
   const dq = s.dataQuality || {}
@@ -246,6 +250,23 @@ export default function DecisionPanel({ onExperiment }) {
           </div>
         )}
       </div>
+
+      {/* Setelan Optimasi (Skill 5) — per campaign, ter-gate */}
+      {!!(s5?.recommendations || []).length && (
+        <div>
+          <H sub={`— ${s5.recommendation_count} campaign · perlu persetujuan`}>Setelan Optimasi (Skill 5)</H>
+          <div className="rounded-xl border border-line/20 bg-surface overflow-hidden">
+            {s5.recommendations.slice(0, 10).map((r, i) => (
+              <div key={r.campaign_id || i} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${i > 0 ? 'border-t border-line/10' : ''}`}>
+                <span className={`text-[11px] px-2 py-0.5 rounded-md ${OPT[r.recommendation] || 'text-ink-muted bg-fill/10'}`}>{OPT_LABEL[r.recommendation] || r.recommendation}</span>
+                <span className="text-ink flex-1 truncate">{r.campaign_name || r.campaign_id}</span>
+                <span className="text-xs text-ink-muted whitespace-nowrap">Target ROI {r.current_target_roi != null ? `${r.current_target_roi}x` : '—'}{r.current_mode ? ` · ${r.current_mode}` : ''}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-ink-faint mt-1.5">Belum ada usulan nilai — formula &amp; ambang bisnis (min sample, cooldown, Target ROI) belum disetujui. Tak ada eksekusi.</p>
+        </div>
+      )}
 
       {/* Detail teknis — disembunyikan */}
       <details className="group">
