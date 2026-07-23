@@ -16,9 +16,16 @@ import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
 import {
-  fmt, marginCls, fmtPct, itemMargin, voucherEffect, voucherList,
+  fmt, marginCls, fmtPct, itemMargin, itemCalc, voucherEffect, voucherList,
   APPROVAL, approvalStatusOf, approvalSummary,
 } from '../utils/campaignPricing'
+
+// Tanggal + jam untuk riwayat persetujuan.
+function fmtWhen(iso) {
+  if (!iso) return ''
+  const d = new Date(iso); if (isNaN(d)) return ''
+  return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 const PLATFORM_CLS = {
@@ -267,22 +274,47 @@ export default function CampaignPanel({ products }) {
                       <p className="text-xs text-ink-faint py-1">Belum ada varian. Klik edit untuk menambah.</p>
                     ) : (c.items || []).map((it, i) => {
                       const m = itemMargin(it, productMap)
+                      const calc = itemCalc(it, productMap)
                       const gone = !productMap[it.productId]
                       const cvs = voucherList(c.voucherConfig)
+                      const isFirst = i === (c.items || []).findIndex(x => x.productId === it.productId)
+                      const plog = isFirst ? (c.approvalLog || []).filter(e => e.productId === it.productId).slice().reverse() : []
+                      const a = c.approvals?.[it.productId]
                       return (
                         <div key={i}>
                           <div className="flex items-center gap-3 text-sm">
                             <div className="min-w-0 flex-1">
                               <p className="text-ink-strong truncate text-[13px]">{it.name || '(varian)'}{gone && <span className="text-ink-faint"> · produk dihapus</span>}</p>
-                              <p className="text-[11px] text-ink-faint truncate">{it.sku || 'tanpa SKU'}</p>
+                              <p className="text-[11px] text-ink-faint truncate">
+                                {it.sku || 'tanpa SKU'}
+                                {calc && +it.price > 0 && <> · admin {calc.adminRate.toFixed(1)}% ({fmt(calc.adminCut)})</>}
+                              </p>
                             </div>
-                            {i === (c.items || []).findIndex(x => x.productId === it.productId) && (() => {
+                            {isFirst && (() => {
                               const st = approvalStatusOf(c.approvals, it.productId)
-                              return <span title={c.approvals?.[it.productId]?.note || undefined} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
+                              return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
                             })()}
-                            <span className="text-[13px] font-semibold text-ink-strong tabular-nums flex-shrink-0">{fmt(+it.price)}</span>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-[9px] text-ink-faint leading-none mb-0.5">Harga campaign</p>
+                              <span className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(+it.price)}</span>
+                            </div>
                             <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
                           </div>
+                          {/* Riwayat persetujuan produk (siapa & kapan) */}
+                          {isFirst && (plog.length > 0 || (a?.at && a.status !== 'pending')) && (
+                            <div className="mt-0.5 mb-1 pl-0 space-y-0.5">
+                              {plog.length > 0
+                                ? plog.slice(0, 4).map((e, k) => (
+                                    <p key={k} className="text-[10px] text-ink-faint flex items-center gap-1.5">
+                                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.status === 'approved' ? 'bg-green-400' : e.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                                      <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
+                                      <span className="truncate">oleh {e.byName ? `${e.byName} (${e.by})` : (e.by || '—')}{e.note ? ` · "${e.note}"` : ''}</span>
+                                      <span className="ml-auto flex-shrink-0">{fmtWhen(e.at)}</span>
+                                    </p>
+                                  ))
+                                : <p className="text-[10px] text-ink-faint">{APPROVAL[a.status]?.label} · {fmtWhen(a.at)}{a.note ? ` · "${a.note}"` : ''}</p>}
+                            </div>
+                          )}
                           {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={c.voucherConfig?.kind || 'normal'} showHeader={i === 0} />}
                         </div>
                       )
@@ -652,6 +684,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                   <div className="space-y-1.5">
                     {its.map((it, vi) => {
                       const m = itemMargin(it, productMap)
+                      const calc = itemCalc(it, productMap)
                       const v = p ? productVariations(p)[it.varIdx] : null
                       const normal = v ? (+v.jual || 0) : 0
                       return (
@@ -659,7 +692,10 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                           <div className="flex items-center gap-3">
                             <div className="min-w-0 flex-1">
                               <p className="text-[13px] text-ink truncate">{v?.name?.trim() || it.name || `Varian ${it.varIdx + 1}`}</p>
-                              <p className="text-[11px] text-ink-faint truncate">{it.sku || 'tanpa SKU'}{normal ? ` · normal ${fmt(normal)}` : ''}</p>
+                              <p className="text-[11px] text-ink-faint truncate">
+                                {it.sku || 'tanpa SKU'}{normal ? ` · normal ${fmt(normal)}` : ''}
+                                {calc && +it.price > 0 && <> · admin {calc.adminRate.toFixed(1)}% ({fmt(calc.adminCut)})</>}
+                              </p>
                             </div>
                             <div className="relative flex items-center flex-shrink-0 w-32">
                               <span className="absolute left-2.5 text-[11px] text-ink-faint">Rp</span>
@@ -853,7 +889,7 @@ function VoucherLines({ item, productMap, vouchers, kind, showHeader }) {
       {showHeader && (
         <div className="grid gap-2 text-[10px] text-ink-faint pb-1" style={{ gridTemplateColumns: cols }}>
           <span>Voucher</span>
-          <span>Beli untuk dapat</span>
+          <span>Minimal Qty</span>
           <span>Harga customer</span>
           {cofunded && <span>Beban penjual</span>}
           {cofunded && <span className="text-right">Margin</span>}
