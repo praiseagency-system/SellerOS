@@ -11,9 +11,9 @@ export async function getCampaignByToken(token) {
 }
 
 // Set persetujuan satu produk. Mengembalikan { approvals, approvalLog } terbaru.
-export async function submitApproval(token, productId, status, note) {
+export async function submitApproval(token, productId, status, note, byName) {
   const { data, error } = await supabase.rpc('set_product_approval', {
-    p_token: token, p_product_id: productId, p_status: status, p_note: note || '',
+    p_token: token, p_product_id: productId, p_status: status, p_note: note || '', p_by_name: byName || '',
   })
   if (error) throw error
   return data
