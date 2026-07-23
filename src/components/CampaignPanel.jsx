@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
-  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw,
+  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
 } from 'lucide-react'
 
 // Normalisasi URL untuk href (tambah https:// bila skema tak ada).
@@ -11,7 +11,7 @@ function hrefOf(url) {
   return /^https?:\/\//i.test(s) ? s : `https://${s}`
 }
 import Modal from './Modal'
-import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken } from '../data/campaigns'
+import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings } from '../data/campaigns'
 import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
@@ -108,6 +108,7 @@ export default function CampaignPanel({ products }) {
   const [campaigns, setCampaigns] = useState([])
   const [editing, setEditing]   = useState(null)  // campaign / {} (baru) / null
   const [expanded, setExpanded] = useState(null)
+  const [sharing, setSharing]   = useState(null)  // campaign yang dibagikan (modal)
   const [loadErr, setLoadErr]   = useState(false)
   const [storeLines, setStoreLines] = useState([])
 
@@ -255,6 +256,7 @@ export default function CampaignPanel({ products }) {
                       <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer" title="Buka link campaign"
                         className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>
                     )}
+                    <button title="Bagikan untuk persetujuan" onClick={() => setSharing(c)} className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><Share2 className="w-3.5 h-3.5" /></button>
                     <button title="Edit" onClick={() => setEditing(c)} className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-fill/8 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                     <button title="Hapus" onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg text-ink-faint hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
@@ -328,6 +330,8 @@ export default function CampaignPanel({ products }) {
           ))}
         </div>
       )}
+
+      {sharing && <ShareApprovalModal campaign={sharing} onClose={() => setSharing(null)} onSaved={reload} />}
     </div>
   )
 }
@@ -342,11 +346,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [endDate, setEnd]         = useState(initial.endDate ?? '')
   const [items, setItems]         = useState(initial.items ?? [])
   const [approvals, setApprovals] = useState(initial.approvals ?? {})
-  const [approvalAccess, setApprovalAccess] = useState(initial.approvalAccess ?? 'private')
-  const [emailsText, setEmailsText] = useState((initial.approvalEmails ?? []).join('\n'))
-  const [shareUrl, setShareUrl]   = useState(initial.shareToken ? `${window.location.origin}/approve?t=${initial.shareToken}` : '')
-  const [shareBusy, setShareBusy] = useState(false)
-  const [copied, setCopied]       = useState(false)
+  const [sharing, setSharing]     = useState(false)
   const [campaignType, setCampaignType] = useState(initial.voucherConfig?.kind ?? 'normal')
   const [vouchers, setVouchers]   = useState(() => {
     const vs = initial.voucherConfig?.vouchers
@@ -414,30 +414,6 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   function setApprovalNote(productId, note) {
     setApprovals(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), note } }))
   }
-  const parsedEmails = () => [...new Set(emailsText.split(/[\n,;]/).map(e => e.trim().toLowerCase()).filter(Boolean))]
-
-  async function makeShareLink() {
-    if (!initial.id || shareBusy) return
-    setShareBusy(true)
-    try {
-      const token = await ensureShareToken(initial.id)
-      const url = `${window.location.origin}/approve?t=${token}`
-      setShareUrl(url)
-      await navigator.clipboard?.writeText(url).catch(() => {})
-      setCopied(true); setTimeout(() => setCopied(false), 1800)
-    } catch (e) { console.error(e); alert('Gagal membuat link. Simpan campaign dulu, lalu coba lagi.') }
-    finally { setShareBusy(false) }
-  }
-  async function regenLink() {
-    if (!initial.id || shareBusy) return
-    if (!confirm('Buat link baru? Link lama akan berhenti berfungsi.')) return
-    setShareBusy(true)
-    try {
-      const token = await regenerateShareToken(initial.id)
-      setShareUrl(`${window.location.origin}/approve?t=${token}`)
-    } catch (e) { console.error(e); alert('Gagal membuat ulang link.') }
-    finally { setShareBusy(false) }
-  }
   function setPrice(productId, varIdx, price) {
     setItems(prev => prev.map(it => (it.productId === productId && it.varIdx === varIdx) ? { ...it, price } : it))
   }
@@ -445,7 +421,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals, approvalAccess, approvalEmails: parsedEmails() })
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals })
     setBusy(false)
   }
 
@@ -457,12 +433,20 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
           <ArrowLeft className="w-4 h-4" /> Kembali
         </button>
         <div className="ml-auto flex items-center gap-2">
+          {initial.id && (
+            <button type="button" onClick={() => setSharing(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
+              <Share2 className="w-4 h-4" /> Bagikan
+            </button>
+          )}
           <button onClick={submit} disabled={!name.trim() || busy}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
             <Save className="w-4 h-4" />{busy ? 'Menyimpan…' : (initial.id ? 'Perbarui' : 'Simpan')}
           </button>
         </div>
       </div>
+
+      {sharing && <ShareApprovalModal campaign={initial} onClose={() => setSharing(false)} />}
 
       {/* Nama + platform + tanggal */}
       <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
@@ -539,54 +523,6 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
             )}
           </div>
         </div>
-      </div>
-
-      {/* Bagikan untuk persetujuan (atasan/client) */}
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <ExternalLink className="w-4 h-4 text-blue-400" />
-          <p className="text-sm font-semibold text-ink-strong">Bagikan untuk Persetujuan</p>
-          <span className="text-[11px] text-ink-faint">· atasan/client approve via link (login email)</span>
-        </div>
-        <div>
-          <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Mode akses</label>
-          <div className="flex gap-2">
-            {[['private', 'Private', 'Hanya email yang diundang'], ['public', 'Public', 'Siapa saja yang login via link']].map(([id, label, desc]) => (
-              <button key={id} type="button" onClick={() => setApprovalAccess(id)}
-                className={`text-left px-3 py-2 rounded-xl border transition-all flex-1 ${approvalAccess === id ? 'bg-blue-600/10 border-blue-500/40' : 'border-line/10 hover:border-line/25'}`}>
-                <p className={`text-[12px] font-semibold ${approvalAccess === id ? 'text-blue-300' : 'text-ink-strong'}`}>{label}</p>
-                <p className="text-[10px] text-ink-faint mt-0.5">{desc}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-        {approvalAccess === 'private' && (
-          <div>
-            <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Email approver yang diundang <span className="text-ink-faint">(satu per baris / pisah koma)</span></label>
-            <textarea value={emailsText} onChange={e => setEmailsText(e.target.value)} rows={2}
-              placeholder="atasan@perusahaan.com&#10;client@brand.com"
-              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[13px] text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/40 resize-none" />
-          </div>
-        )}
-        {!initial.id ? (
-          <p className="text-[11px] text-ink-faint">Simpan campaign dulu untuk membuat link approval.</p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={makeShareLink} disabled={shareBusy}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
-              <ExternalLink className="w-3.5 h-3.5" />{copied ? 'Tersalin!' : shareUrl ? 'Salin link' : 'Buat & salin link'}
-            </button>
-            {shareUrl && (
-              <>
-                <input readOnly value={shareUrl} onFocus={e => e.target.select()}
-                  className="flex-1 min-w-[200px] bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[11px] text-ink-muted focus:outline-none" />
-                <button type="button" onClick={regenLink} disabled={shareBusy} title="Buat link baru (cabut link lama)"
-                  className="p-2 rounded-xl border border-line/15 text-ink-faint hover:text-ink hover:border-line/30 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button>
-              </>
-            )}
-            <p className="w-full text-[11px] text-ink-faint">Perubahan mode/email tersimpan saat kamu klik {initial.id ? '"Perbarui"' : '"Simpan"'} di atas.</p>
-          </div>
-        )}
       </div>
 
       {/* Jenis campaign + voucher */}
@@ -757,6 +693,93 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
           onAdd={addProduct} onClose={() => setShowPicker(false)} />
       )}
     </div>
+  )
+}
+
+// Modal Bagikan — dipakai dari daftar campaign & dari editor. Menyimpan mode +
+// email undangan secara mandiri (tak perlu Perbarui) lalu buat/salin link.
+function ShareApprovalModal({ campaign, onClose, onSaved }) {
+  const [access, setAccess]       = useState(campaign.approvalAccess || 'private')
+  const [emailsText, setEmailsText] = useState((campaign.approvalEmails || []).join('\n'))
+  const [shareUrl, setShareUrl]   = useState(campaign.shareToken ? `${window.location.origin}/approve?t=${campaign.shareToken}` : '')
+  const [busy, setBusy]           = useState(false)
+  const [copied, setCopied]       = useState(false)
+  const [err, setErr]             = useState(null)
+
+  const emails = () => [...new Set(emailsText.split(/[\n,;]/).map(e => e.trim().toLowerCase()).filter(Boolean))]
+  function errMsg(e) {
+    const m = e?.message || 'Gagal menyimpan.'
+    if (/share_token|approval_|column|does not exist|schema cache/i.test(m))
+      return 'Kolom database belum ada. Jalankan migrasi 0039 di Supabase → SQL Editor dulu.'
+    return m
+  }
+  async function saveAndLink() {
+    if (busy) return
+    setBusy(true); setErr(null)
+    try {
+      await updateApprovalSettings(campaign.id, { access, emails: emails() })
+      const token = await ensureShareToken(campaign.id)
+      const url = `${window.location.origin}/approve?t=${token}`
+      setShareUrl(url)
+      await navigator.clipboard?.writeText(url).catch(() => {})
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+      onSaved?.()
+    } catch (e) { console.error(e); setErr(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  async function copyLink() {
+    if (!shareUrl) return
+    await navigator.clipboard?.writeText(shareUrl).catch(() => {})
+    setCopied(true); setTimeout(() => setCopied(false), 1800)
+  }
+  async function regen() {
+    if (busy || !confirm('Buat link baru? Link lama akan berhenti berfungsi.')) return
+    setBusy(true); setErr(null)
+    try { const t = await regenerateShareToken(campaign.id); setShareUrl(`${window.location.origin}/approve?t=${t}`) }
+    catch (e) { console.error(e); setErr(errMsg(e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal title="Bagikan untuk Persetujuan" subtitle="Atasan/client approve via link (login email)" onClose={onClose} maxWidth="max-w-lg">
+      <div className="p-5 space-y-4">
+        <div>
+          <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Mode akses</label>
+          <div className="grid grid-cols-2 gap-2">
+            {[['private', 'Private', 'Hanya email yang diundang'], ['public', 'Public', 'Siapa saja yang login via link']].map(([id, label, desc]) => (
+              <button key={id} type="button" onClick={() => setAccess(id)}
+                className={`text-left px-3 py-2.5 rounded-xl border transition-all ${access === id ? 'bg-blue-600/10 border-blue-500/40' : 'border-line/10 hover:border-line/25'}`}>
+                <p className={`text-[13px] font-semibold ${access === id ? 'text-blue-300' : 'text-ink-strong'}`}>{label}</p>
+                <p className="text-[10px] text-ink-faint mt-0.5">{desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+        {access === 'private' && (
+          <div>
+            <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Email approver yang diundang <span className="text-ink-faint">(satu per baris / pisah koma)</span></label>
+            <textarea value={emailsText} onChange={e => setEmailsText(e.target.value)} rows={3}
+              placeholder="atasan@perusahaan.com&#10;client@brand.com"
+              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[13px] text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/40 resize-none" />
+          </div>
+        )}
+        {err && <p className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{err}</p>}
+        {shareUrl && (
+          <div className="flex items-center gap-2">
+            <input readOnly value={shareUrl} onFocus={e => e.target.select()}
+              className="flex-1 min-w-0 bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[11px] text-ink-muted focus:outline-none" />
+            <button type="button" onClick={copyLink} title="Salin" className="p-2 rounded-xl border border-line/15 text-ink-faint hover:text-ink hover:border-line/30 transition-colors"><Copy className="w-3.5 h-3.5" /></button>
+            <button type="button" onClick={regen} disabled={busy} title="Buat link baru (cabut link lama)" className="p-2 rounded-xl border border-line/15 text-ink-faint hover:text-ink hover:border-line/30 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="px-3 py-2 rounded-xl text-sm text-ink-muted hover:text-ink">Tutup</button>
+          <button type="button" onClick={saveAndLink} disabled={busy}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+            <ExternalLink className="w-4 h-4" />{busy ? 'Menyimpan…' : copied ? 'Tersalin!' : shareUrl ? 'Simpan & salin link' : 'Simpan & buat link'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
