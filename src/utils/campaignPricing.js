@@ -27,6 +27,18 @@ export function itemMargin(item, productMap, sellerPerUnit = 0) {
   return calc ? calc.marginNoAd : null
 }
 
+// Total komisi & biaya (semua fee platform/komisi/program + biaya proses),
+// SAMA dengan "Total Komisi & Biaya" di Kalkulator — bukan cuma platform.
+// Tidak termasuk voucher, ongkir, HPP, iklan. Mengembalikan { amount, pct }.
+export function totalFee(calc) {
+  if (!calc) return null
+  const amount = (calc.adminCut || 0) + (calc.dinamisCut || 0) + (calc.commCut || 0) + (calc.goxCut || 0)
+    + (calc.pembayaranCut || 0) + (calc.promoXtraCut || 0) + (calc.liveXtraCut || 0)
+    + (calc.gxpCut || 0) + (calc.preOrderCut || 0) + (calc.biayaProsesCut || 0)
+  const pct = calc.h > 0 ? (amount / calc.h) * 100 : 0
+  return { amount, pct }
+}
+
 // Efek satu voucher pada satu varian di harga campaign tertentu (asumsi cart 1
 // varian sampai lolos min. pesanan).
 export function voucherEffect(voucher, price) {
