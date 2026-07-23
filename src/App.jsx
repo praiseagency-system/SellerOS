@@ -13,6 +13,7 @@ import { QuadrantProvider } from './contexts/QuadrantContext'
 import { useLang } from './contexts/LanguageContext'
 import { useAuth } from './contexts/AuthContext'
 import LoginPage from './pages/LoginPage'
+import ApprovalPage from './pages/ApprovalPage'
 import TiktokCallback from './components/TiktokCallback'
 import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
@@ -39,6 +40,9 @@ export default function App() {
   // Callback OAuth TikTok — tangani sebelum gate biasa (sesi Supabase persist).
   // Path 1 segmen ('/tiktok-callback') agar aset relative-base tetap resolve.
   if (window.location.pathname === '/tiktok-callback') return <TiktokCallback />
+  // Halaman approval publik (atasan/client) — lolos gate login, kelola auth
+  // (magic link) sendiri. Token di query `?t=`.
+  if (window.location.pathname === '/approve') return <ApprovalPage />
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-app">
