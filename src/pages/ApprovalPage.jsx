@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User } from 'lucide-react'
+import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User, ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCampaignByToken, submitApproval } from '../data/campaignApproval'
@@ -34,6 +34,7 @@ function ApprovalBody({ token, email }) {
   const [state, setState] = useState({ loading: true, error: null, campaign: null, products: {} })
   const [name, setName] = useState(() => { try { return localStorage.getItem('approve_name') || '' } catch { return '' } })
   function persistName(v) { setName(v); try { localStorage.setItem('approve_name', v) } catch { /* ignore */ } }
+  const [showDetail, setShowDetail] = useState(false)
 
   const load = useCallback(async () => {
     setState(s => ({ ...s, loading: true, error: null }))
@@ -44,7 +45,7 @@ function ApprovalBody({ token, email }) {
       )
       setState({ loading: false, error: null, campaign: res.campaign, products })
     } catch (e) {
-      const msg = /not authorized/i.test(e.message) ? `Email ${email} tidak diundang untuk campaign ini.`
+      const msg = /not authorized/i.test(e.message) ? `Email ${email} tidak diundang untuk campaign ini. Klik "Keluar" lalu masuk dengan email yang diundang, atau minta admin menambahkan email ini.`
         : /invalid token/i.test(e.message) ? 'Link tidak valid atau sudah dicabut.'
         : 'Gagal memuat campaign.'
       setState({ loading: false, error: msg, campaign: null, products: {} })
@@ -96,6 +97,23 @@ function ApprovalBody({ token, email }) {
         </p>
         {c.description && <p className="text-xs text-ink-muted mt-1">{c.description}</p>}
       </div>
+
+      {c.detail && c.detail.trim() && (
+        <div className="mb-4 bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden">
+          <button onClick={() => setShowDetail(v => !v)}
+            className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-fill/5 transition-colors">
+            {showDetail ? <ChevronDown className="w-4 h-4 text-ink-faint" /> : <ChevronRight className="w-4 h-4 text-ink-faint" />}
+            <FileText className="w-4 h-4 text-blue-400" />
+            <span className="text-[13px] font-semibold text-ink-strong">Detail campaign</span>
+            <span className="ml-auto text-[11px] text-ink-faint">{showDetail ? 'Sembunyikan' : 'Baca selengkapnya'}</span>
+          </button>
+          {showDetail && (
+            <div className="px-4 pb-4 pt-1 border-t border-line/8">
+              <p className="text-[13px] text-ink-muted whitespace-pre-wrap leading-relaxed">{c.detail}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 bg-surface rounded-2xl border border-line/10 shadow-sm p-3 flex items-center gap-2">
         <User className="w-4 h-4 text-ink-faint flex-shrink-0" />

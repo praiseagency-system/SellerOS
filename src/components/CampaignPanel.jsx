@@ -373,6 +373,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [parentCampaign, setParent] = useState(initial.parentCampaign ?? '')
   const [platform, setPlatform]   = useState(initial.platform ?? 'tiktok')
   const [description, setDesc]    = useState(initial.description ?? '')
+  const [detail, setDetail]       = useState(initial.detail ?? '')
   const [link, setLink]           = useState(initial.link ?? '')
   const [startDate, setStart]     = useState(initial.startDate ?? '')
   const [endDate, setEnd]         = useState(initial.endDate ?? '')
@@ -453,7 +454,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals })
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, detail, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals })
     setBusy(false)
   }
 
@@ -554,6 +555,16 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
               </a>
             )}
           </div>
+        </div>
+
+        {/* Detail campaign (dibaca client di halaman approval) */}
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <FileText className="w-3.5 h-3.5 inline mr-1" />Detail Campaign <span className="font-normal text-ink-faint">(dibaca client di halaman approval — mis. periode, syarat, daftar voucher dari marketplace)</span>
+          </label>
+          <textarea value={detail} onChange={e => setDetail(e.target.value)} rows={5}
+            placeholder={'Tempel detail campaign dari marketplace, mis.:\n\nPeriode efektif: Gajian Sale Juli 24–31 Juli; 8.8: 1–8 Agustus\nPersyaratan: harga kompetitif di semua platform…\nVoucher tersedia: Diskon 7% s/d Rp50.000 (min Rp30.000), dst.'}
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50 resize-y" />
         </div>
       </div>
 
