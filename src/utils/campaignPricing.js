@@ -10,15 +10,20 @@ export function marginCls(m) {
 }
 export function fmtPct(n) { return (n == null || isNaN(n)) ? '—' : `${(+n).toFixed(0)}%` }
 
-// Margin sebuah item (varian pada harga campaign). sellerPerUnit = beban voucher
-// co-funded per unit (Rp) yang dipotong dari harga jual. Default 0.
-export function itemMargin(item, productMap, sellerPerUnit = 0) {
+// Kalkulasi penuh sebuah item (varian pada harga campaign). Mengembalikan objek
+// computeCalc (punya adminRate, adminCut, marginNoAd, dst) atau null.
+export function itemCalc(item, productMap, sellerPerUnit = 0) {
   const p = productMap[item.productId]
   if (!p) return null
   const fees = productFees(p)
   const v = productVariations(p)[item.varIdx]
   if (!v) return null
-  const calc = computeCalc({ ...fees, hpp: v.hpp, jual: item.price, voucher: String(+sellerPerUnit || 0) })
+  return computeCalc({ ...fees, hpp: v.hpp, jual: item.price, voucher: String(+sellerPerUnit || 0) })
+}
+
+// Margin sebuah item. sellerPerUnit = beban voucher co-funded per unit (Rp).
+export function itemMargin(item, productMap, sellerPerUnit = 0) {
+  const calc = itemCalc(item, productMap, sellerPerUnit)
   return calc ? calc.marginNoAd : null
 }
 

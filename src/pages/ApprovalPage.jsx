@@ -154,7 +154,7 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled
               {vouchers.length > 0 && +it.price > 0 && (
                 <div className="mt-1.5 mb-1">
                   <div className="grid gap-2 text-[10px] text-ink-faint pb-1" style={{ gridTemplateColumns: cols }}>
-                    <span>Voucher</span><span>Beli untuk dapat</span><span>Harga customer</span>
+                    <span>Voucher</span><span>Minimal Qty</span><span>Harga customer</span>
                     {cofunded && <span>Beban penjual</span>}{cofunded && <span className="text-right">Margin</span>}
                   </div>
                   <div className="space-y-1">
