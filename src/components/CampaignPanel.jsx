@@ -16,7 +16,7 @@ import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
 import {
-  fmt, marginCls, fmtPct, itemMargin, itemCalc, voucherEffect, voucherList,
+  fmt, marginCls, fmtPct, itemMargin, itemCalc, totalFee, voucherEffect, voucherList,
   APPROVAL, approvalStatusOf, approvalSummary,
 } from '../utils/campaignPricing'
 
@@ -287,7 +287,7 @@ export default function CampaignPanel({ products }) {
                               <p className="text-ink-strong truncate text-[13px]">{it.name || '(varian)'}{gone && <span className="text-ink-faint"> · produk dihapus</span>}</p>
                               <p className="text-[11px] text-ink-faint truncate">
                                 {it.sku || 'tanpa SKU'}
-                                {calc && +it.price > 0 && <> · admin {calc.adminRate.toFixed(1)}% ({fmt(calc.adminCut)})</>}
+                                {(() => { const f = totalFee(calc); return f && +it.price > 0 ? <> · komisi &amp; biaya {f.pct.toFixed(1)}% ({fmt(f.amount)})</> : null })()}
                               </p>
                             </div>
                             {isFirst && (() => {
@@ -694,7 +694,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                               <p className="text-[13px] text-ink truncate">{v?.name?.trim() || it.name || `Varian ${it.varIdx + 1}`}</p>
                               <p className="text-[11px] text-ink-faint truncate">
                                 {it.sku || 'tanpa SKU'}{normal ? ` · normal ${fmt(normal)}` : ''}
-                                {calc && +it.price > 0 && <> · admin {calc.adminRate.toFixed(1)}% ({fmt(calc.adminCut)})</>}
+                                {(() => { const f = totalFee(calc); return f && +it.price > 0 ? <> · komisi &amp; biaya {f.pct.toFixed(1)}% ({fmt(f.amount)})</> : null })()}
                               </p>
                             </div>
                             <div className="relative flex items-center flex-shrink-0 w-32">
