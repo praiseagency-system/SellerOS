@@ -18,6 +18,10 @@ function rowToCampaign(r) {
     productIds: Array.isArray(r.product_ids) ? r.product_ids : [],
     voucherConfig: (r.voucher_config && typeof r.voucher_config === 'object') ? r.voucher_config : {},
     approvals: (r.approvals && typeof r.approvals === 'object') ? r.approvals : {},
+    shareToken: r.share_token || '',
+    approvalAccess: r.approval_access || 'private',
+    approvalEmails: Array.isArray(r.approval_emails) ? r.approval_emails : [],
+    approvalLog: Array.isArray(r.approval_log) ? r.approval_log : [],
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -38,7 +42,34 @@ function toRow(c) {
     product_ids: productIds.length ? productIds : (Array.isArray(c.productIds) ? c.productIds : []),
     voucher_config: (c.voucherConfig && typeof c.voucherConfig === 'object') ? c.voucherConfig : {},
     approvals: (c.approvals && typeof c.approvals === 'object') ? c.approvals : {},
+    approval_access: c.approvalAccess === 'public' ? 'public' : 'private',
+    approval_emails: Array.isArray(c.approvalEmails)
+      ? [...new Set(c.approvalEmails.map(e => (e || '').trim().toLowerCase()).filter(Boolean))]
+      : [],
   }
+}
+
+// Pastikan campaign punya share_token (dibuat sekali). Owner-only via RLS.
+// Mengembalikan token. Dipakai tombol "Bagikan link approval".
+export async function ensureShareToken(campaignId) {
+  const { data, error } = await supabase
+    .from('campaigns').select('share_token').eq('id', campaignId).single()
+  if (error) throw error
+  if (data?.share_token) return data.share_token
+  const token = crypto.randomUUID()
+  const { data: upd, error: e2 } = await supabase
+    .from('campaigns').update({ share_token: token }).eq('id', campaignId).select('share_token').single()
+  if (e2) throw e2
+  return upd.share_token
+}
+
+// Buat token baru (mencabut link lama). Owner-only.
+export async function regenerateShareToken(campaignId) {
+  const token = crypto.randomUUID()
+  const { data, error } = await supabase
+    .from('campaigns').update({ share_token: token }).eq('id', campaignId).select('share_token').single()
+  if (error) throw error
+  return data.share_token
 }
 
 export async function listCampaigns() {

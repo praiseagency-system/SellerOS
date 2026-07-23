@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
-  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder,
+  CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw,
 } from 'lucide-react'
 
 // Normalisasi URL untuk href (tambah https:// bila skema tak ada).
@@ -11,20 +11,19 @@ function hrefOf(url) {
   return /^https?:\/\//i.test(s) ? s : `https://${s}`
 }
 import Modal from './Modal'
-import { listCampaigns, saveCampaign, deleteCampaign } from '../data/campaigns'
+import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken } from '../data/campaigns'
 import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
+import {
+  fmt, marginCls, fmtPct, itemMargin, voucherEffect, voucherList,
+  APPROVAL, approvalStatusOf, approvalSummary,
+} from '../utils/campaignPricing'
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 const PLATFORM_CLS = {
   tiktok: 'bg-gray-700/60 text-gray-300',
   shopee: 'bg-orange-500/15 text-orange-300',
-}
-const fmt = n => (n == null || isNaN(n)) ? '—' : 'Rp' + Math.round(n).toLocaleString('id-ID')
-function marginCls(m) {
-  if (m == null || isNaN(m)) return 'text-ink-faint'
-  return m >= 30 ? 'text-green-400' : m >= 20 ? 'text-yellow-400' : 'text-red-400'
 }
 function fmtDate(d) {
   if (!d) return null
@@ -50,68 +49,6 @@ function campaignStatus(c) {
   return { key: 'running', label: 'Berjalan', cls: 'bg-green-500/12 text-green-300' }
 }
 
-// Persetujuan per produk (sounding ke atasan/client). Default 'pending'.
-const APPROVAL = {
-  pending:  { label: 'Menunggu',  cls: 'bg-amber-500/12 text-amber-300',  icon: 'clock' },
-  approved: { label: 'Disetujui', cls: 'bg-green-500/12 text-green-300',  icon: 'check' },
-  rejected: { label: 'Ditolak',   cls: 'bg-red-500/12 text-red-300',      icon: 'x' },
-}
-function approvalStatusOf(approvals, productId) {
-  return approvals?.[productId]?.status || 'pending'
-}
-function approvalSummary(c) {
-  const ids = [...new Set((c.items || []).map(it => it.productId))]
-  const appr = c.approvals || {}
-  let approved = 0, rejected = 0
-  for (const id of ids) {
-    const s = appr[id]?.status
-    if (s === 'approved') approved++
-    else if (s === 'rejected') rejected++
-  }
-  return { total: ids.length, approved, rejected, pending: ids.length - approved - rejected }
-}
-
-// Margin sebuah item (varian pada harga campaign) berdasarkan produknya.
-// sellerPerUnit: beban voucher co-funded yang ditanggung penjual per unit (Rp),
-// dipotong dari harga jual seperti field `voucher` di kalkulator. Default 0.
-function itemMargin(item, productMap, sellerPerUnit = 0) {
-  const p = productMap[item.productId]
-  if (!p) return null
-  const fees = productFees(p)
-  const v = productVariations(p)[item.varIdx]
-  if (!v) return null
-  const calc = computeCalc({ ...fees, hpp: v.hpp, jual: item.price, voucher: String(+sellerPerUnit || 0) })
-  return calc ? calc.marginNoAd : null
-}
-
-// Efek satu voucher pada satu varian di harga campaign tertentu.
-// Asumsi: customer mengisi cart dengan varian ini sampai lolos min. pesanan,
-// sehingga menghasilkan "pcs untuk dapat voucher" + beban penjual per unit.
-function voucherEffect(voucher, price) {
-  const p = +price || 0
-  if (p <= 0) return null
-  const discPct   = +voucher.discPct  || 0
-  const maxDisc   = +voucher.maxDisc   || 0
-  const minOrder  = +voucher.minOrder  || 0
-  const sellerPct = +voucher.sellerPct || 0
-  const sellerCap = +voucher.sellerCap || 0
-  const pcs = minOrder > 0 ? Math.max(1, Math.ceil(minOrder / p)) : 1
-  const orderValue = pcs * p
-  let discount = orderValue * discPct / 100
-  if (maxDisc > 0) discount = Math.min(discount, maxDisc)
-  let sellerCost = discount * sellerPct / 100
-  if (sellerCap > 0) sellerCost = Math.min(sellerCost, sellerCap)
-  const sellerPerUnit = pcs > 0 ? sellerCost / pcs : 0
-  const custPerUnit = p - discount / pcs
-  return { pcs, orderValue, discount, sellerCost, sellerPerUnit, custPerUnit }
-}
-
-// Daftar tier voucher valid dari sebuah voucherConfig (aman untuk campaign lama).
-function voucherList(voucherConfig) {
-  const vs = voucherConfig && Array.isArray(voucherConfig.vouchers) ? voucherConfig.vouchers : []
-  return vs.filter(v => (+v.discPct || 0) > 0)
-}
-function fmtPct(n) { return (n == null || isNaN(n)) ? '—' : `${(+n).toFixed(0)}%` }
 function campaignAgg(items, productMap) {
   const margins = items.map(it => itemMargin(it, productMap)).filter(m => m != null)
   const avg = margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : null
@@ -405,6 +342,11 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [endDate, setEnd]         = useState(initial.endDate ?? '')
   const [items, setItems]         = useState(initial.items ?? [])
   const [approvals, setApprovals] = useState(initial.approvals ?? {})
+  const [approvalAccess, setApprovalAccess] = useState(initial.approvalAccess ?? 'private')
+  const [emailsText, setEmailsText] = useState((initial.approvalEmails ?? []).join('\n'))
+  const [shareUrl, setShareUrl]   = useState(initial.shareToken ? `${window.location.origin}/approve?t=${initial.shareToken}` : '')
+  const [shareBusy, setShareBusy] = useState(false)
+  const [copied, setCopied]       = useState(false)
   const [campaignType, setCampaignType] = useState(initial.voucherConfig?.kind ?? 'normal')
   const [vouchers, setVouchers]   = useState(() => {
     const vs = initial.voucherConfig?.vouchers
@@ -472,6 +414,30 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   function setApprovalNote(productId, note) {
     setApprovals(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), note } }))
   }
+  const parsedEmails = () => [...new Set(emailsText.split(/[\n,;]/).map(e => e.trim().toLowerCase()).filter(Boolean))]
+
+  async function makeShareLink() {
+    if (!initial.id || shareBusy) return
+    setShareBusy(true)
+    try {
+      const token = await ensureShareToken(initial.id)
+      const url = `${window.location.origin}/approve?t=${token}`
+      setShareUrl(url)
+      await navigator.clipboard?.writeText(url).catch(() => {})
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+    } catch (e) { console.error(e); alert('Gagal membuat link. Simpan campaign dulu, lalu coba lagi.') }
+    finally { setShareBusy(false) }
+  }
+  async function regenLink() {
+    if (!initial.id || shareBusy) return
+    if (!confirm('Buat link baru? Link lama akan berhenti berfungsi.')) return
+    setShareBusy(true)
+    try {
+      const token = await regenerateShareToken(initial.id)
+      setShareUrl(`${window.location.origin}/approve?t=${token}`)
+    } catch (e) { console.error(e); alert('Gagal membuat ulang link.') }
+    finally { setShareBusy(false) }
+  }
   function setPrice(productId, varIdx, price) {
     setItems(prev => prev.map(it => (it.productId === productId && it.varIdx === varIdx) ? { ...it, price } : it))
   }
@@ -479,7 +445,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   async function submit() {
     if (!name.trim() || busy) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals })
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals, approvalAccess, approvalEmails: parsedEmails() })
     setBusy(false)
   }
 
@@ -573,6 +539,54 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
             )}
           </div>
         </div>
+      </div>
+
+      {/* Bagikan untuk persetujuan (atasan/client) */}
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <ExternalLink className="w-4 h-4 text-blue-400" />
+          <p className="text-sm font-semibold text-ink-strong">Bagikan untuk Persetujuan</p>
+          <span className="text-[11px] text-ink-faint">· atasan/client approve via link (login email)</span>
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Mode akses</label>
+          <div className="flex gap-2">
+            {[['private', 'Private', 'Hanya email yang diundang'], ['public', 'Public', 'Siapa saja yang login via link']].map(([id, label, desc]) => (
+              <button key={id} type="button" onClick={() => setApprovalAccess(id)}
+                className={`text-left px-3 py-2 rounded-xl border transition-all flex-1 ${approvalAccess === id ? 'bg-blue-600/10 border-blue-500/40' : 'border-line/10 hover:border-line/25'}`}>
+                <p className={`text-[12px] font-semibold ${approvalAccess === id ? 'text-blue-300' : 'text-ink-strong'}`}>{label}</p>
+                <p className="text-[10px] text-ink-faint mt-0.5">{desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+        {approvalAccess === 'private' && (
+          <div>
+            <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Email approver yang diundang <span className="text-ink-faint">(satu per baris / pisah koma)</span></label>
+            <textarea value={emailsText} onChange={e => setEmailsText(e.target.value)} rows={2}
+              placeholder="atasan@perusahaan.com&#10;client@brand.com"
+              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[13px] text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/40 resize-none" />
+          </div>
+        )}
+        {!initial.id ? (
+          <p className="text-[11px] text-ink-faint">Simpan campaign dulu untuk membuat link approval.</p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={makeShareLink} disabled={shareBusy}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+              <ExternalLink className="w-3.5 h-3.5" />{copied ? 'Tersalin!' : shareUrl ? 'Salin link' : 'Buat & salin link'}
+            </button>
+            {shareUrl && (
+              <>
+                <input readOnly value={shareUrl} onFocus={e => e.target.select()}
+                  className="flex-1 min-w-[200px] bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[11px] text-ink-muted focus:outline-none" />
+                <button type="button" onClick={regenLink} disabled={shareBusy} title="Buat link baru (cabut link lama)"
+                  className="p-2 rounded-xl border border-line/15 text-ink-faint hover:text-ink hover:border-line/30 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button>
+              </>
+            )}
+            <p className="w-full text-[11px] text-ink-faint">Perubahan mode/email tersimpan saat kamu klik {initial.id ? '"Perbarui"' : '"Simpan"'} di atas.</p>
+          </div>
+        )}
       </div>
 
       {/* Jenis campaign + voucher */}
