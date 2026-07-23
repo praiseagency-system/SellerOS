@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut } from 'lucide-react'
+import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCampaignByToken, submitApproval } from '../data/campaignApproval'
@@ -32,6 +32,8 @@ export default function ApprovalPage() {
 
 function ApprovalBody({ token, email }) {
   const [state, setState] = useState({ loading: true, error: null, campaign: null, products: {} })
+  const [name, setName] = useState(() => { try { return localStorage.getItem('approve_name') || '' } catch { return '' } })
+  function persistName(v) { setName(v); try { localStorage.setItem('approve_name', v) } catch { /* ignore */ } }
 
   const load = useCallback(async () => {
     setState(s => ({ ...s, loading: true, error: null }))
@@ -56,6 +58,8 @@ function ApprovalBody({ token, email }) {
 
   const c = state.campaign
   const productMap = state.products
+  const nameRequired = c.approvalAccess === 'public'
+  const blocked = nameRequired && !name.trim()
   // Kelompokkan item per produk (urut kemunculan).
   const groups = []
   const seen = new Map()
@@ -66,9 +70,10 @@ function ApprovalBody({ token, email }) {
   const vouchers = voucherList(c.voucherConfig)
 
   async function act(productId, status) {
+    if (blocked) return
     const note = c.approvals?.[productId]?.note || ''
     try {
-      const res = await submitApproval(token, productId, status, note)
+      const res = await submitApproval(token, productId, status, note, name.trim())
       setState(s => ({ ...s, campaign: { ...s.campaign, approvals: res.approvals, approvalLog: res.approvalLog } }))
     } catch { alert('Gagal menyimpan keputusan. Coba lagi.') }
   }
@@ -76,7 +81,7 @@ function ApprovalBody({ token, email }) {
     // Simpan catatan tanpa mengubah status (pakai status sekarang).
     const status = approvalStatusOf(c.approvals, productId)
     try {
-      const res = await submitApproval(token, productId, status, note)
+      const res = await submitApproval(token, productId, status, note, name.trim())
       setState(s => ({ ...s, campaign: { ...s.campaign, approvals: res.approvals, approvalLog: res.approvalLog } }))
     } catch { /* noop */ }
   }
@@ -92,10 +97,18 @@ function ApprovalBody({ token, email }) {
         {c.description && <p className="text-xs text-ink-muted mt-1">{c.description}</p>}
       </div>
 
+      <div className="mb-4 bg-surface rounded-2xl border border-line/10 shadow-sm p-3 flex items-center gap-2">
+        <User className="w-4 h-4 text-ink-faint flex-shrink-0" />
+        <input value={name} onChange={e => persistName(e.target.value)}
+          placeholder={`Nama Anda${nameRequired ? ' (wajib)' : ' (opsional)'}`}
+          className="flex-1 min-w-0 bg-transparent text-sm text-ink-strong focus:outline-none" />
+      </div>
+      {blocked && <p className="text-[11px] text-amber-300 mb-3 -mt-2">Isi nama Anda dulu untuk bisa menyetujui atau menolak.</p>}
+
       <div className="space-y-3">
         {groups.map(([productId, its]) => (
           <ProductApprovalCard key={productId} c={c} productId={productId} its={its}
-            productMap={productMap} vouchers={vouchers}
+            productMap={productMap} vouchers={vouchers} disabled={blocked}
             onAct={act} onSaveNote={saveNote} />
         ))}
       </div>
@@ -106,7 +119,7 @@ function ApprovalBody({ token, email }) {
   )
 }
 
-function ProductApprovalCard({ c, productId, its, productMap, vouchers, onAct, onSaveNote }) {
+function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled, onAct, onSaveNote }) {
   const st = approvalStatusOf(c.approvals, productId)
   const meta = APPROVAL[st]
   const p = productMap[productId]
@@ -168,12 +181,12 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, onAct, o
 
       <div className="px-4 py-3 border-t border-line/8 space-y-2">
         <div className="flex items-center gap-2">
-          <button onClick={() => onAct(productId, 'approved')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${st === 'approved' ? 'bg-green-600 text-white' : 'border border-line/15 text-green-400 hover:bg-green-500/10'}`}>
+          <button onClick={() => onAct(productId, 'approved')} disabled={disabled}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${st === 'approved' ? 'bg-green-600 text-white' : 'border border-line/15 text-green-400 hover:bg-green-500/10'}`}>
             <Check className="w-3.5 h-3.5" /> Setujui
           </button>
-          <button onClick={() => onAct(productId, 'rejected')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${st === 'rejected' ? 'bg-red-600 text-white' : 'border border-line/15 text-red-400 hover:bg-red-500/10'}`}>
+          <button onClick={() => onAct(productId, 'rejected')} disabled={disabled}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${st === 'rejected' ? 'bg-red-600 text-white' : 'border border-line/15 text-red-400 hover:bg-red-500/10'}`}>
             <X className="w-3.5 h-3.5" /> Tolak
           </button>
           <input value={note} onChange={e => setNote(e.target.value)} onBlur={() => saveNoteIfChanged()}
@@ -188,7 +201,7 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, onAct, o
                 <div key={i} className="flex items-center gap-2 text-[10px] text-ink-faint">
                   <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.status === 'approved' ? 'bg-green-400' : e.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'}`} />
                   <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
-                  <span className="truncate">· {e.by || '—'}{e.note ? ` · "${e.note}"` : ''}</span>
+                  <span className="truncate">· {e.byName ? `${e.byName} (${e.by})` : (e.by || '—')}{e.note ? ` · "${e.note}"` : ''}</span>
                   <span className="ml-auto flex-shrink-0">{fmtDT(e.at)}</span>
                 </div>
               ))}
