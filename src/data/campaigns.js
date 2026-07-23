@@ -63,6 +63,18 @@ export async function ensureShareToken(campaignId) {
   return upd.share_token
 }
 
+// Simpan pengaturan approval (mode + email undangan) secara mandiri — dipakai
+// modal Bagikan di luar editor. Owner-only via RLS. Partial update.
+export async function updateApprovalSettings(campaignId, { access, emails }) {
+  const payload = {
+    approval_access: access === 'public' ? 'public' : 'private',
+    approval_emails: [...new Set((emails || []).map(e => (e || '').trim().toLowerCase()).filter(Boolean))],
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from('campaigns').update(payload).eq('id', campaignId)
+  if (error) throw error
+}
+
 // Buat token baru (mencabut link lama). Owner-only.
 export async function regenerateShareToken(campaignId) {
   const token = crypto.randomUUID()
