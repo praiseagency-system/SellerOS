@@ -1,21 +1,30 @@
-import { Moon, Sun, Bell, Calendar, CalendarDays, ChevronDown, LogOut, User, Palette, Users, Globe } from 'lucide-react'
+import { Moon, Sun, Bell, ChevronDown, LogOut, User, Palette, Users, Globe, History } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useIdentity } from '../contexts/IdentityContext'
 import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownSeparator } from './ui/Dropdown'
+import MonthPicker from './MonthPicker'
+
+const isMonth = (v) => /^\d{4}-\d{2}$/.test(v || '')
 
 export default function HeaderControls({ notifCount = '8+', showPeriod = true, onNavigate }) {
   const { theme, setTheme } = useTheme()
   const { lang, setLang, t } = useLang()
-  const { periodType, periodLabel, prevLabel, isCompareMode, hasData, setShowHistory } = useQuadrant()
+  const { periodValue, prevLabel, isCompareMode, setShowHistory, sessions, platform, loadSession } = useQuadrant()
   const { user, signOut } = useAuth()
   const { profile } = useIdentity()
 
-  const typeLabel = periodType ? t(`period.${periodType}`) : t('period.none')
-  const mainLabel = hasData && periodLabel ? periodLabel : t('period.empty')
-  const PeriodIcon = periodType === 'mingguan' ? CalendarDays : Calendar
+  // Bulan yang punya sesi tersimpan (periode mingguan lama diabaikan di picker;
+  // tetap bisa dibuka via panel Riwayat).
+  const monthOptions = [...new Set((sessions || []).map(s => s.periodValue).filter(isMonth))].sort()
+  // Pilih bulan → muat sesi bulan itu (utamakan platform aktif, kalau tidak yang terbaru).
+  function pickMonth(month) {
+    const inMonth = (sessions || []).filter(s => s.periodValue === month)
+    if (!inMonth.length) return
+    loadSession(inMonth.find(s => s.platform === platform) || inMonth[0], sessions)
+  }
 
   return (
     <div className="flex items-center gap-2 flex-shrink-0">
@@ -32,25 +41,26 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true, o
         </span>
       </button>
 
-      {/* Pemilih periode — chevron membuka panel Riwayat Periode.
-          Disembunyikan di halaman Import (belum relevan di sana). */}
+      {/* Pemilih periode — MonthPicker (lompat langsung ke bulan tersimpan) +
+          tombol Riwayat (buka panel lengkap). Disembunyikan di halaman Import. */}
       {showPeriod && (
       <div className="flex flex-col items-end">
-        <button
-          onClick={() => setShowHistory(true)}
-          className="flex items-center gap-2 bg-fill/5 border border-line/10 rounded-xl pl-3 pr-2.5 py-1.5 hover:border-blue-600/40 hover:bg-fill/10 transition-colors"
-        >
-          <div className="flex flex-col items-start leading-tight">
-            <span className="text-[10px] font-semibold tracking-wider text-ink-muted">
-              {typeLabel}
-            </span>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-ink-strong">
-              <PeriodIcon className="w-3.5 h-3.5 text-blue-500" />
-              {mainLabel}
-            </span>
-          </div>
-          <ChevronDown className="w-4 h-4 text-ink-muted" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <MonthPicker
+            enabledMonths={monthOptions}
+            value={{ mode: isMonth(periodValue) ? 'month' : null, month: isMonth(periodValue) ? periodValue : null }}
+            onChange={v => v.month && pickMonth(v.month)}
+            placeholder={t('period.empty')}
+            align="right"
+          />
+          <button
+            onClick={() => setShowHistory(true)}
+            title="Riwayat Periode"
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-fill/5 border border-line/10 text-ink-muted hover:text-ink hover:border-blue-600/40 hover:bg-fill/10 transition-colors"
+          >
+            <History className="w-4 h-4" />
+          </button>
+        </div>
         {isCompareMode && prevLabel && (
           <span className="mt-1 text-xs italic text-blue-400">
             {t('header.compareVs')} {prevLabel}

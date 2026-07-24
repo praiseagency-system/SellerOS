@@ -33,6 +33,7 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   const [isCompareMode, setIsCompareMode] = useState(false)
   const [prevLabel, setPrevLabel] = useState(null)
   const [periodLabel, setPeriodLabel] = useState(null)
+  const [periodValue, setPeriodValue] = useState(null) // 'YYYY-MM' periode aktif (utk header MonthPicker)
   const [periodType, setPeriodType] = useState(null)
   const [sessions, setSessions] = useState([])
   const [showHistory, setShowHistory] = useState(false)
@@ -99,6 +100,7 @@ export function QuadrantProvider({ children, onSessionsChange }) {
       setSettings(newSettings)
       setHasIklan(!!roasMap)
       setPeriodLabel(pLabel)
+      setPeriodValue(periodValue ?? null)
       setPeriodType(pType ?? null)
       setProducts(displayProducts)
       setActiveQuadrant(null)
@@ -139,6 +141,7 @@ export function QuadrantProvider({ children, onSessionsChange }) {
     setSettings(sett)
     setHasIklan(session.products.some(p => p.roas != null))
     setPeriodLabel(session.label.replace(/ · .*$/, ''))
+    setPeriodValue(session.periodValue ?? null)
     setPeriodType(session.periodType ?? null)
     setProducts(displayProducts)
     setActiveQuadrant(null)
@@ -178,7 +181,7 @@ export function QuadrantProvider({ children, onSessionsChange }) {
     activeTab, setActiveTab,
     activeQuadrant, setActiveQuadrant,
     isLoading, error,
-    hasIklan, isCompareMode, prevLabel, periodLabel, periodType,
+    hasIklan, isCompareMode, prevLabel, periodLabel, periodValue, periodType,
     hasData: products.length > 0,
     sessions, refreshSessions, loadSession,
     showHistory, setShowHistory,
