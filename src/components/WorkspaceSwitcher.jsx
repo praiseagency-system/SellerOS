@@ -1,4 +1,5 @@
 ﻿import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check, Plus, X, Store, Trash2 } from 'lucide-react'
 import { PRESET_COLORS, clearWorkspaceLocalData } from '../utils/workspace'
 import { createWorkspace, deleteWorkspace } from '../data/workspaces'
@@ -50,7 +51,10 @@ function CreateModal({ onClose, onCreated }) {
     }
   }
 
-  return (
+  // Portal ke <body>: overlay `fixed inset-0` HARUS lepas dari sidebar yang
+  // ber-`backdrop-filter` (glass-panel), kalau tidak ia terjebak di kotak
+  // sidebar → latar tak ter-dim & panel meleset (lihat pola createPortal di Layout).
+  return createPortal(
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
       <div className="bg-surface border border-line/10 rounded-2xl shadow-2xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
@@ -109,7 +113,8 @@ function CreateModal({ onClose, onCreated }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
