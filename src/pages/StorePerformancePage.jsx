@@ -8,8 +8,8 @@ import {
   ComposedChart, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
 import { ingestFile } from '../utils/storeIngest'
-import { mergeUpload, removeFileFrom, blendedLogistics } from '../utils/storeData'
-import { loadStore, saveStore, clearStore } from '../data/storeDataset'
+import { blendedLogistics } from '../utils/storeData'
+import { loadStore, saveFileBlob, deleteFileBlob, clearStore } from '../data/storeDataset'
 import { computeStore, quickInsights, marketplaceOf } from '../utils/storeAnalytics'
 import { listVouchers } from '../data/vouchers'
 import { matchVouchersToAmount } from '../utils/voucher'
@@ -21,6 +21,8 @@ const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep'
 const monthKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_ID[+m - 1]} ${y}` }
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok/Tokopedia' }
+// Rangkum error Supabase jadi teks yang bisa dibaca (message + code + hint).
+const supaErr = (e) => [e?.message, e?.code && `(${e.code})`, e?.hint].filter(Boolean).join(' ') || 'error tak dikenal'
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
@@ -105,7 +107,6 @@ export default function StorePerformancePage() {
     if (!importMonth) { setError('Pilih bulan dulu sebelum upload file.'); return }
     setBusy(true); setError(null); setWarning(null)
     try {
-      let cur = store
       const wrongPlatform = []   // file tak cocok platform terpilih
       const noMonth = []         // file tanpa data bulan terpilih
       for (const f of files) {
@@ -116,10 +117,10 @@ export default function StorePerformancePage() {
         const lines = res.lines.filter(l => monthKey(l.t) === importMonth)
         if (!lines.length) { noMonth.push(f.name); continue }
         const months = [...new Set(lines.map(l => monthKey(l.t)))]
-        cur = mergeUpload(cur, { ...res, lines, months })
+        // Simpan per file (upsert 1 baris) — nama file jadi kunci.
+        await saveFileBlob({ name: f.name, source: res.source, months, lines })
       }
-      await saveStore(cur)
-      setStore({ ...cur })
+      setStore(await loadStore())
       const warns = []
       if (wrongPlatform.length) warns.push(`Bukan file ${PLATFORM_LABEL[importPlatform]}: ${wrongPlatform.join(', ')} — dilewati.`)
       if (noMonth.length) warns.push(`Tanpa data ${monthLabel(importMonth)}: ${noMonth.join(', ')} — dilewati.`)
@@ -133,13 +134,12 @@ export default function StorePerformancePage() {
   }
 
   async function handleRemove(name) {
-    const next = removeFileFrom(store, name)
-    try { await saveStore(next); setStore(next) }
-    catch (e) { console.error(e); setError('Gagal menghapus file.') }
+    try { await deleteFileBlob(name); setStore(await loadStore()); setError(null) }
+    catch (e) { console.error(e); setError(`Gagal menghapus file: ${supaErr(e)}`) }
   }
   async function handleClear() {
-    try { await clearStore(); setStore({ files: [], lines: [] }) }
-    catch (e) { console.error(e); setError('Gagal menghapus data.') }
+    try { await clearStore(); setStore({ files: [], lines: [] }); setError(null) }
+    catch (e) { console.error(e); setError(`Gagal menghapus data: ${supaErr(e)}`) }
   }
 
   const TABS = [
