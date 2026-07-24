@@ -60,6 +60,52 @@ export function voucherEffect(voucher, price) {
   return { pcs, orderValue, discount, sellerCost, sellerPerUnit, custPerUnit }
 }
 
+// Rincian komponen komisi & biaya (untuk breakdown yang bisa diklik).
+// Hanya komponen bernilai > 0. pct = null untuk biaya flat.
+export function feeBreakdown(calc) {
+  if (!calc) return []
+  const rows = [
+    ['Biaya Platform',    calc.adminRate,   calc.adminCut],
+    ['Komisi Dinamis',    calc.dinamisRate, calc.dinamisCut],
+    ['Komisi Affiliasi',  calc.commRate,    calc.commCut],
+    ['Biaya Admin (Gox)', calc.goxRate,     calc.goxCut],
+    ['Biaya Layanan GXP', calc.gxpRate,     calc.gxpCut],
+    ['Promo Xtra',        calc.promoRate,   calc.promoXtraCut],
+    ['Live Xtra',         calc.liveRate,    calc.liveXtraCut],
+    ['Biaya Pembayaran',  null,             calc.pembayaranCut],
+    ['Biaya Pre-Order',   null,             calc.preOrderCut],
+    ['Biaya Proses',      null,             calc.biayaProsesCut],
+  ]
+  return rows.filter(([, , amt]) => (+amt || 0) > 0).map(([label, pct, amount]) => ({ label, pct, amount }))
+}
+
+// Target margin default untuk verdict "worth it" bila campaign tak set sendiri.
+export const DEFAULT_TARGET_MARGIN = 25
+
+// Verdict worth-it dari margin terburuk (worst) vs target. 3 tingkat.
+export function worthVerdict(worst, target = DEFAULT_TARGET_MARGIN) {
+  if (worst == null || isNaN(worst)) return null
+  if (worst >= target) return { key: 'worth', label: 'Worth it' }
+  if (worst >= target * 0.7) return { key: 'thin', label: 'Tipis' }
+  return { key: 'low', label: 'Kurang worth' }
+}
+
+// Margin terburuk sebuah produk lintas varian × voucher (co-funded) — untuk verdict.
+export function worstProductMargin(its, productMap, voucherCfg) {
+  const cvs = voucherList(voucherCfg)
+  const cofunded = voucherCfg?.kind === 'cofunded'
+  const margins = []
+  for (const it of its) {
+    const base = itemMargin(it, productMap)
+    if (base != null) margins.push(base)
+    if (cofunded) for (const v of cvs) {
+      const eff = voucherEffect(v, it.price)
+      if (eff) { const mm = itemMargin(it, productMap, eff.sellerPerUnit); if (mm != null) margins.push(mm) }
+    }
+  }
+  return margins.length ? Math.min(...margins) : null
+}
+
 export function voucherList(voucherConfig) {
   const vs = voucherConfig && Array.isArray(voucherConfig.vouchers) ? voucherConfig.vouchers : []
   return vs.filter(v => (+v.discPct || 0) > 0)
