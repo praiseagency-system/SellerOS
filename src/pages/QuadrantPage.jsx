@@ -11,7 +11,7 @@ import { useLang } from '../contexts/LanguageContext'
 import { CONVERSION_BENCHMARKS, fmtNum } from '../utils/quadrantUtils'
 import {
   LayoutGrid, ScatterChart, List, Settings2, X,
-  GitCompare, TrendingUp, Download, History
+  GitCompare, TrendingUp, Download
 } from 'lucide-react'
 
 function EmptyState({ onGoImport }) {
@@ -39,8 +39,7 @@ export default function QuadrantPage() {
     productsWithQuadrant, filteredProducts,
     settings, effectiveSettings, trafficThreshold, updateSetting,
     activeTab, setActiveTab, activeQuadrant, setActiveQuadrant,
-    isCompareMode, sessions,
-    setShowHistory,
+    isCompareMode,
   } = useQuadrant()
   const { t } = useLang()
 
@@ -80,13 +79,6 @@ export default function QuadrantPage() {
               <button onClick={() => setShowImport(true)}
                 className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">
                 <Download className="w-3 h-3" /><span>{t('nav.import.label')}</span>
-              </button>
-              <button onClick={() => setShowHistory(true)}
-                className="relative flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-line/10 text-ink-muted hover:text-ink transition-colors">
-                <History className="w-3 h-3" /><span>{t('quadrant.history')}</span>
-                {sessions.length > 0 && (
-                  <span className="ml-0.5 bg-blue-600/20 text-blue-500 text-xs rounded-full px-1.5 font-semibold">{sessions.length}</span>
-                )}
               </button>
               <button onClick={() => setShowBenchmark(s => !s)}
                 className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
