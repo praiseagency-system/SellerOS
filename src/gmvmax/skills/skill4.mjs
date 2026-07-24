@@ -52,7 +52,7 @@ export function runSkill4(input) {
 
   // ── Chain 1: GMV down + spend down → LIKELY delivery/spend decline ──────────
   if (isNum(gmv) && gmv < 0 && isNum(cost) && cost < 0)
-    push({ observed_outcome: 'GMV turun (vs H-1)', candidate_driver: 'penurunan delivery/spend',
+    push({ observed_outcome: 'GMV turun (vs H-1)', candidate_driver: 'penurunan delivery/spend', candidate_driver_en: 'delivery/spend decline',
       level: 'LIKELY_DRIVER', baseConfidence: 'MEDIUM',
       evidence_for: [`gross_revenue Δ=${gmv}`, `cost Δ=${cost}`], evidence_against: isNum(cvr) && cvr >= 0 ? ['CVR tidak menurun'] : [],
       alternatives: ['CVR menurun', 'kampanye dijeda', 'masalah pemetaan produk', ...alwaysAlt],
@@ -61,7 +61,7 @@ export function runSkill4(input) {
   // ── Chain 2: ROI down + CVR down → conversion deterioration (needs CVR fact) ─
   if (isNum(roi) && roi < 0 && isNum(cvr) && cvr < 0) {
     const costDownToo = isNum(cost) && cost < 0
-    push({ observed_outcome: 'ROI turun (vs H-1)', candidate_driver: 'pemburukan konversi (CVR)',
+    push({ observed_outcome: 'ROI turun (vs H-1)', candidate_driver: 'pemburukan konversi (CVR)', candidate_driver_en: 'conversion (CVR) deterioration',
       level: costDownToo ? 'CONTRIBUTING_FACTOR' : 'LIKELY_DRIVER', baseConfidence: 'MEDIUM',
       evidence_for: [`roi Δ=${roi}`, `cvr Δ=${cvr}`, costDownToo ? `cost Δ=${cost} (juga turun)` : 'cost tidak turun'],
       evidence_against: costDownToo ? ['spend juga turun → bisa spend-led, bukan murni konversi'] : [],
@@ -71,7 +71,7 @@ export function runSkill4(input) {
 
   // ── Chain 3: GMV up + ROI down + spend growth > revenue growth (measured) ───
   if (isNum(gmv) && gmv > 0 && isNum(roi) && roi < 0 && isNum(costPct) && isNum(gmvPct) && costPct > gmvPct)
-    push({ observed_outcome: 'efisiensi turun sambil GMV naik', candidate_driver: 'pertumbuhan berbasis modal (spend tumbuh > revenue)',
+    push({ observed_outcome: 'efisiensi turun sambil GMV naik', candidate_driver: 'pertumbuhan berbasis modal (spend tumbuh > revenue)', candidate_driver_en: 'capital-led growth (spend outgrew revenue)',
       level: 'CONTRIBUTING_FACTOR', baseConfidence: 'MEDIUM',
       evidence_for: [`cost pct=${costPct}`, `revenue pct=${gmvPct}`, `roi Δ=${roi}`], evidence_against: [],
       alternatives: ['penurunan CVR', 'mix produk bergeser', ...alwaysAlt],
@@ -80,7 +80,7 @@ export function runSkill4(input) {
 
   // ── Chain 4: GMV down + delivering creatives down → creative supply factor ──
   if (isNum(gmv) && gmv < 0 && isNum(creativeD) && creativeD < 0)
-    push({ observed_outcome: 'GMV turun (vs H-1)', candidate_driver: 'penurunan pasokan kreatif tayang',
+    push({ observed_outcome: 'GMV turun (vs H-1)', candidate_driver: 'penurunan pasokan kreatif tayang', candidate_driver_en: 'delivering-creative supply decline',
       level: 'CONTRIBUTING_FACTOR', baseConfidence: 'LOW',
       evidence_for: [`delivering_creatives Δ=${creativeD}`, `gross_revenue Δ=${gmv}`], evidence_against: [],
       alternatives: ['spend turun', 'CVR turun', ...alwaysAlt],
@@ -91,7 +91,7 @@ export function runSkill4(input) {
   const spendNoOrders = st.business?.cost > 0 && st.business?.orders === 0
   const prodSpendNoOrders = isNum(factVal(df, 'products_spend_no_orders')) && factVal(df, 'products_spend_no_orders') > 0
   if (spendNoOrders || prodSpendNoOrders)
-    push({ observed_outcome: 'spend tanpa order', candidate_driver: 'kemungkinan masalah konversi/traffic',
+    push({ observed_outcome: 'spend tanpa order', candidate_driver: 'kemungkinan masalah konversi/traffic', candidate_driver_en: 'possible conversion/traffic issue',
       level: 'CORRELATED_SIGNAL', baseConfidence: 'LOW',
       evidence_for: [spendNoOrders ? 'store: cost>0 & orders=0' : `produk spend-tanpa-order=${factVal(df, 'products_spend_no_orders')}`],
       evidence_against: [], alternatives: ['sampel kecil', 'atribusi tertunda', 'mismatch kreatif/produk', ...alwaysAlt],
@@ -121,6 +121,7 @@ function finalize(d, ctx) {
   return {
     diagnosis_id: `${ctx.date}:${key(d.observed_outcome)}:${key(d.candidate_driver)}`,
     observed_outcome: d.observed_outcome, candidate_driver: d.candidate_driver,
+    candidate_driver_en: d.candidate_driver_en || d.candidate_driver,
     level, confidence,
     evidence_for: [...(d.evidence_for || [])], evidence_against: [...(d.evidence_against || [])],
     alternative_explanations: dedupeStr(d.alternatives || []),

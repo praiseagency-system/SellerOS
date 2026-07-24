@@ -68,7 +68,7 @@ export function runSkill9(input) {
     candidates.push(mkAction(ctx, {
       objective: `investigate_${slug(d.candidate_driver)}`, action_type: 'DIAGNOSIS_FOLLOWUP',
       status: ActionStatus.OBSERVE, safetyRank: d.level === 'LIKELY_DRIVER' ? 5 : 6, risk: 'LOW', confidence: d.confidence,
-      title: `Selidiki: ${d.candidate_driver}`, title_en: `Investigate: ${d.candidate_driver}`,
+      title: `Selidiki: ${d.candidate_driver}`, title_en: `Investigate: ${d.candidate_driver_en || d.candidate_driver}`,
       explanation: `${d.observed_outcome} → ${d.candidate_driver} (${d.level}). Tanpa perubahan setting yang dibenarkan.`,
       evidence_ids: d.source_event_ids || [], source_skills: ['GMVMAX_SKILL_04'],
       expected_impact: 'mengkonfirmasi/menyingkirkan driver', success_metric: 'driver terkonfirmasi/terbantah', stop_condition: 'bukti cukup untuk keputusan',
