@@ -15,6 +15,7 @@ const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_ID[+
 export default function MonthPicker({
   value, onChange, enabledMonths = null, allowLifetime = false,
   years: yearsProp = null, align = 'right', placeholder = 'Pilih bulan',
+  lifetimeLabel = 'Lifetime',
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -38,7 +39,7 @@ export default function MonthPicker({
   }, [])
 
   const yi = years.indexOf(viewYear)
-  const label = value?.mode === 'month' && value.month ? monthLabel(value.month) : (allowLifetime ? 'Lifetime' : placeholder)
+  const label = value?.mode === 'month' && value.month ? monthLabel(value.month) : (allowLifetime ? lifetimeLabel : placeholder)
   // enabledMonths null → semua bulan aktif (mode import).
   const has = (mm) => enabledMonths == null || enabledMonths.includes(`${viewYear}-${mm}`)
 
@@ -64,7 +65,7 @@ export default function MonthPicker({
               <button onClick={() => { onChange({ mode: 'lifetime', month: null }); setOpen(false) }}
                 className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
                   value?.mode === 'lifetime' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
-                <Layers className="w-3.5 h-3.5" /> Lifetime
+                <Layers className="w-3.5 h-3.5" /> {lifetimeLabel}
               </button>
             </div>
           )}

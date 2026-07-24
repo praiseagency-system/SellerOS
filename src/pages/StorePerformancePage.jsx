@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
-  Package, Tags, Clock, MapPin, CreditCard, Truck, BookOpen, ChevronDown,
+  Package, Tags, Clock, MapPin, CreditCard, Truck, BookOpen, ChevronDown, Check,
 } from 'lucide-react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -15,10 +15,12 @@ import { listVouchers } from '../data/vouchers'
 import { matchVouchersToAmount } from '../utils/voucher'
 import Modal from '../components/Modal'
 import MonthPicker from '../components/MonthPicker'
+import { PlatformIcon } from '../components/PlatformIcon'
 
 const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const monthKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_ID[+m - 1]} ${y}` }
+const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok/Tokopedia' }
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
@@ -51,6 +53,8 @@ export default function StorePerformancePage() {
   const [vouchers, setVouchers] = useState([])
   const [showImport, setShowImport] = useState(false)
   const [showFiles, setShowFiles] = useState(false)   // toggle daftar file terimport
+  const [importMonth, setImportMonth] = useState(null) // bulan wajib saat impor
+  const [importPlatform, setImportPlatform] = useState(null) // platform wajib: 'shopee' | 'tiktok'
   const fileRef = useRef(null)
 
   // Muat voucher (untuk cocokkan nominal voucher pesanan → nama voucher).
@@ -96,15 +100,30 @@ export default function StorePerformancePage() {
   async function handleFiles(fileList) {
     const files = Array.from(fileList || [])
     if (!files.length) return
+    // Platform & bulan WAJIB dipilih dulu.
+    if (!importPlatform) { setError('Pilih platform dulu.'); return }
+    if (!importMonth) { setError('Pilih bulan dulu sebelum upload file.'); return }
     setBusy(true); setError(null); setWarning(null)
     try {
       let cur = store
+      const wrongPlatform = []   // file tak cocok platform terpilih
+      const noMonth = []         // file tanpa data bulan terpilih
       for (const f of files) {
         const res = await ingestFile(f)
-        cur = mergeUpload(cur, res)
+        // Validasi platform: file harus sesuai marketplace yang dipilih.
+        if (res.source !== importPlatform) { wrongPlatform.push(f.name); continue }
+        // Hanya baris pesanan di bulan terpilih yang diimpor.
+        const lines = res.lines.filter(l => monthKey(l.t) === importMonth)
+        if (!lines.length) { noMonth.push(f.name); continue }
+        const months = [...new Set(lines.map(l => monthKey(l.t)))]
+        cur = mergeUpload(cur, { ...res, lines, months })
       }
       await saveStore(cur)
       setStore({ ...cur })
+      const warns = []
+      if (wrongPlatform.length) warns.push(`Bukan file ${PLATFORM_LABEL[importPlatform]}: ${wrongPlatform.join(', ')} — dilewati.`)
+      if (noMonth.length) warns.push(`Tanpa data ${monthLabel(importMonth)}: ${noMonth.join(', ')} — dilewati.`)
+      if (warns.length) setWarning(warns.join(' '))
     } catch (e) {
       setError(e.message || 'Gagal memproses file.')
     } finally {
@@ -224,10 +243,60 @@ export default function StorePerformancePage() {
           subtitle="Shopee / TikTok / Tokopedia · XLSX atau CSV · deteksi & analitik otomatis"
           onClose={() => setShowImport(false)} maxWidth="max-w-xl">
           <div className="p-5">
+            {/* Import 3 langkah: (1) platform → (2) bulan → (3) upload. WAJIB
+                pilih platform & bulan; data yang masuk hanya baris pesanan di
+                bulan terpilih & sesuai platform. */}
+            {/* Langkah 1 — Pilih platform */}
+            <div className="flex items-center gap-2.5 mb-2.5">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${
+                importPlatform ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}>
+                {importPlatform ? <Check className="w-3.5 h-3.5" /> : '1'}
+              </span>
+              <p className="text-sm font-semibold text-ink">Pilih platform <span className="text-red-400">*</span></p>
+            </div>
+            <div className="flex gap-2 mb-4 ml-[34px]">
+              {[{ id: 'shopee', label: 'Shopee', cls: 'bg-blue-600' }, { id: 'tiktok', label: 'TikTok / Tokopedia', cls: 'bg-gray-600' }].map(p => (
+                <button key={p.id} onClick={() => setImportPlatform(p.id)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+                    importPlatform === p.id ? `${p.cls} text-white border-transparent` : 'border-line/10 text-ink-muted hover:border-line/20'
+                  }`}>
+                  <PlatformIcon id={p.id} />{p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Langkah 2 — Pilih bulan (aktif setelah platform dipilih) */}
+            <div className={`flex items-center justify-between gap-3 mb-4 ${importPlatform ? '' : 'opacity-50 pointer-events-none'}`}>
+              <div className="flex items-center gap-2.5">
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${
+                  importMonth ? 'bg-green-600 text-white' : importPlatform ? 'bg-blue-600 text-white' : 'bg-fill/10 text-ink-faint'}`}>
+                  {importMonth ? <Check className="w-3.5 h-3.5" /> : '2'}
+                </span>
+                <div>
+                  <p className={`text-sm font-semibold ${importPlatform ? 'text-ink' : 'text-ink-faint'}`}>Pilih bulan periode <span className="text-red-400">*</span></p>
+                  <p className="text-[11px] text-ink-faint mt-0.5">Hanya baris pesanan di bulan ini yang diimpor.</p>
+                </div>
+              </div>
+              <div className="w-44 flex-shrink-0">
+                <MonthPicker
+                  value={{ mode: importMonth ? 'month' : null, month: importMonth }}
+                  onChange={v => setImportMonth(v.month)}
+                  placeholder="Pilih bulan"
+                  align="right" />
+              </div>
+            </div>
+
+            {/* Langkah 3 — Upload file (aktif setelah platform & bulan dipilih) */}
+            <div className="flex items-center gap-2.5 mb-2.5">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${
+                importPlatform && importMonth ? 'bg-blue-600 text-white' : 'bg-fill/10 text-ink-faint'}`}>3</span>
+              <p className={`text-sm font-semibold ${importPlatform && importMonth ? 'text-ink' : 'text-ink-faint'}`}>Upload file</p>
+            </div>
             <div
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files) }}
-              className="border-2 border-dashed border-line/15 rounded-2xl p-6 text-center hover:border-blue-600/40 transition-colors"
+              onDragOver={e => { if (importPlatform && importMonth) e.preventDefault() }}
+              onDrop={e => { e.preventDefault(); if (importPlatform && importMonth) handleFiles(e.dataTransfer.files) }}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center transition-colors ${
+                importPlatform && importMonth ? 'border-line/15 hover:border-blue-600/40' : 'border-line/10 opacity-50 pointer-events-none'}`}
             >
               <input ref={fileRef} type="file" accept=".xlsx,.csv" multiple className="hidden"
                 onChange={e => handleFiles(e.target.files)} />
@@ -235,9 +304,13 @@ export default function StorePerformancePage() {
                 <Upload className="w-5 h-5 text-blue-500" />
               </div>
               <p className="text-sm font-medium text-ink-strong">{busy ? 'Memproses...' : 'Upload Laporan Pesanan Bulanan'}</p>
-              <p className="text-xs text-ink-faint mt-1">Tarik & lepas file ke sini, atau pilih manual</p>
-              <button onClick={() => fileRef.current?.click()} disabled={busy}
-                className="mt-3 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors">
+              <p className="text-xs text-ink-faint mt-1">
+                {importPlatform && importMonth
+                  ? `${PLATFORM_LABEL[importPlatform]} · ${monthLabel(importMonth)} · tarik & lepas atau pilih manual`
+                  : 'Selesaikan langkah 1 & 2 dulu'}
+              </p>
+              <button onClick={() => fileRef.current?.click()} disabled={busy || !importPlatform || !importMonth}
+                className="mt-3 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 Pilih File
               </button>
             </div>
