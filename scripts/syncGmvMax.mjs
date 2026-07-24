@@ -51,6 +51,22 @@ function creativeToRow(importId, r) {
 }
 
 async function main() {
+  // ── GUARD LEGACY WRITER (provenance hardening) ────────────────────────────
+  // Jalur LAMA ini menulis kanonik via DELETE+INSERT (UUID baru → riwayat hilang,
+  // sync_run dangling) dan TIDAK menulis audit/lineage/sync-run. Itulah pola yang
+  // memicu penggantian out-of-band (RCA AsterixSty 2026-07-20). Writer terjadwal
+  // sekarang = vpsCommit.mjs (versioned, aman). Jalur ini di-GUARD: menolak jalan
+  // kecuali override eksplisit, agar tak dipakai tak sengaja / diam-diam di produksi.
+  // Override sah (mis. recovery manual): set GMVMAX_LEGACY_WRITER_OK=1.
+  if (process.env.GMVMAX_LEGACY_WRITER_OK !== '1') {
+    console.error('⛔ LEGACY_WRITER_BLOCKED: scripts/syncGmvMax.mjs adalah jalur tulis kanonik LAMA')
+    console.error('   (delete+insert, tanpa versioning/audit/lineage). Untuk write terjadwal pakai')
+    console.error('   vpsCommit.mjs (versioned). Bila benar-benar perlu jalur manual ini, set')
+    console.error('   GMVMAX_LEGACY_WRITER_OK=1 secara eksplisit — dan sadari provenance-nya tak ter-track.')
+    process.exit(2)
+  }
+  console.error('⚠ LEGACY_WRITER_OVERRIDE: GMVMAX_LEGACY_WRITER_OK=1 — menulis via jalur LAMA (tanpa versioning/lineage).')
+
   const manifestPath = process.argv[2]
   if (!manifestPath) throw new Error('Argumen manifest JSON wajib.')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
