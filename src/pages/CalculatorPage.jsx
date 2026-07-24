@@ -276,6 +276,24 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
+      {/* Header produk — nama produk yang sedang diedit (dari menu Produk) */}
+      {initialProduct && (
+        <div className="flex items-center gap-3 mb-4">
+          {initialProduct.image && (
+            <img src={initialProduct.image} alt=""
+              className="w-11 h-11 rounded-xl object-cover border border-line/10 flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-ink-strong truncate">{initialProduct.name}</h2>
+            <p className="text-[11px] text-ink-faint truncate">
+              {initialProduct.sku ? `SKU ${initialProduct.sku}` : 'Tanpa SKU'}
+              {catLabel ? ` · ${catLabel}` : ''}
+              {variations.length > 1 ? ` · ${variations.length} varian` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Platform tabs + Simpan Produk */}
       <div className="flex items-center gap-2 mb-6">
         {[

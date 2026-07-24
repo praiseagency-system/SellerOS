@@ -357,6 +357,20 @@ function IconBtn({ children, onClick, title, danger }) {
   )
 }
 
+// Rata-rata metrik lintas-varian ber-harga — dipakai ROAS Intelligence untuk
+// produk multi-varian (SKU/HPP berbeda-beda). ROAS BEP dihitung ulang dari
+// rata-rata harga ÷ rata-rata profit agar konsisten dgn rumus calc.js.
+function averageVariantCalc(variations) {
+  const pv = (variations || []).filter(v => v.calc)
+  if (!pv.length) return null
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length
+  const h = avg(pv.map(v => v.calc.h))
+  const profitNoAd = avg(pv.map(v => v.calc.profitNoAd))
+  const marginNoAd = avg(pv.map(v => v.calc.marginNoAd))
+  const roasBep = profitNoAd > 0 ? Math.ceil((h / profitNoAd) * 10) / 10 : null
+  return { n: pv.length, h, profitNoAd, marginNoAd, roasBep }
+}
+
 function VariationsTable({ variations }) {
   return (
     <div>
@@ -414,7 +428,21 @@ function ProductDetailModal({ p, onClose, onOpen, onAddVariation }) {
         </div>
         <div className="overflow-auto p-5 space-y-4">
           {p.summary?.count > 1 ? (
-            <VariationsTable variations={p.variations} />
+            <>
+              <VariationsTable variations={p.variations} />
+              {(() => {
+                const a = averageVariantCalc(p.variations)
+                if (!a) return null
+                return (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-ink-faint">
+                      Rata-rata {a.n} varian ber-harga{a.n < p.summary.count ? ` (dari ${p.summary.count})` : ''} — harga & HPP tiap varian bisa berbeda.
+                    </p>
+                    <RoasIntelligence hargaJual={a.h} profit={a.profitNoAd} margin={a.marginNoAd} roasBep={a.roasBep} showHealth={false} />
+                  </div>
+                )
+              })()}
+            </>
           ) : c ? (
             <>
               <RoasIntelligence hargaJual={c.h} profit={c.profitNoAd} margin={c.marginNoAd} roasBep={c.roasBep} showHealth={false} />
