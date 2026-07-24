@@ -2,7 +2,6 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
   Package, Tags, Clock, MapPin, CreditCard, Truck, BookOpen, ChevronDown,
-  Calendar, ChevronLeft, ChevronRight, Layers,
 } from 'lucide-react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -15,89 +14,11 @@ import { computeStore, quickInsights, marketplaceOf } from '../utils/storeAnalyt
 import { listVouchers } from '../data/vouchers'
 import { matchVouchersToAmount } from '../utils/voucher'
 import Modal from '../components/Modal'
+import MonthPicker from '../components/MonthPicker'
 
 const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const monthKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_ID[+m - 1]} ${y}` }
-
-// Pemilih periode gaya affiliate: mode Per Bulan (grid bulan, hanya yang ada
-// datanya) + Lifetime (semua). value = { mode, month }.
-function StoreMonthPicker({ months, value, onChange }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  const years = useMemo(() => [...new Set(months.map(m => m.slice(0, 4)))].sort(), [months])
-  const [viewYear, setViewYear] = useState(
-    () => (value.month ? value.month.slice(0, 4) : years[years.length - 1]) || String(new Date().getFullYear()))
-
-  useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    function onKey(e) { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [])
-
-  const yi = years.indexOf(viewYear)
-  const label = value.mode === 'month' && value.month ? monthLabel(value.month) : 'Lifetime'
-  const has = (mm) => months.includes(`${viewYear}-${mm}`)
-
-  return (
-    <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold bg-fill/5 border border-line/15 text-ink hover:border-blue-600/40 transition-colors">
-        <Calendar className="w-4 h-4 text-blue-500" />
-        {label}
-        <ChevronDown className={`w-3.5 h-3.5 text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="absolute right-0 mt-2 z-50 flex glass-modal rounded-2xl overflow-hidden min-w-[320px]">
-          {/* Mode */}
-          <div className="w-28 flex-shrink-0 border-r border-line/10 p-1.5 space-y-0.5">
-            <button
-              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
-                value.mode === 'month' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
-              <Calendar className="w-3.5 h-3.5" /> Per Bulan
-            </button>
-            <button onClick={() => { onChange({ mode: 'lifetime', month: null }); setOpen(false) }}
-              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
-                value.mode === 'lifetime' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
-              <Layers className="w-3.5 h-3.5" /> Lifetime
-            </button>
-          </div>
-          {/* Grid bulan */}
-          <div className="p-3 flex-1">
-            <div className="flex items-center justify-between mb-2.5">
-              <button disabled={yi <= 0} onClick={() => setViewYear(years[yi - 1])}
-                className="text-ink-faint hover:text-ink disabled:opacity-30"><ChevronLeft className="w-4 h-4" /></button>
-              <span className="text-sm font-bold text-ink-strong">{viewYear}</span>
-              <button disabled={yi >= years.length - 1} onClick={() => setViewYear(years[yi + 1])}
-                className="text-ink-faint hover:text-ink disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {MONTHS_ID.map((m, i) => {
-                const mm = String(i + 1).padStart(2, '0')
-                const ym = `${viewYear}-${mm}`
-                const enabled = has(mm)
-                const active = value.mode === 'month' && value.month === ym
-                return (
-                  <button key={mm} disabled={!enabled}
-                    onClick={() => { onChange({ mode: 'month', month: ym }); setOpen(false) }}
-                    className={`py-2 rounded-lg text-xs font-semibold transition-colors ${
-                      active ? 'bg-blue-600 text-white'
-                        : enabled ? 'bg-fill/5 text-ink hover:bg-fill/10'
-                        : 'text-ink-faint/40 cursor-not-allowed'}`}>
-                    {m}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="text-[10px] text-ink-faint mt-2.5">Bulan terang = ada datanya.</p>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 const MP_COLOR = { Shopee: '#f97316', TikTok: '#22d3ee', Tokopedia: '#22c55e' }
 const fmtRp = n => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
@@ -109,6 +30,12 @@ const fmtRpShort = n => {
   return 'Rp' + Math.round(n || 0)
 }
 const fmtNum = n => (n || 0).toLocaleString('id-ID')
+// Ringkas daftar bulan agar chip file tak kepanjangan: >2 bulan → "awal … akhir (N bln)".
+const monthsSummary = (months) => {
+  if (!months || !months.length) return '—'
+  const s = [...months].sort()
+  return s.length <= 2 ? s.join(', ') : `${s[0]} … ${s[s.length - 1]} (${s.length} bln)`
+}
 const pct = n => (n == null ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`)
 const growthCls = n => (n == null ? 'text-ink-faint' : n >= 0 ? 'text-green-400' : 'text-red-400')
 
@@ -123,6 +50,7 @@ export default function StorePerformancePage() {
   const [period, setPeriod] = useState({ mode: 'lifetime', month: null })  // { mode:'lifetime'|'month', month:'YYYY-MM' }
   const [vouchers, setVouchers] = useState([])
   const [showImport, setShowImport] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)   // toggle daftar file terimport
   const fileRef = useRef(null)
 
   // Muat voucher (untuk cocokkan nominal voucher pesanan → nama voucher).
@@ -224,7 +152,7 @@ export default function StorePerformancePage() {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {monthOptions.length > 0 && (
-            <StoreMonthPicker months={monthOptions} value={period} onChange={setPeriod} />
+            <MonthPicker enabledMonths={monthOptions} allowLifetime value={period} onChange={setPeriod} align="right" />
           )}
           <button onClick={() => setShowImport(true)} disabled={busy}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
@@ -325,18 +253,31 @@ export default function StorePerformancePage() {
               </div>
             )}
 
-            {/* File chips */}
+            {/* Riwayat file terimport — toggle (default tertutup agar modal ringkas) */}
             {store.files.length > 0 && (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                {store.files.map(f => (
-                  <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-fill/5 border border-line/10 text-xs text-ink-muted">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
-                    <span className="font-medium text-ink">{f.source === 'shopee' ? 'Shopee' : 'TikTok/Tokopedia'}</span>
-                    · {f.months.join(', ')} · {fmtNum(f.count)} baris
-                    <button onClick={() => handleRemove(f.name)} className="text-ink-faint hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+              <div className="mt-4 rounded-xl border border-line/10 bg-fill/5 overflow-hidden">
+                <button onClick={() => setShowFiles(s => !s)}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-fill/8 transition-colors">
+                  <span className="flex items-center gap-2 text-xs">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-400" />
+                    <span className="font-semibold text-ink">{store.files.length} file terimport</span>
+                    <span className="text-ink-faint">· {fmtNum(store.lines.length)} baris</span>
                   </span>
-                ))}
-                <button onClick={handleClear} className="text-xs text-ink-faint hover:text-red-400 ml-1">Hapus semua</button>
+                  <ChevronDown className={`w-4 h-4 text-ink-muted transition-transform ${showFiles ? 'rotate-180' : ''}`} />
+                </button>
+                {showFiles && (
+                  <div className="px-3 pb-3 pt-2 border-t border-line/8 flex flex-wrap items-center gap-2">
+                    {store.files.map(f => (
+                      <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-fill/5 border border-line/10 text-xs text-ink-muted">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
+                        <span className="font-medium text-ink">{f.source === 'shopee' ? 'Shopee' : 'TikTok/Tokopedia'}</span>
+                        · {monthsSummary(f.months)} · {fmtNum(f.count)} baris
+                        <button onClick={() => handleRemove(f.name)} className="text-ink-faint hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+                      </span>
+                    ))}
+                    <button onClick={handleClear} className="text-xs text-ink-faint hover:text-red-400 ml-1">Hapus semua</button>
+                  </div>
+                )}
               </div>
             )}
 

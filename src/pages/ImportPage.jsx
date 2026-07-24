@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
 import {
-  Download, CheckCircle2, Plus, CalendarDays, Calendar,
+  Download, CheckCircle2, Plus,
   BookOpen, AlertCircle
 } from 'lucide-react'
 import { useQuadrant } from '../contexts/QuadrantContext'
 import { useLang } from '../contexts/LanguageContext'
 import { PlatformIcon } from '../components/PlatformIcon'
+import MonthPicker from '../components/MonthPicker'
 
 const PLATFORMS = [
   { id: 'shopee', label: 'Shopee', color: 'bg-blue-600' },
@@ -14,16 +15,11 @@ const PLATFORMS = [
 
 const MONTHS_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
 
-function buildPeriod(periodType, value) {
+// Impor Kuadran hanya per BULAN (opsi mingguan dihapus). value "2026-05".
+function buildPeriod(value) {
   if (!value) return null
-  if (periodType === 'bulanan') {
-    // value "2026-05"
-    const [y, m] = value.split('-')
-    return { label: `${MONTHS_ID[+m - 1]} ${y}`, periodValue: value, periodDays: 30 }
-  }
-  // mingguan: value "2026-W23"
-  const [y, w] = value.split('-W')
-  return { label: `Minggu ${+w} · ${y}`, periodValue: value, periodDays: 7 }
+  const [y, m] = value.split('-')
+  return { label: `${MONTHS_ID[+m - 1]} ${y}`, periodValue: value, periodDays: 30 }
 }
 
 export default function ImportPage({ onImported, embedded = false }) {
@@ -31,7 +27,7 @@ export default function ImportPage({ onImported, embedded = false }) {
   const { t } = useLang()
 
   const [platform, setPlatform] = useState('shopee')
-  const [periodType, setPeriodType] = useState('bulanan')
+  const periodType = 'bulanan'   // Impor Kuadran hanya per bulan
   const [periodInput, setPeriodInput] = useState('')
   const [perf, setPerf] = useState(null)
   const [iklan, setIklan] = useState(null)
@@ -43,7 +39,7 @@ export default function ImportPage({ onImported, embedded = false }) {
   const [drag, setDrag] = useState(false)
 
   const isTikTok = platform === 'tiktok'
-  const period = buildPeriod(periodType, periodInput)
+  const period = buildPeriod(periodInput)
   const ready = !!perf && !!period
   const steps = [1, 2, 3, 4, 5].map(n => t(`import.${isTikTok ? 'tiktok' : 'shopee'}.s${n}`))
 
@@ -94,39 +90,22 @@ export default function ImportPage({ onImported, embedded = false }) {
           </div>
         </div>
 
-        {/* Tipe Data */}
+        {/* Periode Bulan */}
         <div>
-          <p className="text-sm font-semibold text-ink mb-2">{t('import.dataType')}</p>
-          <div className="flex gap-2">
-            <button onClick={() => { setPeriodType('mingguan'); setPeriodInput('') }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                periodType === 'mingguan' ? 'bg-blue-600 text-white border-transparent' : 'border-line/10 text-ink-muted hover:border-line/20'
-              }`}>
-              <CalendarDays className="w-4 h-4" />{t('import.weekly')}
-            </button>
-            <button onClick={() => { setPeriodType('bulanan'); setPeriodInput('') }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                periodType === 'bulanan' ? 'bg-blue-600 text-white border-transparent' : 'border-line/10 text-ink-muted hover:border-line/20'
-              }`}>
-              <Calendar className="w-4 h-4" />{t('import.monthly')}
-            </button>
+          <p className="text-sm font-semibold text-ink mb-2">{t('import.periodMonth')}</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-64">
+              <MonthPicker
+                value={{ mode: 'month', month: periodInput || null }}
+                onChange={v => setPeriodInput(v.month || '')}
+                align="left"
+                placeholder="Pilih bulan"
+              />
+            </div>
+            {period && (
+              <span className="text-xs text-ink-muted">→ {t('import.savedAs')} <span className="text-ink font-medium">{period.label}</span></span>
+            )}
           </div>
-        </div>
-
-        {/* Periode */}
-        <div>
-          <p className="text-sm font-semibold text-ink mb-2">
-            {periodType === 'bulanan' ? t('import.periodMonth') : t('import.periodWeek')}
-          </p>
-          <input
-            type={periodType === 'bulanan' ? 'month' : 'week'}
-            value={periodInput}
-            onChange={e => setPeriodInput(e.target.value)}
-            className="bg-fill/5 border border-line/10 rounded-xl px-4 py-2.5 text-sm text-ink-strong w-64 focus:outline-none focus:ring-2 focus:ring-blue-600/50"
-          />
-          {period && (
-            <span className="ml-3 text-xs text-ink-muted">→ {t('import.savedAs')} <span className="text-ink font-medium">{period.label}</span></span>
-          )}
         </div>
 
         {/* File Data */}
