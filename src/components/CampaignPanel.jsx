@@ -16,7 +16,8 @@ import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
 import {
-  fmt, marginCls, fmtPct, itemMargin, itemCalc, totalFee, voucherEffect, voucherList,
+  fmt, marginCls, fmtPct, itemMargin, itemCalc, totalFee, feeBreakdown, voucherEffect, voucherList,
+  worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
   APPROVAL, approvalStatusOf, approvalSummary,
 } from '../utils/campaignPricing'
 
@@ -272,53 +273,13 @@ export default function CampaignPanel({ products }) {
                   <div className="border-t border-line/8 px-4 py-3 space-y-1.5">
                     {(c.items || []).length === 0 ? (
                       <p className="text-xs text-ink-faint py-1">Belum ada varian. Klik edit untuk menambah.</p>
-                    ) : (c.items || []).map((it, i) => {
-                      const m = itemMargin(it, productMap)
-                      const calc = itemCalc(it, productMap)
-                      const gone = !productMap[it.productId]
-                      const cvs = voucherList(c.voucherConfig)
-                      const isFirst = i === (c.items || []).findIndex(x => x.productId === it.productId)
-                      const plog = isFirst ? (c.approvalLog || []).filter(e => e.productId === it.productId).slice().reverse() : []
-                      const a = c.approvals?.[it.productId]
-                      return (
-                        <div key={i}>
-                          <div className="flex items-center gap-3 text-sm">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-ink-strong truncate text-[13px]">{it.name || '(varian)'}{gone && <span className="text-ink-faint"> · produk dihapus</span>}</p>
-                              <p className="text-[11px] text-ink-faint truncate">
-                                {it.sku || 'tanpa SKU'}
-                                {(() => { const f = totalFee(calc); return f && +it.price > 0 ? <> · komisi &amp; biaya {f.pct.toFixed(1)}% ({fmt(f.amount)})</> : null })()}
-                              </p>
-                            </div>
-                            {isFirst && (() => {
-                              const st = approvalStatusOf(c.approvals, it.productId)
-                              return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
-                            })()}
-                            <div className="text-right flex-shrink-0">
-                              <p className="text-[9px] text-ink-faint leading-none mb-0.5">Harga campaign</p>
-                              <span className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(+it.price)}</span>
-                            </div>
-                            <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
-                          </div>
-                          {/* Riwayat persetujuan produk (siapa & kapan) */}
-                          {isFirst && (plog.length > 0 || (a?.at && a.status !== 'pending')) && (
-                            <div className="mt-0.5 mb-1 pl-0 space-y-0.5">
-                              {plog.length > 0
-                                ? plog.slice(0, 4).map((e, k) => (
-                                    <p key={k} className="text-[10px] text-ink-faint flex items-center gap-1.5">
-                                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.status === 'approved' ? 'bg-green-400' : e.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'}`} />
-                                      <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
-                                      <span className="truncate">oleh {e.byName ? `${e.byName} (${e.by})` : (e.by || '—')}{e.note ? ` · "${e.note}"` : ''}</span>
-                                      <span className="ml-auto flex-shrink-0">{fmtWhen(e.at)}</span>
-                                    </p>
-                                  ))
-                                : <p className="text-[10px] text-ink-faint">{APPROVAL[a.status]?.label} · {fmtWhen(a.at)}{a.note ? ` · "${a.note}"` : ''}</p>}
-                            </div>
-                          )}
-                          {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={c.voucherConfig?.kind || 'normal'} showHeader={i === 0} />}
-                        </div>
-                      )
-                    })}
+                    ) : (
+                      <div className="space-y-2.5">
+                        {byProductList(c.items).map(([pid, its]) => (
+                          <ProductCard key={pid} c={c} productId={pid} its={its} productMap={productMap} />
+                        ))}
+                      </div>
+                    )}
 
                     {/* Monitoring: hasil aktual dari Performa Toko */}
                     {mon.hasWindow && (
@@ -381,6 +342,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [approvals, setApprovals] = useState(initial.approvals ?? {})
   const [sharing, setSharing]     = useState(false)
   const [campaignType, setCampaignType] = useState(initial.voucherConfig?.kind ?? 'normal')
+  const [targetMargin, setTargetMargin] = useState(initial.voucherConfig?.targetMargin != null ? String(initial.voucherConfig.targetMargin) : '')
   const [vouchers, setVouchers]   = useState(() => {
     const vs = initial.voucherConfig?.vouchers
     return Array.isArray(vs) && vs.length ? vs.map(v => ({ ...v })) : []
@@ -415,7 +377,9 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
       sellerPct: campaignType === 'cofunded' ? (v.sellerPct ?? '') : '',
       sellerCap: campaignType === 'cofunded' ? (v.sellerCap ?? '') : '',
     }))
-    return { kind: campaignType, vouchers: norm }
+    const cfg = { kind: campaignType, vouchers: norm }
+    if (targetMargin !== '' && +targetMargin > 0) cfg.targetMargin = +targetMargin
+    return cfg
   }
 
   // Item dikelompokkan per produk (urut sesuai produk).
@@ -636,6 +600,15 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
             </div>
           </div>
         )}
+        <div className="pt-3 border-t border-line/8">
+          <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Target margin "worth it" <span className="text-ink-faint">(cek kelayakan tiap produk; default {DEFAULT_TARGET_MARGIN}%)</span></label>
+          <div className="relative flex items-center w-24">
+            <input type="number" min="0" value={targetMargin} onChange={e => setTargetMargin(e.target.value)} placeholder={String(DEFAULT_TARGET_MARGIN)}
+              className="w-full bg-fill/5 border border-line/10 rounded-lg pl-2.5 pr-6 py-1.5 text-[13px] text-ink-strong tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+            <span className="absolute right-2.5 text-[11px] text-ink-faint">%</span>
+          </div>
+          <p className="text-[10px] text-ink-faint mt-1">Verdict tiap produk dari margin <b>terburuk</b> (termasuk voucher terdalam): ≥ target = <span className="text-green-300">Worth it</span>, di bawahnya Tipis / Kurang worth.</p>
+        </div>
       </div>
 
       {/* Agregat */}
@@ -739,6 +712,117 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
         <ProductPicker products={products} enrolledIds={enrolledIds} platform={platform}
           onAdd={addProduct} onClose={() => setShowPicker(false)} />
       )}
+    </div>
+  )
+}
+
+// Kelompokkan item per produk, urut kemunculan pertama.
+function byProductList(items) {
+  const out = [], seen = new Map()
+  for (const it of (items || [])) {
+    if (!seen.has(it.productId)) { seen.set(it.productId, []); out.push([it.productId, seen.get(it.productId)]) }
+    seen.get(it.productId).push(it)
+  }
+  return out
+}
+
+const VERDICT_CLS = {
+  worth: 'bg-green-500/12 text-green-300',
+  thin:  'bg-amber-500/12 text-amber-300',
+  low:   'bg-red-500/12 text-red-300',
+}
+
+// Kartu satu produk di dalam detail campaign: status, verdict worth-it,
+// riwayat approval, lalu tiap varian (harga campaign, margin, komisi & biaya
+// yang bisa diklik untuk breakdown, tabel voucher).
+function ProductCard({ c, productId, its, productMap }) {
+  const [openFee, setOpenFee] = useState(null)
+  const p = productMap[productId]
+  const cfg = c.voucherConfig
+  const kind = cfg?.kind || 'normal'
+  const cvs = voucherList(cfg)
+  const st = approvalStatusOf(c.approvals, productId)
+  const target = +(cfg?.targetMargin) || DEFAULT_TARGET_MARGIN
+  const worst = worstProductMargin(its, productMap, cfg)
+  const verdict = worthVerdict(worst, target)
+  const plog = (c.approvalLog || []).filter(e => e.productId === productId).slice().reverse()
+  const a = c.approvals?.[productId]
+  const logRows = plog.length > 0 ? plog.slice(0, 4)
+    : (a?.at && a.status !== 'pending') ? [{ status: a.status, by: a.by, byName: a.byName, at: a.at, note: a.note }] : []
+
+  return (
+    <div className="bg-surface rounded-2xl border border-line/12 shadow-sm overflow-hidden">
+      <div className="flex items-start gap-3 px-4 py-3">
+        <div className="w-9 h-9 rounded-xl bg-blue-600/10 flex items-center justify-center flex-shrink-0"><Package className="w-4 h-4 text-blue-400" /></div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[13px] font-semibold text-ink-strong">{p ? p.name : '(produk dihapus)'}</p>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
+            {verdict && <span title={`margin terburuk ${worst?.toFixed(1)}% vs target ${target}%`} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${VERDICT_CLS[verdict.key]}`}>{verdict.label}</span>}
+          </div>
+          <p className="text-[11px] text-ink-faint mt-0.5">{its.length} varian · target margin {target}%{worst != null ? ` · margin terburuk ${worst.toFixed(1)}%` : ''}</p>
+        </div>
+      </div>
+
+      {logRows.length > 0 && (
+        <div className="px-4 py-2 bg-fill/5 border-y border-line/8 space-y-0.5">
+          {logRows.map((e, k) => (
+            <p key={k} className="text-[10px] text-ink-faint flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.status === 'approved' ? 'bg-green-400' : e.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'}`} />
+              <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
+              <span className="truncate">{(e.by || e.byName) ? `oleh ${e.byName ? `${e.byName} (${e.by})` : e.by}` : ''}{e.note ? ` · "${e.note}"` : ''}</span>
+              <span className="ml-auto flex-shrink-0">{fmtWhen(e.at)}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      <div className="px-4 py-3 space-y-3">
+        {its.map((it, vi) => {
+          const m = itemMargin(it, productMap)
+          const calc = itemCalc(it, productMap)
+          const fee = totalFee(calc)
+          const feeRows = openFee === it.varIdx ? feeBreakdown(calc) : null
+          return (
+            <div key={it.varIdx}>
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] text-ink truncate">{it.name || `Varian ${it.varIdx + 1}`}</p>
+                  <p className="text-[11px] text-ink-faint truncate">
+                    {it.sku || 'tanpa SKU'}
+                    {fee && +it.price > 0 && (
+                      <> · <button onClick={() => setOpenFee(o => o === it.varIdx ? null : it.varIdx)}
+                        className="text-ink-muted hover:text-blue-400 underline decoration-dotted underline-offset-2">
+                        komisi &amp; biaya {fee.pct.toFixed(1)}% ({fmt(fee.amount)})
+                      </button></>
+                    )}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[9px] text-ink-faint leading-none mb-0.5">Harga campaign</p>
+                  <span className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(+it.price)}</span>
+                </div>
+                <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+              </div>
+              {feeRows && (
+                <div className="mt-1.5 mb-1 rounded-lg bg-fill/5 border border-line/8 p-2.5 space-y-1">
+                  {feeRows.map((r, k) => (
+                    <div key={k} className="flex items-center justify-between text-[11px]">
+                      <span className="text-ink-muted">{r.label}{r.pct != null ? ` (${r.pct.toFixed(r.pct % 1 ? 1 : 0)}%)` : ''}</span>
+                      <span className="text-ink tabular-nums">−{fmt(r.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-line/8 font-semibold">
+                    <span className="text-ink-strong">Total komisi &amp; biaya</span>
+                    <span className="text-ink-strong tabular-nums">−{fmt(fee.amount)}</span>
+                  </div>
+                </div>
+              )}
+              {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={kind} showHeader={vi === 0} />}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
