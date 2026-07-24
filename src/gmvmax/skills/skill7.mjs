@@ -7,6 +7,7 @@
 // mengklasifikasi winner/fatigue dan TIDAK menyuruh boost; rekomendasi tetap
 // OBSERVE (atau DATA_INSUFFICIENT bila blocked). Tak ada outreach/boost otomatis.
 import { Confidence } from './contract.mjs'
+import { sanitizeDisplayName } from './textSafe.mjs'
 
 const CONF_RANK = { HIGH: 4, MEDIUM: 3, LOW: 2, DATA_INSUFFICIENT: 1 }
 const RANK_CONF = ['DATA_INSUFFICIENT', 'LOW', 'MEDIUM', 'HIGH']
@@ -54,7 +55,8 @@ export function runSkill7(input) {
     delivering: status.delivering, learning: status.learning, in_queue: status.in_queue, inactive: status.other,
     affiliate_count: affiliates.length,
     product_count: prodSet.size,
-    top_affiliate: affiliates[0]?.account || null,
+    // Display name only — raw account is kept in `affiliates`/scope_id for identity.
+    top_affiliate: affiliates[0]?.account ? sanitizeDisplayName(affiliates[0].account) : null,
     top_affiliate_share: topAffShare != null ? Number(topAffShare.toFixed(4)) : null,
   }
 
