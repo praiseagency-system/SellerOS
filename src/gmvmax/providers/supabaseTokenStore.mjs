@@ -7,7 +7,10 @@ import { refreshTiktokToken } from './tiktokTokenRefresh.mjs'
 const SERVER_URL = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer'
 const DEFAULT_MARGIN_MS = 10 * 60 * 1000 // refresh bila sisa < 10 menit
 
-// → { accessToken, serverUrl, expiresAt(ms), source } ; kompatibel loadMcpToken().
+// → { accessToken, serverUrl, expiresAt(ms), source, canSelfRenew } ; kompatibel loadMcpToken().
+// canSelfRenew = ada refresh_token tersimpan, jadi access token yang berumur ~24 jam
+// akan dirotasi sendiri tiap run. Dipakai classifyAuth supaya umur pendek itu tidak
+// dilaporkan sebagai keadaan darurat tiap hari.
 export async function loadMcpTokenFromSupabase({
   supabase, workspaceId, fetchImpl = globalThis.fetch, now = Date.now(), marginMs = DEFAULT_MARGIN_MS,
 }) {
@@ -21,6 +24,7 @@ export async function loadMcpTokenFromSupabase({
 
   let expMs = Date.parse(data.expires_at)
   let accessToken = data.access_token
+  let canSelfRenew = !!data.refresh_token
   const needRefresh = !Number.isFinite(expMs) || (expMs - now) < marginMs
 
   if (needRefresh) {
@@ -39,7 +43,11 @@ export async function loadMcpTokenFromSupabase({
     if (uerr) throw new Error(`writeback token gagal: ${uerr.message}`)
     accessToken = tok.accessToken
     expMs = tok.expiresAt
+    canSelfRenew = !!tok.refreshToken
   }
 
-  return { accessToken, serverUrl: SERVER_URL, expiresAt: expMs, source: needRefresh ? 'supabase-refreshed' : 'supabase' }
+  return {
+    accessToken, serverUrl: SERVER_URL, expiresAt: expMs, canSelfRenew,
+    source: needRefresh ? 'supabase-refreshed' : 'supabase',
+  }
 }

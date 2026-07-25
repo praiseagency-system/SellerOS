@@ -42,3 +42,37 @@ test('1C authEvent: URGENT & WARNING beda level', () => {
   assert.equal(authEvent(classifyAuth(NOW + 2 * DAY, NOW)).level, 'urgent')
   assert.equal(authEvent(classifyAuth(NOW + 5 * DAY, NOW)).level, 'warn')
 })
+
+// ── Token yang rotasi sendiri (refresh_token ada di tiktok_connections) ────────
+// Access token TikTok berumur ~24 jam & diperbarui tiap run. Dengan ambang 3 hari,
+// dulu SETIAP run mencetak "URGENT: ganti token SEKARANG" → alarm palsu harian.
+
+test('selfRenewing: sisa ~24 jam TIDAK urgent (dulu alarm palsu tiap run)', () => {
+  const c = classifyAuth(NOW + DAY, NOW, { selfRenewing: true })
+  assert.equal(c.state, AUTH.VALID)
+  assert.equal(authEvent(c).level, 'info')
+  assert.equal(authEvent(c).message, null)
+})
+
+test('selfRenewing: sisa beberapa menit pun masih VALID (refresh terjadi saat run)', () => {
+  assert.equal(classifyAuth(NOW + 60_000, NOW, { selfRenewing: true }).state, AUTH.VALID)
+})
+
+test('selfRenewing TIDAK menutupi token yang benar-benar mati → tetap EXPIRED & blocking', () => {
+  const c = classifyAuth(NOW - 1, NOW, { selfRenewing: true })
+  assert.equal(c.state, AUTH.EXPIRED)
+  assert.ok(isBlocking(c.state))
+  const ev = authEvent(c)
+  assert.equal(ev.level, 'critical')
+  assert.match(ev.message, /refresh GAGAL/)
+})
+
+test('tanpa selfRenewing perilaku lama tak berubah (token manual tetap diperingatkan)', () => {
+  assert.equal(classifyAuth(NOW + DAY, NOW).state, AUTH.URGENT)
+  assert.equal(classifyAuth(NOW + 5 * DAY, NOW).state, AUTH.WARNING)
+})
+
+test('selfRenewing ikut terbawa di hasil classify (untuk pesan & audit)', () => {
+  assert.equal(classifyAuth(NOW + DAY, NOW, { selfRenewing: true }).selfRenewing, true)
+  assert.equal(classifyAuth(NOW + DAY, NOW).selfRenewing, false)
+})
