@@ -123,11 +123,12 @@ async function main() {
   // Resolusi token MCP: 'env' (inject dari env, Keychain-bridge) ATAU 'supabase'
   // (baca koneksi website utk workspace advertiser + self-refresh + writeback ke
   // tiktok_connections — BUKAN tabel kanonik GMV Max, barrier shadow tetap utuh).
-  let mcpToken, mcpUrl, mcpExpiresAt
+  let mcpToken, mcpUrl, mcpExpiresAt, mcpSelfRenewing = false
   if (cfg.tokenSource === 'supabase') {
     try {
       const t = await loadMcpTokenFromSupabase({ supabase: sb, workspaceId: adv.workspaceId })
       mcpToken = t.accessToken; mcpUrl = t.serverUrl; mcpExpiresAt = t.expiresAt
+      mcpSelfRenewing = !!t.canSelfRenew
       registerSecret(mcpToken)
       safeLog({ event: 'TOKEN_SOURCE', source: t.source, workspace_id: adv.workspaceId, advertiser_id: adv.advertiserId, expiresAt: new Date(t.expiresAt).toISOString() })
     } catch (e) {
@@ -143,7 +144,7 @@ async function main() {
   const provider = new TikTokMcpProvider({ token: mcpToken, serverUrl: mcpUrl, expiresAt: mcpExpiresAt })
 
   // AUTH state model (Stage 1C) — fail-explicit sebelum request MCP bila blocking.
-  const cls = classifyAuth(mcpExpiresAt, now)
+  const cls = classifyAuth(mcpExpiresAt, now, { selfRenewing: mcpSelfRenewing })
   const aev = authEvent(cls)
   safeLog(aev, aev.level === 'info' ? console.log : console.error)
   if (isBlocking(cls.state)) {

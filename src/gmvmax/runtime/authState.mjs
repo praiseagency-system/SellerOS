@@ -13,21 +13,30 @@ export const AUTH = Object.freeze({
 
 const DAY_MS = 86400000
 
-// classifyAuth(expiresAt, now, opts) → { state, remainingMs, remainingDays, expiresAt }
+// classifyAuth(expiresAt, now, opts) → { state, remainingMs, remainingDays, expiresAt, selfRenewing }
 // expiresAt: epoch ms | null (null = env tanpa metadata expiry → dianggap VALID by policy).
-export function classifyAuth(expiresAt, now = Date.now(), { warnDays = 7, urgentDays = 3 } = {}) {
+//
+// opts.selfRenewing: token dirotasi otomatis tiap run (ada refresh_token di
+// tokenStore). Ambang 7d/3d dibuat untuk token yang diganti MANUAL; access token
+// TikTok berumur ~24 jam dan diperbarui sendiri tiap run, sehingga ambang itu
+// menyalakan URGENT "ganti token SEKARANG" di SETIAP run — alarm palsu yang
+// menutupi alarm sungguhan. Untuk token yang bisa memperbarui diri, umur access
+// token bukan peristiwa; yang genting hanyalah bila ia benar-benar sudah mati
+// (artinya refresh gagal/refresh_token hilang) → tetap EXPIRED & blocking.
+export function classifyAuth(expiresAt, now = Date.now(), { warnDays = 7, urgentDays = 3, selfRenewing = false } = {}) {
   if (expiresAt == null) {
-    return { state: AUTH.VALID, remainingMs: null, remainingDays: null, expiresAt: null }
+    return { state: AUTH.VALID, remainingMs: null, remainingDays: null, expiresAt: null, selfRenewing }
   }
   const exp = Number(expiresAt)
   const remainingMs = exp - now
   const remainingDays = remainingMs / DAY_MS
   let state
   if (remainingMs <= 0) state = AUTH.EXPIRED
+  else if (selfRenewing) state = AUTH.VALID                 // rotasi otomatis → umur pendek itu normal
   else if (remainingDays <= urgentDays) state = AUTH.URGENT // (0, 3d]
   else if (remainingDays <= warnDays) state = AUTH.WARNING  // (3d, 7d]
   else state = AUTH.VALID                                   // > 7d
-  return { state, remainingMs, remainingDays, expiresAt: exp }
+  return { state, remainingMs, remainingDays, expiresAt: exp, selfRenewing }
 }
 
 // Event terstruktur siap-alert (tanpa nilai rahasia). level: info|warn|urgent|critical.
@@ -43,7 +52,9 @@ export function authEvent(cls) {
         message: `URGENT: token MCP kedaluwarsa dalam ~${days} hari (${iso}). Ganti token SEKARANG.` }
     case AUTH.EXPIRED:
       return { event: 'MCP_AUTH_REQUIRED', level: 'critical', state: AUTH.EXPIRED, expiresAt: iso, remainingDays: days,
-        message: `Token MCP kedaluwarsa (${iso}). AUTH_REQUIRED — suplai token baru. Tidak menulis data.` }
+        message: cls.selfRenewing
+          ? `Token MCP kedaluwarsa (${iso}) padahal seharusnya rotasi otomatis → refresh GAGAL (refresh_token hilang/ditolak). Connect ulang di website. Tidak menulis data.`
+          : `Token MCP kedaluwarsa (${iso}). AUTH_REQUIRED — suplai token baru. Tidak menulis data.` }
     case AUTH.REQUIRED:
       return { event: 'MCP_AUTH_REQUIRED', level: 'critical', state: AUTH.REQUIRED, expiresAt: iso, remainingDays: days,
         message: `Autentikasi MCP gagal (401). AUTH_REQUIRED — suplai token baru. Tidak menulis data.` }

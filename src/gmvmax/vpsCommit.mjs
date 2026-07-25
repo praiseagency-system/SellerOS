@@ -72,7 +72,7 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
     registerSecret(t.accessToken)
     safeLog({ event: 'TOKEN_SOURCE', source: t.source, workspace_id: workspaceId, advertiser_ids: advIds, expiresAt: new Date(t.expiresAt).toISOString() })
     provider = new TikTokMcpProvider({ token: t.accessToken, serverUrl: t.serverUrl, expiresAt: t.expiresAt })
-    const cls = classifyAuth(t.expiresAt, now); const aev = authEvent(cls)
+    const cls = classifyAuth(t.expiresAt, now, { selfRenewing: !!t.canSelfRenew }); const aev = authEvent(cls)
     safeLog({ ...aev, workspace_id: workspaceId }, aev.level === 'info' ? console.log : console.error)
     if (isBlocking(cls.state)) {
       safeLog({ event: 'ABORT_AUTH', workspace_id: workspaceId, message: 'token blocking → dilewati (workspace lain lanjut).' }, console.error)
