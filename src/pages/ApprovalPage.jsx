@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User, ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User, ChevronDown, ChevronRight, FileText, CalendarRange } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCampaignByToken, submitApproval } from '../data/campaignApproval'
 import {
   fmt, marginCls, fmtPct, itemMargin, voucherEffect, voucherList, APPROVAL, approvalStatusOf,
+  activeItems,
 } from '../utils/campaignPricing'
+import { campaignPeriods, periodsSummary, periodRange, periodLabel, periodStatus } from '../utils/campaignPeriods'
 
 const tokenFromUrl = () => new URLSearchParams(window.location.search).get('t') || ''
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
@@ -14,11 +16,7 @@ function fmtDT(iso) {
   const d = new Date(iso); if (isNaN(d)) return ''
   return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
-function dateRange(c) {
-  const f = d => { if (!d) return null; const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) }
-  const a = f(c.startDate), b = f(c.endDate)
-  return a && b ? `${a} – ${b}` : a ? `mulai ${a}` : b ? `s/d ${b}` : 'tanpa tanggal'
-}
+const dateRange = periodsSummary
 
 export default function ApprovalPage() {
   const { loading: authLoading, user } = useAuth()
@@ -61,10 +59,12 @@ function ApprovalBody({ token, email }) {
   const productMap = state.products
   const nameRequired = c.approvalAccess === 'public'
   const blocked = nameRequired && !name.trim()
-  // Kelompokkan item per produk (urut kemunculan).
+  // Kelompokkan item per produk (urut kemunculan). Varian yang dikecualikan
+  // tim TIDAK ditampilkan sama sekali di sini — produk yang seluruh variannya
+  // dikecualikan otomatis hilang dari daftar persetujuan.
   const groups = []
   const seen = new Map()
-  for (const it of (c.items || [])) {
+  for (const it of activeItems(c.items)) {
     if (!seen.has(it.productId)) { seen.set(it.productId, []); groups.push([it.productId, seen.get(it.productId)]) }
     seen.get(it.productId).push(it)
   }
@@ -97,6 +97,28 @@ function ApprovalBody({ token, email }) {
         </p>
         {c.description && <p className="text-xs text-ink-muted mt-1">{c.description}</p>}
       </div>
+
+      {/* Periode efektif — ditampilkan rinci bila campaign aktif di beberapa rentang */}
+      {campaignPeriods(c).length > 1 && (
+        <div className="mb-4 bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
+          <p className="text-[13px] font-semibold text-ink-strong flex items-center gap-2 mb-2">
+            <CalendarRange className="w-4 h-4 text-blue-400" /> Periode efektif voucher
+          </p>
+          <div className="space-y-1.5">
+            {campaignPeriods(c).map((p, i) => {
+              const st = periodStatus(p)
+              return (
+                <div key={i} className="flex items-center gap-2 text-[13px]">
+                  <span className="text-ink truncate">{periodLabel(p, i)}</span>
+                  {st === 'running' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-green-500/12 text-green-300 flex-shrink-0">berjalan</span>}
+                  {st === 'ended' && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-gray-600/20 text-gray-400 flex-shrink-0">selesai</span>}
+                  <span className="ml-auto text-[12px] text-ink-muted tabular-nums flex-shrink-0">{periodRange(p)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {c.detail && c.detail.trim() && (
         <div className="mb-4 bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden">

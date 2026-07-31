@@ -111,6 +111,52 @@ export function voucherList(voucherConfig) {
   return vs.filter(v => (+v.discPct || 0) > 0)
 }
 
+// ---------------------------------------------------------------------------
+// Varian yang DIKECUALIKAN dari campaign (item.excluded + item.excludeReason).
+// Dipakai saat harga dasar belum ada di price list, atau satu produk punya
+// beberapa SKU dan hanya sebagian yang diajukan — supaya tak salah produk/harga.
+// Varian dikecualikan tak dihitung ke margin/monitoring dan TIDAK tampil di
+// halaman approval client.
+// ---------------------------------------------------------------------------
+export const EXCLUDE_REASON = {
+  manual:  'dikecualikan',
+  noprice: 'belum ada harga PL',
+  dupsku:  'SKU ganda',
+}
+export function isExcluded(it) { return !!it?.excluded }
+export function activeItems(items) { return (items || []).filter(it => !it?.excluded) }
+export function excludedItems(items) { return (items || []).filter(it => it?.excluded) }
+
+// Saran otomatis: varian tanpa harga campaign, dan SKU yang muncul >1 kali di
+// campaign yang sama. Hanya varian yang BELUM dikecualikan yang disarankan.
+export function excludeSuggestions(items) {
+  const list = items || []
+  // SKU ganda dihitung dari varian yang masih diikutkan saja — kalau
+  // kembarannya sudah dikecualikan, tak ada lagi yang ambigu.
+  const skuCount = new Map()
+  for (const it of list) {
+    if (it.excluded) continue
+    const k = (it.sku || '').toLowerCase().trim()
+    if (k) skuCount.set(k, (skuCount.get(k) || 0) + 1)
+  }
+  const noprice = [], dupsku = []
+  for (const it of list) {
+    if (it.excluded) continue
+    if (!(+it.price > 0)) { noprice.push(it); continue }
+    const k = (it.sku || '').toLowerCase().trim()
+    if (k && skuCount.get(k) > 1) dupsku.push(it)
+  }
+  return { noprice, dupsku, total: noprice.length + dupsku.length }
+}
+
+// Alasan yang ditampilkan pada baris varian (tersimpan, atau dari deteksi).
+export function reasonLabel(it) {
+  return EXCLUDE_REASON[it?.excludeReason] || EXCLUDE_REASON.manual
+}
+
+// Kunci unik varian dalam satu campaign (varIdx hanya unik per produk).
+export function itemKey(it) { return `${it.productId}:${it.varIdx}` }
+
 // Persetujuan per produk (sounding ke atasan/client). Default 'pending'.
 export const APPROVAL = {
   pending:  { label: 'Menunggu',  cls: 'bg-amber-500/12 text-amber-300' },
@@ -121,7 +167,7 @@ export function approvalStatusOf(approvals, productId) {
   return approvals?.[productId]?.status || 'pending'
 }
 export function approvalSummary(c) {
-  const ids = [...new Set((c.items || []).map(it => it.productId))]
+  const ids = [...new Set(activeItems(c.items).map(it => it.productId))]
   const appr = c.approvals || {}
   let approved = 0, rejected = 0
   for (const id of ids) {
