@@ -12,7 +12,8 @@ const isMonth = (v) => /^\d{4}-\d{2}$/.test(v || '')
 export default function HeaderControls({ notifCount = '8+', showPeriod = true, onNavigate }) {
   const { theme, setTheme } = useTheme()
   const { lang, setLang, t } = useLang()
-  const { periodValue, prevLabel, isCompareMode, setShowHistory, sessions, platform, loadSession } = useQuadrant()
+  const { periodValue, prevLabel, isCompareMode, setShowHistory, sessions, platform, loadSession,
+    effRange, setRange, derivedMeta } = useQuadrant()
   const { user, signOut } = useAuth()
   const { profile } = useIdentity()
 
@@ -48,8 +49,16 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true, o
         <div className="flex items-center gap-1.5">
           <MonthPicker
             enabledMonths={monthOptions}
-            value={{ mode: isMonth(periodValue) ? 'month' : null, month: isMonth(periodValue) ? periodValue : null }}
-            onChange={v => v.month && pickMonth(v.month)}
+            allowLifetime allowCustom
+            value={effRange?.mode === 'month'
+              ? { mode: isMonth(periodValue) ? 'month' : null, month: isMonth(periodValue) ? periodValue : null }
+              : effRange}
+            onChange={v => {
+              // Per bulan tetap memuat sesi (jalur lama); lifetime & custom
+              // hanya mengubah rentang tampilan — data digabung dari sesi tersimpan.
+              if (v.mode === 'month' && v.month) { setRange(null); pickMonth(v.month) }
+              else setRange(v)
+            }}
             placeholder={t('period.empty')}
             align="right"
           />
@@ -61,7 +70,11 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true, o
             <History className="w-4 h-4" />
           </button>
         </div>
-        {isCompareMode && prevLabel && (
+        {derivedMeta ? (
+          <span className="mt-1 text-xs italic text-blue-400">
+            {derivedMeta.periods} periode digabung{derivedMeta.hasPrev ? ' · vs rentang sebelumnya' : ''}
+          </span>
+        ) : isCompareMode && prevLabel && (
           <span className="mt-1 text-xs italic text-blue-400">
             {t('header.compareVs')} {prevLabel}
           </span>

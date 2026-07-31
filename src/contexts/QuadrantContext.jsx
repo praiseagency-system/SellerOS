@@ -5,6 +5,7 @@ import { parseTikTokData, parseTikTokAdData } from '../utils/parseTikTokData'
 import { getQuadrant, getTrafficThreshold } from '../utils/quadrantUtils'
 import { compareProducts } from '../utils/compareData'
 import { pickPreviousSession } from '../utils/storage'
+import { buildRangeView, previousRange } from '../utils/quadrantAggregate'
 import { listSessions, saveSession } from '../data/periods'
 
 export const PLATFORM_DEFAULTS = {
@@ -37,13 +38,58 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   const [periodType, setPeriodType] = useState(null)
   const [sessions, setSessions] = useState([])
   const [showHistory, setShowHistory] = useState(false)
+  // Pilihan tampilan (di luar sesi yang dimuat): marketplace mana & rentang apa.
+  // null = ikut sesi aktif — jalur lama, tak ada agregasi.
+  const [marketplace, setMarketplace] = useState(null)   // null | 'all' | 'shopee' | 'tiktok'
+  const [range, setRange] = useState(null)               // null | {mode,month,from,to}
 
-  const trafficThreshold = useMemo(() => getTrafficThreshold(settings), [settings])
-  const effectiveSettings = useMemo(() => ({ ...settings, trafficThreshold }), [settings, trafficThreshold])
+  const availableMonths = useMemo(
+    () => [...new Set((sessions || []).map(s => s.periodValue).filter(v => /^\d{4}-\d{2}$/.test(v || '')))].sort(),
+    [sessions],
+  )
+  const availablePlatforms = useMemo(
+    () => [...new Set((sessions || []).map(s => s.platform))],
+    [sessions],
+  )
+  const effMarketplace = marketplace || platform
+  const effRange = useMemo(
+    () => range || (periodValue ? { mode: 'month', month: periodValue } : { mode: 'lifetime' }),
+    [range, periodValue],
+  )
+  // Jalur turunan dipakai hanya kalau tampilan menyimpang dari sesi yang dimuat.
+  const useDerived = effRange.mode !== 'month' || effMarketplace === 'all' ||
+    (!!marketplace && marketplace !== platform)
 
+  // Gabungan lintas periode / marketplace + pembanding rentang setara.
+  const derived = useMemo(() => {
+    if (!useDerived || !sessions.length) return null
+    const plats = effMarketplace === 'all' ? availablePlatforms : [effMarketplace]
+    const cur = buildRangeView(sessions, effRange, plats, PLATFORM_DEFAULTS)
+    if (!cur.products.length) return { ...cur, hasPrev: false }
+    const pr = previousRange(effRange)
+    const prev = pr ? buildRangeView(sessions, pr, plats, PLATFORM_DEFAULTS) : null
+    const hasPrev = !!(prev && prev.products.length)
+    return {
+      ...cur,
+      hasPrev,
+      products: hasPrev ? compareProducts(cur.products, prev.products, cur.settings) : cur.products,
+    }
+  }, [useDerived, sessions, effMarketplace, effRange, availablePlatforms])
+
+  const trafficThreshold = useMemo(
+    () => getTrafficThreshold(derived?.settings || settings),
+    [derived, settings],
+  )
+  const effectiveSettings = useMemo(
+    () => ({ ...(derived?.settings || settings), trafficThreshold }),
+    [derived, settings, trafficThreshold],
+  )
+
+  // Produk turunan sudah membawa kuadrannya sendiri (dihitung dengan ambang
+  // platform & jumlah periode masing-masing) — jangan dihitung ulang di sini.
   const productsWithQuadrant = useMemo(
-    () => products.map(p => ({ ...p, quadrant: getQuadrant(p, settings) })),
-    [products, settings]
+    () => derived ? derived.products : products.map(p => ({ ...p, quadrant: getQuadrant(p, settings) })),
+    [derived, products, settings]
   )
 
   const filteredProducts = useMemo(
@@ -119,6 +165,10 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   // of re-parsing an Excel file. Used for auto-restore on mount + "Buka" di riwayat.
   function loadSession(session, allSessions = sessions) {
     if (!session) return
+    // Membuka sesi dari riwayat/picker mengembalikan tampilan ke jalur normal
+    // (satu bulan, satu marketplace) supaya tak ada sisa filter yang menempel.
+    setMarketplace(null)
+    setRange(null)
     const plat = session.platform
     const sett = session.settings || PLATFORM_DEFAULTS[plat]
     const currWithQ = session.products.map(p => ({ ...p, quadrant: getQuadrant(p, sett) }))
@@ -181,9 +231,18 @@ export function QuadrantProvider({ children, onSessionsChange }) {
     activeTab, setActiveTab,
     activeQuadrant, setActiveQuadrant,
     isLoading, error,
-    hasIklan, isCompareMode, prevLabel, periodLabel, periodValue, periodType,
-    hasData: products.length > 0,
+    hasIklan,
+    isCompareMode: derived ? derived.hasPrev : isCompareMode,
+    prevLabel, periodLabel, periodValue, periodType,
+    hasData: (derived ? derived.products.length : products.length) > 0,
     sessions, refreshSessions, loadSession,
+    // Pemilih marketplace & rentang
+    marketplace, setMarketplace, effMarketplace,
+    range, setRange, effRange,
+    availableMonths, availablePlatforms,
+    derivedMeta: derived
+      ? { periods: derived.periods, platforms: derived.platforms, matched: derived.matched, single: derived.single, hasPrev: derived.hasPrev }
+      : null,
     showHistory, setShowHistory,
     handleUpload, updateSetting,
     platformLabels: PLATFORM_LABELS,

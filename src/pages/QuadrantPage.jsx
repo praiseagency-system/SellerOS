@@ -4,6 +4,9 @@ import QuadrantTableView from '../components/QuadrantTableView'
 import ProductTable from '../components/ProductTable'
 import QuadrantSummary from '../components/QuadrantSummary'
 import MovementView from '../components/MovementView'
+import FunnelView from '../components/FunnelView'
+import TrendView from '../components/TrendView'
+import ActionView from '../components/ActionView'
 import Modal from '../components/Modal'
 import ImportPage from './ImportPage'
 import { useQuadrant } from '../contexts/QuadrantContext'
@@ -11,7 +14,7 @@ import { useLang } from '../contexts/LanguageContext'
 import { CONVERSION_BENCHMARKS, fmtNum } from '../utils/quadrantUtils'
 import {
   LayoutGrid, ScatterChart, List, Settings2, X,
-  GitCompare, TrendingUp, Download
+  GitCompare, TrendingUp, Download, Filter, History, ListChecks, Layers
 } from 'lucide-react'
 
 function EmptyState({ onGoImport }) {
@@ -33,13 +36,34 @@ function EmptyState({ onGoImport }) {
   )
 }
 
+// Tab yang sumbunya terikat satu marketplace tak bisa menampilkan gabungan —
+// minta pilih satu, sekalian jelaskan kenapa.
+function PickOneMarketplace({ onPick, platforms, labels, why }) {
+  return (
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-10 text-center">
+      <Layers className="w-7 h-7 text-ink-faint mx-auto mb-2" />
+      <p className="text-sm text-ink-muted">Pilih satu marketplace untuk tampilan ini.</p>
+      <p className="text-xs text-ink-faint mt-1 max-w-md mx-auto leading-relaxed">{why}</p>
+      <div className="flex gap-2 justify-center mt-4">
+        {platforms.map(id => (
+          <button key={id} onClick={() => onPick(id)}
+            className="px-3.5 py-2 rounded-xl text-[13px] font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            {labels[id]?.name || id}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function QuadrantPage() {
   const {
     hasData, platform, platformLabels,
     productsWithQuadrant, filteredProducts,
     settings, effectiveSettings, trafficThreshold, updateSetting,
     activeTab, setActiveTab, activeQuadrant, setActiveQuadrant,
-    isCompareMode,
+    isCompareMode, sessions,
+    effMarketplace, setMarketplace, availablePlatforms, derivedMeta,
   } = useQuadrant()
   const { t } = useLang()
 
@@ -51,6 +75,9 @@ export default function QuadrantPage() {
     ...(isCompareMode ? [{ id: 'perubahan', label: t('quadrant.tab.perubahan'), icon: GitCompare }] : []),
     { id: 'chart',     label: t('quadrant.tab.chart'),     icon: ScatterChart },
     { id: 'tabel',     label: t('quadrant.tab.tabel'),     icon: List },
+    { id: 'funnel',    label: 'Funnel',                    icon: Filter },
+    { id: 'tren',      label: 'Tren',                      icon: History },
+    { id: 'aksi',      label: 'Aksi',                      icon: ListChecks },
   ]
 
   const trafficName = platformLabels[platform]?.traffic
@@ -162,6 +189,30 @@ export default function QuadrantPage() {
         </div>
       )}
 
+      {/* Pemilih marketplace — "Semua" menggabungkan produk lintas platform
+          lewat pencocokan nama (rupiah & pesanan dijumlah, rasio tidak). */}
+      {availablePlatforms.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-ink-faint">Marketplace:</span>
+          <div className="flex gap-1.5">
+            {[
+              ...(availablePlatforms.length > 1 ? [{ id: 'all', label: 'Semua' }] : []),
+              ...availablePlatforms.map(id => ({ id, label: platformLabels[id]?.name || id })),
+            ].map(m => (
+              <button key={m.id} type="button" onClick={() => setMarketplace(m.id)}
+                className={`px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                  effMarketplace === m.id ? 'bg-blue-600 text-white' : 'bg-fill/5 text-ink-muted hover:text-ink hover:bg-fill/10'
+                }`}>{m.label}</button>
+            ))}
+          </div>
+          {derivedMeta && effMarketplace === 'all' && (
+            <span className="text-[11px] text-ink-faint">
+              {derivedMeta.matched} produk cocok di 2 marketplace · {derivedMeta.single} hanya di satu
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Summary bar */}
       {hasData && (
         <div>
@@ -186,13 +237,28 @@ export default function QuadrantPage() {
             )}
             {activeTab === 'perubahan' && <MovementView products={productsWithQuadrant} dark />}
             {activeTab === 'chart' && (
-              <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
-                <QuadrantChart products={productsWithQuadrant} settings={effectiveSettings} dark />
-              </div>
+              effMarketplace === 'all'
+                ? <PickOneMarketplace onPick={setMarketplace} platforms={availablePlatforms} labels={platformLabels}
+                    why="Sumbu traffic memakai satuan berbeda tiap marketplace — impresi TikTok bukan kunjungan Shopee, jadi titiknya tak bisa disandingkan." />
+                : (
+                  <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
+                    <QuadrantChart products={productsWithQuadrant} settings={effectiveSettings} dark />
+                  </div>
+                )
             )}
             {activeTab === 'tabel' && (
               <ProductTable products={filteredProducts} activeQuadrant={activeQuadrant} dark />
             )}
+            {activeTab === 'funnel' && (
+              effMarketplace === 'all'
+                ? <PickOneMarketplace onPick={setMarketplace} platforms={availablePlatforms} labels={platformLabels}
+                    why="Tahap corong tiap marketplace berbeda — TikTok punya impresi & klik, Shopee mulai dari pengunjung. Menggabungnya menghasilkan corong yang tak mewakili keduanya." />
+                : <FunnelView products={filteredProducts} trafficLabel={trafficName} />
+            )}
+            {activeTab === 'tren' && (
+              <TrendView sessions={sessions} platform={platform} settings={effectiveSettings} />
+            )}
+            {activeTab === 'aksi' && <ActionView products={filteredProducts} />}
           </>
         )}
       </div>

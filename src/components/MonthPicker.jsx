@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Calendar, Layers, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, Layers, CalendarRange, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 
 // Pemilih bulan grid bertema gelap (dipakai Performa Toko + Import Kuadran).
-// value  : { mode:'month'|'lifetime', month:'YYYY-MM'|null }
+// value  : { mode:'month'|'lifetime'|'custom', month:'YYYY-MM'|null, from, to }
 // onChange(value)
+// allowCustom   : izinkan rentang bulan (klik bulan awal lalu bulan akhir).
 // enabledMonths : array 'YYYY-MM' yang boleh dipilih. null = SEMUA bulan boleh
 //                 (mode import — data belum ada, bebas pilih periode).
 // allowLifetime : tampilkan opsi Lifetime (mode filter tampilan).
@@ -13,11 +14,13 @@ const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep'
 const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_ID[+m - 1]} ${y}` }
 
 export default function MonthPicker({
-  value, onChange, enabledMonths = null, allowLifetime = false,
+  value, onChange, enabledMonths = null, allowLifetime = false, allowCustom = false,
   years: yearsProp = null, align = 'right', placeholder = 'Pilih bulan',
   lifetimeLabel = 'Lifetime',
 }) {
   const [open, setOpen] = useState(false)
+  // Saat memilih rentang: bulan awal yang sudah diklik, menunggu bulan akhir.
+  const [pendingFrom, setPendingFrom] = useState(null)
   const ref = useRef(null)
   const thisYear = new Date().getFullYear()
 
@@ -39,7 +42,22 @@ export default function MonthPicker({
   }, [])
 
   const yi = years.indexOf(viewYear)
-  const label = value?.mode === 'month' && value.month ? monthLabel(value.month) : (allowLifetime ? lifetimeLabel : placeholder)
+  const label =
+    value?.mode === 'month' && value.month ? monthLabel(value.month)
+      : value?.mode === 'custom' && value.from && value.to
+        ? (value.from === value.to ? monthLabel(value.from) : `${monthLabel(value.from)} – ${monthLabel(value.to)}`)
+        : value?.mode === 'custom' ? 'Pilih rentang'
+          : (allowLifetime ? lifetimeLabel : placeholder)
+
+  // Klik bulan: di mode custom jadi awal→akhir, selain itu langsung satu bulan.
+  function pickMonthCell(ym) {
+    if (value?.mode !== 'custom') { onChange({ mode: 'month', month: ym }); setOpen(false); return }
+    if (!pendingFrom) { setPendingFrom(ym); return }
+    const [from, to] = pendingFrom <= ym ? [pendingFrom, ym] : [ym, pendingFrom]
+    setPendingFrom(null)
+    onChange({ mode: 'custom', month: null, from, to })
+    setOpen(false)
+  }
   // enabledMonths null → semua bulan aktif (mode import).
   const has = (mm) => enabledMonths == null || enabledMonths.includes(`${viewYear}-${mm}`)
 
@@ -55,18 +73,27 @@ export default function MonthPicker({
       </button>
       {open && (
         <div className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} mt-2 z-50 flex glass-modal rounded-2xl overflow-hidden min-w-[320px]`}>
-          {allowLifetime && (
+          {(allowLifetime || allowCustom) && (
             <div className="w-28 flex-shrink-0 border-r border-line/10 p-1.5 space-y-0.5">
-              <button
+              <button onClick={() => setPendingFrom(null)}
                 className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
                   value?.mode === 'month' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
                 <Calendar className="w-3.5 h-3.5" /> Per Bulan
               </button>
-              <button onClick={() => { onChange({ mode: 'lifetime', month: null }); setOpen(false) }}
-                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
-                  value?.mode === 'lifetime' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
-                <Layers className="w-3.5 h-3.5" /> {lifetimeLabel}
-              </button>
+              {allowLifetime && (
+                <button onClick={() => { setPendingFrom(null); onChange({ mode: 'lifetime', month: null }); setOpen(false) }}
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
+                    value?.mode === 'lifetime' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
+                  <Layers className="w-3.5 h-3.5" /> {lifetimeLabel}
+                </button>
+              )}
+              {allowCustom && (
+                <button onClick={() => { setPendingFrom(null); onChange({ mode: 'custom', month: null, from: null, to: null }) }}
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors ${
+                    value?.mode === 'custom' ? 'bg-blue-600/15 text-blue-500' : 'text-ink-muted hover:bg-fill/5'}`}>
+                  <CalendarRange className="w-3.5 h-3.5" /> Custom
+                </button>
+              )}
             </div>
           )}
           <div className="p-3 flex-1">
@@ -82,10 +109,11 @@ export default function MonthPicker({
                 const mm = String(i + 1).padStart(2, '0')
                 const ym = `${viewYear}-${mm}`
                 const enabled = has(mm)
-                const active = value?.mode === 'month' && value.month === ym
+                const inRange = value?.mode === 'custom' && value.from && value.to && ym >= value.from && ym <= value.to
+                const active = (value?.mode === 'month' && value.month === ym) || pendingFrom === ym || inRange
                 return (
                   <button key={mm} disabled={!enabled}
-                    onClick={() => { onChange({ mode: 'month', month: ym }); setOpen(false) }}
+                    onClick={() => pickMonthCell(ym)}
                     className={`py-2 rounded-lg text-xs font-semibold transition-colors ${
                       active ? 'bg-blue-600 text-white'
                         : enabled ? 'bg-fill/5 text-ink hover:bg-fill/10'
@@ -95,7 +123,12 @@ export default function MonthPicker({
                 )
               })}
             </div>
-            {enabledMonths != null && (
+            {value?.mode === 'custom' && (
+              <p className="text-[10px] text-blue-400 mt-2.5">
+                {pendingFrom ? `Mulai ${monthLabel(pendingFrom)} — pilih bulan akhir.` : 'Klik bulan awal, lalu bulan akhir.'}
+              </p>
+            )}
+            {enabledMonths != null && value?.mode !== 'custom' && (
               <p className="text-[10px] text-ink-faint mt-2.5">Bulan terang = ada datanya.</p>
             )}
           </div>

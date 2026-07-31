@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react'
 import { QUADRANT_CONFIG, fmtNum, fmtIDR } from '../utils/quadrantUtils'
+import PlatformTag from './PlatformTag'
 
 const COLUMNS = [
   { key: 'nama_produk', label: 'Produk', sortable: true },
@@ -120,6 +121,7 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
                       <p className="text-ink text-xs font-medium leading-snug line-clamp-2">
                         {p.nama_produk}
                       </p>
+                      <PlatformTag product={p} />
                       <p className="text-ink-muted text-xs mt-0.5">{p.kode_produk}</p>
                     </div>
                   </td>

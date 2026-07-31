@@ -1,6 +1,7 @@
 ﻿import { useMemo } from 'react'
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react'
 import { QUADRANT_CONFIG, fmtNum, fmtCompact } from '../utils/quadrantUtils'
+import PlatformTag from './PlatformTag'
 
 const MOVE_ICON = {
   up:   { Icon: TrendingUp,   cls: 'text-green-500', title: 'Naik kuadran' },
@@ -68,6 +69,7 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
                     <span className="text-ink font-medium line-clamp-1 min-w-0" title={p.nama_produk}>
                       {p.nama_produk}
                     </span>
+                    <span className="flex-shrink-0"><PlatformTag product={p} /></span>
                   </div>
                 </td>
                 <td className="px-2 py-1.5 text-right text-ink font-mono tabular-nums">
