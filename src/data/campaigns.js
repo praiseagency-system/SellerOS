@@ -3,6 +3,7 @@
 // dihitung dari Harga Campaign tiap produk. Di-scope per workspace via RLS.
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
+import { sortPeriods, periodSpan } from '../utils/campaignPeriods'
 
 function rowToCampaign(r) {
   return {
@@ -15,6 +16,7 @@ function rowToCampaign(r) {
     parentCampaign: r.parent_campaign || '',
     startDate: r.start_date || '',
     endDate: r.end_date || '',
+    periods: Array.isArray(r.periods) ? r.periods : [],
     items: Array.isArray(r.items) ? r.items : [],
     productIds: Array.isArray(r.product_ids) ? r.product_ids : [],
     voucherConfig: (r.voucher_config && typeof r.voucher_config === 'object') ? r.voucher_config : {},
@@ -31,6 +33,14 @@ function rowToCampaign(r) {
 function toRow(c) {
   const items = Array.isArray(c.items) ? c.items : []
   const productIds = [...new Set(items.map(it => it.productId).filter(Boolean))]
+  // Periode efektif (bisa lebih dari satu). start_date/end_date tetap diisi
+  // dengan rentang keseluruhan supaya urutan daftar & data lama tetap valid.
+  const periods = sortPeriods(
+    (Array.isArray(c.periods) ? c.periods : [])
+      .map(p => ({ label: (p?.label || '').trim(), start: p?.start || '', end: p?.end || '' }))
+      .filter(p => p.start || p.end),
+  )
+  const span = periods.length ? periodSpan(periods) : { start: c.startDate || '', end: c.endDate || '' }
   return {
     name: c.name || 'Tanpa Nama',
     platform: c.platform || 'tiktok',
@@ -38,8 +48,9 @@ function toRow(c) {
     detail: (c.detail || '').trim() || null,
     link: (c.link || '').trim() || null,
     parent_campaign: (c.parentCampaign || '').trim() || null,
-    start_date: c.startDate || null,
-    end_date: c.endDate || null,
+    start_date: span.start || null,
+    end_date: span.end || null,
+    periods,
     items,
     product_ids: productIds.length ? productIds : (Array.isArray(c.productIds) ? c.productIds : []),
     voucher_config: (c.voucherConfig && typeof c.voucherConfig === 'object') ? c.voucherConfig : {},

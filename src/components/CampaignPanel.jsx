@@ -19,7 +19,12 @@ import {
   fmt, marginCls, fmtPct, itemMargin, itemCalc, totalFee, feeBreakdown, voucherEffect, voucherList,
   worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
   APPROVAL, approvalStatusOf, approvalSummary,
+  activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey,
 } from '../utils/campaignPricing'
+import {
+  campaignPeriods, campaignStatus, periodsSummary, periodRange, periodRangeShort,
+  periodLabel, periodStatus, periodSpan, activeDays, inAnyPeriod, inPeriod, sortPeriods,
+} from '../utils/campaignPeriods'
 
 // Tanggal + jam untuk riwayat persetujuan.
 function fmtWhen(iso) {
@@ -33,45 +38,46 @@ const PLATFORM_CLS = {
   tiktok: 'bg-gray-700/60 text-gray-300',
   shopee: 'bg-orange-500/15 text-orange-300',
 }
-function fmtDate(d) {
-  if (!d) return null
-  const dt = new Date(d); if (isNaN(dt)) return d
-  return dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-function dateRange(c) {
-  const a = fmtDate(c.startDate), b = fmtDate(c.endDate)
-  if (a && b) return `${a} – ${b}`
-  if (a) return `mulai ${a}`
-  if (b) return `s/d ${b}`
-  return 'tanpa tanggal'
-}
+const dateRange = periodsSummary
 
-// Status campaign relatif ke hari ini (dari window tanggal).
-function campaignStatus(c) {
-  const now = Date.now()
-  const start = c.startDate ? new Date(c.startDate + 'T00:00:00').getTime() : null
-  const end   = c.endDate   ? new Date(c.endDate   + 'T23:59:59').getTime() : null
-  if (!start && !end) return { key: 'draft',     label: 'Tanpa tanggal', cls: 'bg-gray-600/20 text-gray-400' }
-  if (start && now < start) return { key: 'scheduled', label: 'Terjadwal', cls: 'bg-blue-600/12 text-blue-300' }
-  if (end && now > end)     return { key: 'ended',     label: 'Selesai',   cls: 'bg-gray-600/20 text-gray-400' }
-  return { key: 'running', label: 'Berjalan', cls: 'bg-green-500/12 text-green-300' }
-}
-
-function campaignAgg(items, productMap) {
+// Agregat campaign — varian yang dikecualikan tidak ikut dihitung sama sekali.
+function campaignAgg(allItems, productMap) {
+  const items = activeItems(allItems)
   const margins = items.map(it => itemMargin(it, productMap)).filter(m => m != null)
   const avg = margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : null
   const losing = margins.filter(m => m < 0).length
   const noPrice = items.filter(it => !(+it.price > 0)).length
-  return { count: items.length, products: new Set(items.map(it => it.productId)).size, avg, losing, noPrice }
+  return {
+    count: items.length, products: new Set(items.map(it => it.productId)).size,
+    avg, losing, noPrice, excluded: (allItems || []).length - items.length,
+  }
 }
 
 // Monitoring: cocokkan item (varian by SKU) ke pesanan Performa Toko di dalam
-// window tanggal campaign → aktual (unit, GMV, harga aktual, margin aktual).
+// periode efektif campaign → aktual (unit, GMV, harga aktual, margin aktual).
+// Campaign bisa punya beberapa periode; hari jeda di antaranya TIDAK dihitung.
 function monitorCampaign(campaign, storeLines, productMap) {
-  const hasWindow = !!(campaign.startDate || campaign.endDate)
-  const start = campaign.startDate ? new Date(campaign.startDate + 'T00:00:00').getTime() : -Infinity
-  const end = campaign.endDate ? new Date(campaign.endDate + 'T23:59:59').getTime() : Infinity
-  const inWin = storeLines.filter(l => l.ok && l.t >= start && l.t <= end)
+  const periods = campaignPeriods(campaign)
+  const hasWindow = periods.length > 0
+  const inWin = storeLines.filter(l => l.ok && inAnyPeriod(l.t, periods))
+  const overall = aggregateLines(campaign, inWin, productMap)
+  // Rincian per periode (hanya total) — total gabungan tetap yang utama.
+  const perPeriod = periods.length > 1
+    ? periods.map((p, i) => {
+      const lines = inWin.filter(l => inPeriod(l.t, p))
+      const a = aggregateLines(campaign, lines, productMap)
+      return {
+        ...p, label: periodLabel(p, i), status: periodStatus(p),
+        ordersInWindow: a.ordersInWindow, totalUnits: a.totalUnits,
+        totalGmv: a.totalGmv, totalProfit: a.totalProfit,
+      }
+    })
+    : []
+  return { hasWindow, hasStore: storeLines.length > 0, periods, perPeriod, ...overall }
+}
+
+// Agregasi satu himpunan baris pesanan → per-item + total campaign.
+function aggregateLines(campaign, inWin, productMap) {
   const bySku = new Map()   // Seller SKU (k) → lines
   const byKid = new Map()   // TikTok platform SKU ID (kid) → lines
   for (const l of inWin) {
@@ -80,7 +86,7 @@ function monitorCampaign(campaign, storeLines, productMap) {
     const kid = (l.kid || '').toLowerCase().trim()
     if (kid) { if (!byKid.has(kid)) byKid.set(kid, []); byKid.get(kid).push(l) }
   }
-  const items = (campaign.items || []).map(it => {
+  const items = activeItems(campaign.items).map(it => {
     // Match: try platform SKU ID (variationId from catalog) first — more precise,
     // avoids false matches when two platforms share the same Seller SKU string.
     const p = productMap[it.productId]
@@ -102,7 +108,6 @@ function monitorCampaign(campaign, storeLines, productMap) {
     return { ...it, units, gmv, actualPrice, actMargin, estProfit, sold: units > 0 }
   })
   return {
-    hasWindow, hasStore: storeLines.length > 0,
     ordersInWindow: new Set(inWin.map(l => l.o)).size,
     items,
     totalUnits: items.reduce((s, r) => s + r.units, 0),
@@ -119,6 +124,8 @@ export default function CampaignPanel({ products }) {
   const [sharing, setSharing]   = useState(null)  // campaign yang dibagikan (modal)
   const [loadErr, setLoadErr]   = useState(false)
   const [storeLines, setStoreLines] = useState([])
+  const [platformTab, setPlatformTab] = useState(null)   // null = ikut isi data
+  const [openFolders, setOpenFolders] = useState(() => new Set())
 
   const reload = useCallback(async () => {
     try { setCampaigns(await listCampaigns()); setLoadErr(false) }
@@ -139,20 +146,63 @@ export default function CampaignPanel({ products }) {
     () => [...new Set(campaigns.map(c => (c.parentCampaign || '').trim()).filter(Boolean))],
     [campaigns],
   )
-  // Kelompokkan campaign per induk, urutan sesuai kemunculan pertama.
-  const grouped = useMemo(() => {
-    const order = [], map = new Map()
-    for (const c of campaigns) {
+  // Jumlah campaign per platform (untuk label tab).
+  const platformCount = useMemo(() => {
+    const n = { tiktok: 0, shopee: 0 }
+    for (const c of campaigns) n[c.platform === 'shopee' ? 'shopee' : 'tiktok']++
+    return n
+  }, [campaigns])
+  // Tab aktif: pilihan user, atau otomatis ke platform yang ada isinya.
+  const tab = platformTab || (platformCount.tiktok === 0 && platformCount.shopee > 0 ? 'shopee' : 'tiktok')
+  // Campaign di tab platform yang aktif, dikelompokkan per judul induk.
+  // Yang tanpa induk tampil langsung sebagai kartu (tanpa folder).
+  const { folders, loose } = useMemo(() => {
+    const inTab = campaigns.filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
+    const order = [], map = new Map(), loose = []
+    for (const c of inTab) {
       const key = (c.parentCampaign || '').trim()
+      if (!key) { loose.push(c); continue }
       if (!map.has(key)) { map.set(key, []); order.push(key) }
       map.get(key).push(c)
     }
-    return order.map(key => ({ key: key || '__none__', parent: key, items: map.get(key) }))
-  }, [campaigns])
+    return { folders: order.map(key => ({ key, items: map.get(key) })), loose }
+  }, [campaigns, tab])
+
+  // Daftar datar: folder judul + sub-campaign yang terbuka, lalu campaign
+  // tanpa induk. Satu loop render — folder cuma baris pembuka.
+  const rows = useMemo(() => {
+    const out = []
+    for (const f of folders) {
+      const open = openFolders.has(f.key)
+      const span = periodSpan(f.items.flatMap(c => campaignPeriods(c)))
+      out.push({
+        type: 'folder', key: f.key, count: f.items.length, open,
+        running: f.items.filter(c => campaignStatus(c).key === 'running').length,
+        range: (span.start || span.end) ? periodRange({ start: span.start, end: span.end }) : 'tanpa tanggal',
+      })
+      if (open) for (const c of f.items) out.push({ type: 'card', c, nested: true })
+    }
+    for (const c of loose) out.push({ type: 'card', c, nested: false })
+    return out
+  }, [folders, loose, openFolders])
+
+  function toggleFolder(key) {
+    setOpenFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
 
   async function handleSave(form) {
     try { await saveCampaign(form); setEditing(null); await reload() }
-    catch (e) { console.error(e); alert('Gagal menyimpan campaign.') }
+    catch (e) {
+      console.error(e)
+      const msg = /periods/i.test(e?.message || '')
+        ? 'Gagal menyimpan: kolom "periods" belum ada. Jalankan migrasi 0042_campaign_periods.sql di Supabase → SQL Editor.'
+        : `Gagal menyimpan campaign.${e?.message ? `\n\n${e.message}` : ''}`
+      alert(msg)
+    }
   }
   async function handleDelete(id) {
     if (!confirm('Hapus campaign ini?')) return
@@ -183,7 +233,25 @@ export default function CampaignPanel({ products }) {
 
       {loadErr && (
         <div className="mb-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300">
-          Tabel/kolom campaign belum lengkap. Jalankan migrasi <code>0008_campaigns.sql</code> &amp; <code>0009_campaign_items.sql</code> di Supabase → SQL Editor.
+          Tabel/kolom campaign belum lengkap. Jalankan migrasi <code>0008_campaigns.sql</code>, <code>0009_campaign_items.sql</code> &amp; <code>0042_campaign_periods.sql</code> di Supabase → SQL Editor.
+        </div>
+      )}
+
+      {/* Tab platform — campaign TikTok & Shopee dipisah */}
+      {campaigns.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-3 border-b border-line/8 pb-2">
+          {['tiktok', 'shopee'].map(id => {
+            const on = tab === id
+            return (
+              <button key={id} type="button" onClick={() => setPlatformTab(id)}
+                className={`px-3.5 py-1.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                  on ? (id === 'tiktok' ? 'bg-gray-700 text-white' : 'bg-orange-500/20 text-orange-300')
+                     : 'text-ink-muted hover:text-ink hover:bg-fill/8'
+                }`}>
+                {PLATFORM_LABEL[id]} <span className={on ? 'opacity-70' : 'text-ink-faint'}>· {platformCount[id]}</span>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -198,24 +266,39 @@ export default function CampaignPanel({ products }) {
           </p>
         </div>
       ) : (
-        <div className="space-y-5">
-          {grouped.map(g => (
-            <div key={g.key}>
-              {g.parent && (
-                <div className="flex items-center gap-2 mb-2 px-1">
-                  <Folder className="w-4 h-4 text-ink-faint flex-shrink-0" />
-                  <p className="text-[13px] font-semibold text-ink-strong truncate">{g.parent}</p>
-                  <span className="text-[11px] text-ink-faint flex-shrink-0">· {g.items.length} sub-campaign</span>
-                </div>
-              )}
-              <div className="space-y-3">
-          {g.items.map(c => {
+        <div className="space-y-2.5">
+          {rows.length === 0 && (
+            <p className="text-xs text-ink-faint px-1 py-6 text-center">
+              Belum ada campaign {PLATFORM_LABEL[tab]}. Pindah tab atau buat campaign baru.
+            </p>
+          )}
+          {rows.map(row => {
+            // Folder judul campaign (campaign induk) — klik untuk buka sub-campaign.
+            if (row.type === 'folder') {
+              const FChevron = row.open ? ChevronDown : ChevronRight
+              return (
+                <button key={`f:${row.key}`} onClick={() => toggleFolder(row.key)}
+                  className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-surface border shadow-sm text-left transition-colors ${row.open ? 'border-line/20' : 'border-line/10 hover:border-line/25'}`}>
+                  <FChevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
+                  <Folder className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                  <p className="text-[13px] font-semibold text-ink-strong truncate">{row.key}</p>
+                  <span className="text-[11px] text-ink-faint flex-shrink-0">· {row.count} sub-campaign</span>
+                  {row.running > 0 && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-green-500/12 text-green-300 flex-shrink-0 inline-flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />{row.running} berjalan
+                    </span>
+                  )}
+                  <span className="ml-auto text-[11px] text-ink-faint flex-shrink-0 hidden sm:inline">{row.range}</span>
+                </button>
+              )
+            }
+            const c = row.c
             const agg = campaignAgg(c.items || [], productMap)
             const mon = monitorCampaign(c, storeLines, productMap)
             const open = expanded === c.id
             const Chevron = open ? ChevronDown : ChevronRight
             return (
-              <div key={c.id} className="bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden">
+              <div key={c.id} className={`bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden ${row.nested ? 'ml-5' : ''}`}>
                 <div className="flex items-center gap-3 p-4">
                   <button onClick={() => setExpanded(x => x === c.id ? null : c.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                     <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
@@ -297,6 +380,26 @@ export default function CampaignPanel({ products }) {
                               <span>GMV: <b className="text-ink-strong">{fmt(mon.totalGmv)}</b></span>
                               <span>Est. profit: <b className={mon.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}>{fmt(mon.totalProfit)}</b></span>
                             </div>
+                            {/* Rincian per periode — hanya bila campaign punya >1 periode efektif. */}
+                            {mon.perPeriod.length > 0 && (
+                              <div className="mb-2.5 rounded-xl border border-line/8 divide-y divide-line/8">
+                                {mon.perPeriod.map((p, i) => (
+                                  <div key={i} className="flex items-center gap-3 px-2.5 py-1.5">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[12px] text-ink truncate">
+                                        {p.label}
+                                        {p.status === 'running' && <span className="ml-1.5 text-[10px] font-semibold text-green-400">berjalan</span>}
+                                        {p.status === 'scheduled' && <span className="ml-1.5 text-[10px] text-ink-faint">belum mulai</span>}
+                                      </p>
+                                      <p className="text-[10px] text-ink-faint truncate">{periodRangeShort(p)}</p>
+                                    </div>
+                                    <span className="text-[11px] text-ink-muted tabular-nums flex-shrink-0">{p.totalUnits} unit</span>
+                                    <span className="text-[11px] text-ink-strong tabular-nums w-24 text-right flex-shrink-0">{fmt(p.totalGmv)}</span>
+                                    <span className={`text-[11px] font-semibold tabular-nums w-24 text-right flex-shrink-0 ${p.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>{fmt(p.totalProfit)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {mon.items.filter(r => r.sold).length === 0 ? (
                               <p className="text-[11px] text-ink-faint">Tidak ada SKU campaign yang cocok terjual di window ini.</p>
                             ) : mon.items.filter(r => r.sold).map((r, i) => (
@@ -318,9 +421,6 @@ export default function CampaignPanel({ products }) {
               </div>
             )
           })}
-              </div>
-            </div>
-          ))}
         </div>
       )}
 
@@ -336,8 +436,11 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [description, setDesc]    = useState(initial.description ?? '')
   const [detail, setDetail]       = useState(initial.detail ?? '')
   const [link, setLink]           = useState(initial.link ?? '')
-  const [startDate, setStart]     = useState(initial.startDate ?? '')
-  const [endDate, setEnd]         = useState(initial.endDate ?? '')
+  // Periode efektif: campaign lama (start/end tunggal) terbaca sebagai 1 baris.
+  const [periods, setPeriods]     = useState(() => {
+    const list = campaignPeriods(initial)
+    return list.length ? list.map(p => ({ ...p })) : [{ label: '', start: '', end: '' }]
+  })
   const [items, setItems]         = useState(initial.items ?? [])
   const [approvals, setApprovals] = useState(initial.approvals ?? {})
   const [sharing, setSharing]     = useState(false)
@@ -349,6 +452,37 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   })
   const [showPicker, setShowPicker] = useState(false)
   const [busy, setBusy]           = useState(false)
+
+  function setPeriodField(i, field, val) {
+    setPeriods(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: val } : p))
+  }
+  function addPeriod() { setPeriods(prev => [...prev, { label: '', start: '', end: '' }]) }
+  function removePeriod(i) {
+    setPeriods(prev => prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i))
+  }
+  // Periode yang benar-benar disimpan (baris kosong dibuang, urut per tanggal).
+  const cleanPeriods = useMemo(
+    () => sortPeriods(periods
+      .map(p => ({ label: (p.label || '').trim(), start: p.start || '', end: p.end || '' }))
+      .filter(p => p.start || p.end)),
+    [periods],
+  )
+  // Rentang terbalik menahan tombol Simpan; periode terbuka hanya diingatkan.
+  const periodInvalid = useMemo(() => periods.some(p => p.start && p.end && p.end < p.start), [periods])
+  const periodWarn = useMemo(() => {
+    if (periodInvalid) return 'Tanggal selesai lebih awal dari tanggal mulai — perbaiki dulu.'
+    const half = periods.find(p => (p.start && !p.end) || (!p.start && p.end))
+    if (half) return 'Ada periode yang belum lengkap tanggalnya (dianggap terbuka).'
+    return ''
+  }, [periods, periodInvalid])
+  const periodSummaryText = useMemo(() => {
+    if (!cleanPeriods.length) return 'Belum ada tanggal — campaign dianggap draft dan hasil aktual tidak dihitung.'
+    const span = periodSpan(cleanPeriods)
+    const days = activeDays(cleanPeriods)
+    const rentang = periodRange({ start: span.start, end: span.end })
+    if (cleanPeriods.length === 1) return `Rentang: ${rentang}${days ? ` · ${days} hari` : ''}`
+    return `Rentang keseluruhan: ${rentang} · ${cleanPeriods.length} periode${days ? ` · ${days} hari aktif` : ''} (hari jeda tidak dihitung sebagai hasil campaign)`
+  }, [cleanPeriods])
 
   // Untuk mode Normal cukup satu voucher (diskon platform); pastikan ada slot 0.
   const normalVoucher = vouchers[0] ?? { discPct: '', maxDisc: '', minOrder: '' }
@@ -414,11 +548,35 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   function setPrice(productId, varIdx, price) {
     setItems(prev => prev.map(it => (it.productId === productId && it.varIdx === varIdx) ? { ...it, price } : it))
   }
+  // Kecualikan / ikutkan lagi satu varian. Alasan disimpan supaya terlihat
+  // kenapa varian dikeluarkan (belum ada harga PL / SKU ganda / manual).
+  function toggleExclude(productId, varIdx, reason = 'manual') {
+    setItems(prev => prev.map(it => {
+      if (it.productId !== productId || it.varIdx !== varIdx) return it
+      if (it.excluded) return { ...it, excluded: false, excludeReason: '' }
+      return { ...it, excluded: true, excludeReason: reason }
+    }))
+  }
+  // Kecualikan sekaligus semua varian yang terdeteksi bermasalah.
+  function excludeAllSuggested() {
+    setItems(prev => {
+      const s = excludeSuggestions(prev)
+      const tag = new Map()
+      for (const it of s.noprice) tag.set(itemKey(it), 'noprice')
+      for (const it of s.dupsku) tag.set(itemKey(it), 'dupsku')
+      return prev.map(it => tag.has(itemKey(it))
+        ? { ...it, excluded: true, excludeReason: tag.get(itemKey(it)) }
+        : it)
+    })
+  }
+  const suggestions = useMemo(() => excludeSuggestions(items), [items])
+  const excludedCount = items.length - activeItems(items).length
 
   async function submit() {
-    if (!name.trim() || busy) return
+    if (!name.trim() || busy || periodInvalid) return
     setBusy(true)
-    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, detail, link: link.trim(), startDate, endDate, items, voucherConfig: buildVoucherConfig(), approvals })
+    const span = periodSpan(cleanPeriods)
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, detail, link: link.trim(), startDate: span.start, endDate: span.end, periods: cleanPeriods, items, voucherConfig: buildVoucherConfig(), approvals })
     setBusy(false)
   }
 
@@ -436,7 +594,8 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
               <Share2 className="w-4 h-4" /> Bagikan
             </button>
           )}
-          <button onClick={submit} disabled={!name.trim() || busy}
+          <button onClick={submit} disabled={!name.trim() || busy || periodInvalid}
+            title={periodInvalid ? 'Perbaiki tanggal periode dulu' : undefined}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
             <Save className="w-4 h-4" />{busy ? 'Menyimpan…' : (initial.id ? 'Perbarui' : 'Simpan')}
           </button>
@@ -458,22 +617,45 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
             {parentSuggestions.map(s => <option key={s} value={s} />)}
           </datalist>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-1">
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
-            <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Payday Sale Juli"
-              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Nama Campaign <span className="text-red-400">*</span></label>
+          <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="mis. Payday Sale Juli"
+            className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+        </div>
+
+        {/* Periode efektif — satu campaign bisa aktif di beberapa rentang tanggal */}
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <label className="block text-xs font-medium text-ink-muted">
+              <CalendarRange className="w-3.5 h-3.5 inline mr-1" />Periode Efektif
+              <span className="font-normal text-ink-faint"> (kapan voucher aktif — boleh lebih dari satu rentang)</span>
+            </label>
+            <button type="button" onClick={addPeriod}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-blue-400 hover:bg-blue-600/10 transition-colors">
+              <Plus className="w-3 h-3" /> Tambah periode
+            </button>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Mulai</label>
-            <input type="date" value={startDate} onChange={e => setStart(e.target.value)}
-              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          <div className="space-y-2">
+            {periods.map((p, i) => (
+              <div key={i} className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_160px_32px] gap-2 items-center">
+                <input value={p.label} onChange={e => setPeriodField(i, 'label', e.target.value)}
+                  placeholder={`Nama periode — mis. ${i === 0 ? 'Gajian Sale Juli' : '8.8'}`}
+                  className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                <input type="date" value={p.start} onChange={e => setPeriodField(i, 'start', e.target.value)}
+                  className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                <input type="date" value={p.end} min={p.start || undefined} onChange={e => setPeriodField(i, 'end', e.target.value)}
+                  className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+                <button type="button" onClick={() => removePeriod(i)} disabled={periods.length === 1}
+                  title="Hapus periode"
+                  className="p-2 rounded-lg text-ink-faint hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 disabled:hover:text-ink-faint disabled:hover:bg-transparent transition-colors justify-self-start md:justify-self-center">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">Tanggal Selesai</label>
-            <input type="date" value={endDate} onChange={e => setEnd(e.target.value)} min={startDate || undefined}
-              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
-          </div>
+          <p className={`text-[11px] mt-1.5 ${periodWarn ? 'text-amber-300' : 'text-ink-faint'}`}>
+            {periodWarn || periodSummaryText}
+          </p>
         </div>
 
         {/* Platform */}
@@ -524,10 +706,10 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
         {/* Detail campaign (dibaca client di halaman approval) */}
         <div>
           <label className="block text-xs font-medium text-ink-muted mb-1.5">
-            <FileText className="w-3.5 h-3.5 inline mr-1" />Detail Campaign <span className="font-normal text-ink-faint">(dibaca client di halaman approval — mis. periode, syarat, daftar voucher dari marketplace)</span>
+            <FileText className="w-3.5 h-3.5 inline mr-1" />Detail Campaign <span className="font-normal text-ink-faint">(dibaca client di halaman approval — mis. syarat &amp; daftar voucher dari marketplace)</span>
           </label>
           <textarea value={detail} onChange={e => setDetail(e.target.value)} rows={5}
-            placeholder={'Tempel detail campaign dari marketplace, mis.:\n\nPeriode efektif: Gajian Sale Juli 24–31 Juli; 8.8: 1–8 Agustus\nPersyaratan: harga kompetitif di semua platform…\nVoucher tersedia: Diskon 7% s/d Rp50.000 (min Rp30.000), dst.'}
+            placeholder={'Tempel detail campaign dari marketplace, mis.:\n\nPersyaratan: harga kompetitif di semua platform…\nVoucher tersedia: Diskon 7% s/d Rp50.000 (min Rp30.000), dst.\n\n(Periode efektif tak perlu ditulis di sini — sudah diisi di kolom Periode Efektif.)'}
             className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50 resize-y" />
         </div>
       </div>
@@ -622,12 +804,32 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
       {/* Tabel produk + varian */}
       <div className="bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-line/8">
-          <p className="text-sm font-semibold text-ink-strong">Produk &amp; Harga Campaign</p>
+          <p className="text-sm font-semibold text-ink-strong">
+            Produk &amp; Harga Campaign
+            {excludedCount > 0 && <span className="ml-2 text-[11px] font-normal text-ink-faint">{excludedCount} varian dikecualikan</span>}
+          </p>
           <button onClick={() => setShowPicker(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Tambah Produk
           </button>
         </div>
+
+        {/* Deteksi otomatis varian yang sebaiknya tak diikutkan */}
+        {suggestions.total > 0 && (
+          <div className="mx-5 mt-3 rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2.5 flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            <p className="text-[11px] text-amber-200 flex-1 min-w-0">
+              {suggestions.noprice.length > 0 && <><b className="font-semibold">{suggestions.noprice.length} varian</b> belum ada harga dasar dari PL</>}
+              {suggestions.noprice.length > 0 && suggestions.dupsku.length > 0 && ' · '}
+              {suggestions.dupsku.length > 0 && <><b className="font-semibold">{suggestions.dupsku.length} varian</b> ber-SKU ganda</>}
+              {' '}— rawan salah produk/harga kalau tetap diajukan.
+            </p>
+            <button type="button" onClick={excludeAllSuggested}
+              className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-amber-500/30 text-amber-200 hover:bg-amber-500/15 transition-colors">
+              Kecualikan semua
+            </button>
+          </div>
+        )}
 
         {items.length === 0 ? (
           <div className="text-center py-12">
@@ -642,10 +844,17 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                 <div key={productId} className="px-5 py-3">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <p className="text-[13px] font-semibold text-ink-strong truncate">
-                      {p ? p.name : '(produk dihapus)'} <span className="text-ink-faint font-normal">· {its.length} varian</span>
+                      {p ? p.name : '(produk dihapus)'}
+                      <span className="text-ink-faint font-normal">
+                        {' '}· {activeItems(its).length} varian
+                        {its.length > activeItems(its).length && ` · ${its.length - activeItems(its).length} dikecualikan`}
+                      </span>
                     </p>
-                    <button onClick={() => removeProduct(productId)} className="text-ink-faint hover:text-red-400 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    <button onClick={() => removeProduct(productId)} title="Hapus produk dari campaign" className="text-ink-faint hover:text-red-400 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
                   </div>
+                  {activeItems(its).length === 0 && (
+                    <p className="text-[11px] text-amber-300 mb-2">Semua varian dikecualikan — produk ini tidak diajukan ke client.</p>
+                  )}
                   {/* Persetujuan per produk */}
                   <div className="flex flex-wrap items-center gap-2 mb-2.5">
                     <span className="text-[10px] font-medium text-ink-faint">Persetujuan:</span>
@@ -671,26 +880,40 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                       const calc = itemCalc(it, productMap)
                       const v = p ? productVariations(p)[it.varIdx] : null
                       const normal = v ? (+v.jual || 0) : 0
+                      const off = isExcluded(it)
                       return (
-                        <div key={it.varIdx}>
+                        <div key={it.varIdx} className={off ? 'opacity-60' : ''}>
                           <div className="flex items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="text-[13px] text-ink truncate">{v?.name?.trim() || it.name || `Varian ${it.varIdx + 1}`}</p>
+                              <p className={`text-[13px] truncate ${off ? 'text-ink-muted line-through' : 'text-ink'}`}>
+                                {v?.name?.trim() || it.name || `Varian ${it.varIdx + 1}`}
+                              </p>
                               <p className="text-[11px] text-ink-faint truncate">
-                                {it.sku || 'tanpa SKU'}{normal ? ` · normal ${fmt(normal)}` : ''}
-                                {(() => { const f = totalFee(calc); return f && +it.price > 0 ? <> · komisi &amp; biaya {f.pct.toFixed(1)}% ({fmt(f.amount)})</> : null })()}
+                                {off ? (
+                                  <span className="text-amber-300">{reasonLabel(it)} · tidak diajukan ke client</span>
+                                ) : (
+                                  <>
+                                    {it.sku || 'tanpa SKU'}{normal ? ` · normal ${fmt(normal)}` : ''}
+                                    {(() => { const f = totalFee(calc); return f && +it.price > 0 ? <> · komisi &amp; biaya {f.pct.toFixed(1)}% ({fmt(f.amount)})</> : null })()}
+                                  </>
+                                )}
                               </p>
                             </div>
                             <div className="relative flex items-center flex-shrink-0 w-32">
                               <span className="absolute left-2.5 text-[11px] text-ink-faint">Rp</span>
-                              <input type="number" min="0" value={it.price}
+                              <input type="number" min="0" value={it.price} disabled={off}
                                 onChange={e => setPrice(it.productId, it.varIdx, e.target.value)}
                                 placeholder="harga campaign"
-                                className="w-full bg-fill/5 border border-line/10 rounded-lg pl-8 pr-2 py-1.5 text-[13px] text-ink-strong tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+                                className="w-full bg-fill/5 border border-line/10 rounded-lg pl-8 pr-2 py-1.5 text-[13px] text-ink-strong tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600/40 disabled:opacity-50" />
                             </div>
-                            <span title={activeVouchers.length ? 'margin tanpa voucher' : undefined} className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+                            <span title={activeVouchers.length ? 'margin tanpa voucher' : undefined} className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${off ? 'text-ink-faint' : marginCls(m)}`}>{off ? '—' : (m != null ? `${m.toFixed(1)}%` : '—')}</span>
+                            <button type="button" onClick={() => toggleExclude(it.productId, it.varIdx)}
+                              title={off ? 'Ikutkan lagi ke campaign' : 'Kecualikan varian ini dari campaign'}
+                              className={`p-1 rounded-lg flex-shrink-0 transition-colors ${off ? 'text-blue-400 hover:bg-blue-600/10' : 'text-ink-faint hover:text-red-400 hover:bg-red-500/10'}`}>
+                              {off ? <RefreshCw className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                            </button>
                           </div>
-                          <VoucherLines item={it} productMap={productMap} vouchers={activeVouchers} kind={campaignType} showHeader={vi === 0} />
+                          {!off && <VoucherLines item={it} productMap={productMap} vouchers={activeVouchers} kind={campaignType} showHeader={vi === its.findIndex(x => !isExcluded(x))} />}
                         </div>
                       )
                     })}
@@ -743,7 +966,10 @@ function ProductCard({ c, productId, its, productMap }) {
   const cvs = voucherList(cfg)
   const st = approvalStatusOf(c.approvals, productId)
   const target = +(cfg?.targetMargin) || DEFAULT_TARGET_MARGIN
-  const worst = worstProductMargin(its, productMap, cfg)
+  // Varian yang dikecualikan tak ikut hitungan; tetap ditampilkan (dicoret) di
+  // aplikasi supaya tim tahu apa yang dikeluarkan — di /approve disembunyikan.
+  const act = activeItems(its)
+  const worst = worstProductMargin(act, productMap, cfg)
   const verdict = worthVerdict(worst, target)
   const plog = (c.approvalLog || []).filter(e => e.productId === productId).slice().reverse()
   const a = c.approvals?.[productId]
@@ -760,7 +986,11 @@ function ProductCard({ c, productId, its, productMap }) {
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
             {verdict && <span title={`margin terburuk ${worst?.toFixed(1)}% vs target ${target}%`} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${VERDICT_CLS[verdict.key]}`}>{verdict.label}</span>}
           </div>
-          <p className="text-[11px] text-ink-faint mt-0.5">{its.length} varian · target margin {target}%{worst != null ? ` · margin terburuk ${worst.toFixed(1)}%` : ''}</p>
+          <p className="text-[11px] text-ink-faint mt-0.5">
+            {act.length} varian
+            {its.length > act.length && <span className="text-amber-300"> · {its.length - act.length} dikecualikan</span>}
+            {' '}· target margin {target}%{worst != null ? ` · margin terburuk ${worst.toFixed(1)}%` : ''}
+          </p>
         </div>
       </div>
 
@@ -783,6 +1013,13 @@ function ProductCard({ c, productId, its, productMap }) {
           const calc = itemCalc(it, productMap)
           const fee = totalFee(calc)
           const feeRows = openFee === it.varIdx ? feeBreakdown(calc) : null
+          const off = isExcluded(it)
+          if (off) return (
+            <div key={it.varIdx} className="flex items-center gap-3 opacity-60">
+              <p className="text-[13px] text-ink-muted line-through truncate min-w-0 flex-1">{it.name || `Varian ${it.varIdx + 1}`}</p>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/12 text-amber-300 flex-shrink-0">{reasonLabel(it)}</span>
+            </div>
+          )
           return (
             <div key={it.varIdx}>
               <div className="flex items-center gap-3">
@@ -818,7 +1055,7 @@ function ProductCard({ c, productId, its, productMap }) {
                   </div>
                 </div>
               )}
-              {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={kind} showHeader={vi === 0} />}
+              {cvs.length > 0 && <VoucherLines item={it} productMap={productMap} vouchers={cvs} kind={kind} showHeader={vi === its.findIndex(x => !isExcluded(x))} />}
             </div>
           )
         })}
