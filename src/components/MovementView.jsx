@@ -113,6 +113,9 @@ export default function MovementView({ products }) {
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ Traffic</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Traffic Lalu</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Traffic Ini</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ CTR</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">CTR Lalu</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">CTR Ini</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">Δ CR</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">CR Lalu</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-ink-muted whitespace-nowrap">CR Ini</th>
@@ -148,6 +151,17 @@ export default function MovementView({ products }) {
                     <td className="px-4 py-3 text-right text-xs text-ink-faint tabular-nums font-medium">
                       {fmtNum(p.pengunjung)}
                     </td>
+                    {/* CTR — hanya terisi untuk import TikTok; '-' untuk Shopee & data lama */}
+                    <td className="px-4 py-3 text-right">
+                      <DeltaCell value={p.delta_ctr} suffix="%" decimals={2} />
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-ink-muted tabular-nums">
+                      {p.prev_ctr != null ? `${p.prev_ctr.toFixed(2)}%` : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-ink-faint tabular-nums font-medium"
+                      title={p.ctr_derived ? 'dihitung dari Klik Unik ÷ Tayangan (bukan kolom CTR resmi)' : undefined}>
+                      {p.ctr != null ? `${p.ctr.toFixed(2)}%${p.ctr_derived ? '*' : ''}` : '-'}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <DeltaCell value={p.delta_conversion} suffix="%" decimals={2} />
                     </td>
@@ -172,6 +186,12 @@ export default function MovementView({ products }) {
               })}
             </tbody>
           </table>
+
+          {sorted.some(p => p.ctr_derived) && (
+            <p className="px-4 py-2 text-xs text-ink-muted border-t border-line/5">
+              * CTR dihitung dari Klik Unik ÷ Tayangan (file "Kartu Produk" tak punya kolom CTR resmi) — jangan dibandingkan mentah dengan CTR dari file "Daftar Produk".
+            </p>
+          )}
 
           {sorted.length === 0 && (
             <div className="text-center py-12 text-ink-muted text-sm">

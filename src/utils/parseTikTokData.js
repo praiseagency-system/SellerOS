@@ -94,7 +94,14 @@ function parseProductCards(rows, hi) {
     const klik = parseNum(row[cols.klik])
     const cr   = parseNum(row[cols.cr])
     if (klik === null || cr === null) continue
+    // Format ini tak punya kolom CTR — turunkan dari Klik Unik ÷ Tayangan.
+    // Basisnya beda dari CTR di "Daftar Produk", jadi ditandai ctr_derived.
+    const tayangan = parseNum(row[cols.tayangan])
+    const ctrDer = (tayangan > 0 && klik != null) ? (klik / tayangan) * 100 : null
     products.push({
+      ctr:            ctrDer,
+      ctr_derived:    ctrDer != null ? true : null,
+      klik_produk:    klik,
       kode_produk:    id,
       nama_produk:    row[cols.nama]?.toString() || id,
       pengunjung:     klik,

@@ -15,6 +15,12 @@ export function compactProduct(p) {
     roas:           p.roas ?? null,
     stok:           p.stok ?? null,
     harga:          p.harga ?? null,
+    // CTR hanya ada di import TikTok (Shopee tak mengekspor impresi/klik).
+    // ctr_derived = dihitung sendiri dari Klik Unik ÷ Tayangan, bukan kolom CTR
+    // resmi — basisnya beda, jadi ditandai supaya tak dibandingkan mentah.
+    ctr:            p.ctr ?? null,
+    klik_produk:    p.klik_produk ?? null,
+    ctr_derived:    p.ctr_derived ?? null,
     quadrant:       p.quadrant,
   }
 }

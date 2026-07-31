@@ -6,6 +6,7 @@ const COLUMNS = [
   { key: 'nama_produk', label: 'Produk', sortable: true },
   { key: 'quadrant', label: 'Kuadran', sortable: true },
   { key: 'pengunjung', label: 'Pengunjung', sortable: true },
+  { key: 'ctr', label: 'CTR', sortable: true },
   { key: 'conversion_rate', label: 'Konversi', sortable: true },
   { key: 'atc_rate', label: 'ATC Rate', sortable: true },
   { key: 'pesanan', label: 'Pesanan', sortable: true },
@@ -132,6 +133,11 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
                   </td>
                   <td className="px-4 py-3 text-ink-faint font-mono text-xs whitespace-nowrap">
                     {fmtNum(p.pengunjung)}
+                  </td>
+                  {/* CTR — hanya ada di import TikTok, '-' untuk Shopee & data lama */}
+                  <td className="px-4 py-3 text-ink-faint font-mono text-xs whitespace-nowrap"
+                    title={p.ctr_derived ? 'dihitung dari Klik Unik ÷ Tayangan (bukan kolom CTR resmi)' : undefined}>
+                    {p.ctr != null ? `${p.ctr.toFixed(2)}%${p.ctr_derived ? '*' : ''}` : '-'}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`text-xs font-semibold ${

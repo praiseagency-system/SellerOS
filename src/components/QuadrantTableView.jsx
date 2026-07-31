@@ -49,6 +49,7 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
               <th className="px-2 py-1.5 text-left text-ink-faint font-medium border-b border-line/5 w-6">#</th>
               <th className="px-2 py-1.5 text-left text-ink-faint font-medium border-b border-line/5 min-w-32">Nama</th>
               <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 whitespace-nowrap">{trafficLabel}</th>
+              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">CTR</th>
               <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">%ATC</th>
               <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">CR</th>
               <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">ROAS</th>
@@ -71,6 +72,11 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
                 </td>
                 <td className="px-2 py-1.5 text-right text-ink font-mono tabular-nums">
                   {fmtNum(p.pengunjung)}
+                </td>
+                {/* CTR — hanya ada di import TikTok, '-' untuk Shopee & data lama */}
+                <td className="px-2 py-1.5 text-right text-ink-muted"
+                  title={p.ctr_derived ? 'dihitung dari Klik Unik ÷ Tayangan (bukan kolom CTR resmi)' : undefined}>
+                  {p.ctr != null ? `${p.ctr.toFixed(2)}%${p.ctr_derived ? '*' : ''}` : '-'}
                 </td>
                 <td className="px-2 py-1.5 text-right text-ink-muted">
                   {p.atc_rate !== null ? `${p.atc_rate?.toFixed(2)}%` : '-'}
