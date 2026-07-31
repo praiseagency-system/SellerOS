@@ -15,7 +15,9 @@ function absDiff(curr, prev) {
 
 export function compareProducts(currentProducts, prevProducts, settings) {
   const prevMap = new Map(
-    prevProducts.map(p => [p.kode_produk, { ...p, quadrant: getQuadrant(p, settings) }])
+    // Kuadran yang sudah dihitung dipakai apa adanya — pada tampilan gabungan
+    // tiap produk dinilai dengan ambang platform & jumlah periodenya sendiri.
+    prevProducts.map(p => [p.kode_produk, { ...p, quadrant: p.quadrant ?? getQuadrant(p, settings) }])
   )
 
   return currentProducts.map(curr => {
