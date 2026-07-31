@@ -35,11 +35,16 @@ export function compareProducts(currentProducts, prevProducts, settings) {
       prev_quadrant: prev.quadrant,
       prev_pengunjung: prev.pengunjung,
       prev_conversion_rate: prev.conversion_rate,
+      prev_ctr: prev.ctr ?? null,
       prev_roas: prev.roas ?? null,
       prev_pesanan: prev.pesanan,
       prev_total_penjualan: prev.total_penjualan,
       delta_pengunjung: pctChange(curr.pengunjung, prev.pengunjung),
       delta_conversion: absDiff(curr.conversion_rate, prev.conversion_rate),
+      // CTR = persen, jadi selisihnya poin (bukan % perubahan) seperti CR.
+      // null kalau salah satu periode belum menyimpan CTR (data lama / Shopee).
+      delta_ctr: (curr.ctr != null && prev.ctr != null)
+        ? absDiff(curr.ctr, prev.ctr) : null,
       delta_roas: (curr.roas !== null && prev.roas !== null)
         ? absDiff(curr.roas, prev.roas) : null,
       delta_pesanan: pctChange(curr.pesanan, prev.pesanan),
