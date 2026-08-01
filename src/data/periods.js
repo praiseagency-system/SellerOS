@@ -73,14 +73,33 @@ export async function listSessions() {
   return periods.map(p => rowToSession(p, byPeriod[p.id] || []))
 }
 
-// Simpan sesi: identitas periode = (workspace + label + platform). Re-upload
-// periode sama → ganti snapshot lama (hapus dulu, products ikut via CASCADE).
-export async function saveSession({ label, platform, periodValue, periodType, settings, products }) {
+// Simpan sesi. Identitas alami = (workspace + marketplace + periodValue);
+// label hanya tampilan. Re-import periode yang sama MENGGANTI snapshot lama
+// (hapus → tulis, products ikut via CASCADE) — mengulang import file yang sama
+// menghasilkan keadaan identik tanpa duplikat. Snapshot lama tak pernah
+// diubah diam-diam: penggantian hanya terjadi lewat konfirmasi import.
+export async function saveSession({ label, platform, periodValue, periodType, settings, products, importMeta }) {
   const wsId = getCurrentWorkspaceId()
   if (!wsId) throw new Error('Workspace tidak aktif.')
 
-  await supabase.from('periods').delete()
-    .eq('workspace_id', wsId).eq('name', label).eq('platform', platform)
+  // Kunci alami: periodValue + platform. Fallback ke label untuk sesi lama
+  // yang tak punya periodValue (mis. periode mingguan lawas).
+  let del = supabase.from('periods').delete().eq('workspace_id', wsId).eq('platform', platform)
+  del = periodValue ? del.eq('period_value', periodValue) : del.eq('name', label)
+  await del
+
+  // Metadata import menumpang di settings (jsonb) — tanpa migrasi.
+  settings = {
+    ...(settings || {}),
+    mappingVersion: importMeta?.mappingVersion ?? null,
+    calculationVersion: importMeta?.calculationVersion ?? null,
+    importBatchId: importMeta?.importBatchId ?? null,
+    importedAt: new Date().toISOString(),
+    sourceFileName: importMeta?.sourceFileName ?? null,
+    periodStart: importMeta?.periodStart ?? null,
+    periodEnd: importMeta?.periodEnd ?? null,
+    periodSource: importMeta?.periodSource ?? null,
+  }
 
   const { data: period, error } = await supabase
     .from('periods')

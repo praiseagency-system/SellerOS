@@ -4,6 +4,8 @@ import {
   BookOpen, AlertCircle
 } from 'lucide-react'
 import { useQuadrant } from '../contexts/QuadrantContext'
+import ImportPreviewModal from '../components/ImportPreviewModal'
+import { previewImportFile } from '../utils/importPreview'
 import { useLang } from '../contexts/LanguageContext'
 import { PlatformIcon } from '../components/PlatformIcon'
 import MonthPicker from '../components/MonthPicker'
@@ -23,7 +25,7 @@ function buildPeriod(value) {
 }
 
 export default function ImportPage({ onImported, embedded = false }) {
-  const { handleUpload, isLoading, error } = useQuadrant()
+  const { handleUpload, isLoading, error, sessions } = useQuadrant()
   const { t } = useLang()
 
   const [platform, setPlatform] = useState('shopee')
@@ -33,6 +35,7 @@ export default function ImportPage({ onImported, embedded = false }) {
   const [iklan, setIklan] = useState(null)
   const [iklanFiles, setIklanFiles] = useState([])
   const [localErr, setLocalErr] = useState(null)
+  const [previewData, setPreviewData] = useState(null)   // hasil parse, belum disimpan
 
   const fileRef = useRef(null)
   const adRef = useRef(null)
@@ -51,10 +54,21 @@ export default function ImportPage({ onImported, embedded = false }) {
     })
   }
 
+  // Tahap 1: parse & tampilkan preview. TIDAK menyimpan.
   async function submit() {
     setLocalErr(null)
     if (!perf) { setLocalErr(t('import.errNoFile')); return }
     if (!period) { setLocalErr(t('import.errNoPeriod')); return }
+    try {
+      const data = await previewImportFile(perf, platform)
+      setPreviewData(data)
+    } catch (e) {
+      setLocalErr(e?.message || 'Gagal membaca file.')
+    }
+  }
+
+  // Tahap 2: user menekan Konfirmasi Import — baru data disimpan.
+  async function confirmImport() {
     const ok = await handleUpload({
       platform,
       perf,
@@ -65,11 +79,21 @@ export default function ImportPage({ onImported, embedded = false }) {
       periodDays: period.periodDays,
       periodType,
     })
+    setPreviewData(null)
     if (ok) onImported?.()
   }
 
+  const replacing = !!(period && sessions?.some(s =>
+    s.platform === platform && s.periodValue === period.periodValue))
+
   return (
     <div className={embedded ? 'p-5' : 'p-6 max-w-3xl'}>
+      {previewData && (
+        <ImportPreviewModal data={previewData} replacing={replacing}
+          onConfirm={confirmImport}
+          onBack={() => setPreviewData(null)}
+          onCancel={() => setPreviewData(null)} />
+      )}
       {/* Form card */}
       <div className={embedded
         ? 'space-y-6'

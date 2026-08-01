@@ -1,4 +1,6 @@
 import * as XLSX from 'xlsx'
+import { detectColumns, parsePeriodFromContent } from './metricSchema'
+import { normalizeImportRow, toLegacyMetrics, parseProductId } from './importNormalize'
 
 function parseNum(val) {
   if (val === null || val === undefined || val === '-' || val === '') return null
@@ -63,9 +65,15 @@ export async function parseTikTokAdData(files) {
     }
   }
 
+  // Simpan biaya & omzet iklan, bukan cuma rasionya — ROAS gabungan lintas
+  // marketplace wajib dihitung dari Σomzet ÷ Σbiaya, mustahil dari rasio saja.
   const roasMap = new Map()
   for (const [id, { gmv, cost }] of aggregated) {
-    if (cost > 0) roasMap.set(id, Math.round((gmv / cost) * 100) / 100)
+    roasMap.set(id, {
+      roas: cost > 0 ? Math.round((gmv / cost) * 100) / 100 : null,
+      adSpend: cost,
+      attributedGmv: gmv,
+    })
   }
   return roasMap
 }
@@ -86,10 +94,15 @@ function parseProductCards(rows, hi) {
     penonton: findCol(headers, 'Penonton'),
     tayangan: findCol(headers, 'Tayangan'),
   }
+  const nCols = detectColumns(headers, 'tiktok')
+  console.info('[import tiktok] kolom termapping:', nCols.matched.join(', '))
+  if (nCols.unknown.length) console.info('[import tiktok] kolom tak dikenali:', nCols.unknown.map(u => u.header))
+  if (nCols.unused.length) console.info('[import tiktok] kolom sengaja tak dipakai:', nCols.unused.map(u => u.header))
   const products = []
   for (let i = hi + 1; i < rows.length; i++) {
     const row = rows[i]
-    const id = row[cols.id]?.toString().trim()
+    // ID produk TikTok 19 digit — WAJIB string, presisi hilang kalau jadi Number.
+    const id = parseProductId(row[cols.id])
     if (!id) continue
     const klik = parseNum(row[cols.klik])
     const cr   = parseNum(row[cols.cr])
@@ -113,6 +126,18 @@ function parseProductCards(rows, hi) {
       penonton:       parseNum(row[cols.penonton]),
       tayangan:       parseNum(row[cols.tayangan]),
       roas: null, stok: null,
+      platform: 'tiktok',
+      ...(() => {
+        const n = normalizeImportRow({ row, headers, cols: nCols, marketplace: 'tiktok', meta: { sourceRow: i } })
+        return {
+          normalizedMetrics: n.normalizedMetrics,
+          rawMetrics: n.rawMetrics,
+          nativeMetrics: n.nativeMetrics,
+          metricStatus: n.metricStatus,
+          mappingVersion: n.mappingVersion,
+          metrics: toLegacyMetrics(n, { marketplace: 'tiktok', gmvBasis: 'paid_order' }),
+        }
+      })(),
     })
   }
   return products
@@ -141,10 +166,11 @@ function parseProductList(rows, hi) {
     ctor:     findCol(headers, 'CTOR (pesanan SKU)'),
     refund:   findCol(headers, 'Pengembalian dana'),
   }
+  const nCols = detectColumns(headers, 'tiktok')
   const products = []
   for (let i = hi + 1; i < rows.length; i++) {
     const row = rows[i]
-    const id = row[cols.id]?.toString().trim()
+    const id = parseProductId(row[cols.id])
     if (!id) continue
 
     // Lewati produk non-aktif jika kolom status ada
@@ -172,10 +198,25 @@ function parseProductList(rows, hi) {
       ctr:             parseNum(row[cols.ctr]),
       refund:          parseIDNum(row[cols.refund]),
       roas: null, stok: null,
+      platform: 'tiktok',
+      ...(() => {
+        const n = normalizeImportRow({ row, headers, cols: nCols, marketplace: 'tiktok', meta: { sourceRow: i } })
+        return {
+          normalizedMetrics: n.normalizedMetrics,
+          rawMetrics: n.rawMetrics,
+          nativeMetrics: n.nativeMetrics,
+          metricStatus: n.metricStatus,
+          mappingVersion: n.mappingVersion,
+          metrics: toLegacyMetrics(n, { marketplace: 'tiktok', gmvBasis: 'paid_order' }),
+        }
+      })(),
     })
   }
   return products
 }
+
+// Periode ada di baris pertama file ("Date Range: 2026-05-01 ~ 2026-05-31\n").
+export function readTikTokPeriod(rows) { return parsePeriodFromContent(rows) }
 
 export async function parseTikTokData(file) {
   const buffer = await file.arrayBuffer()
