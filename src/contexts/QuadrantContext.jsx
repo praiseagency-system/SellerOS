@@ -5,7 +5,7 @@ import { parseTikTokData, parseTikTokAdData } from '../utils/parseTikTokData'
 import { getQuadrant, getTrafficThreshold } from '../utils/quadrantUtils'
 import { compareProducts } from '../utils/compareData'
 import { pickPreviousSession } from '../utils/storage'
-import { buildRangeView, previousRange } from '../utils/quadrantAggregate'
+import { buildRangeView, previousRange, sessionsInRange } from '../utils/quadrantAggregate'
 import { METRIC_MAPPING_VERSION } from '../utils/metricSchema'
 import { CALCULATION_VERSION } from '../utils/quadrantScoring'
 import { loadManualBenchmark, saveManualBenchmark } from '../utils/quadrantBenchmark'
@@ -58,7 +58,6 @@ export function QuadrantProvider({ children, onSessionsChange }) {
   const [mappings, setMappings] = useState([])           // canonical product mapping
   const [manualBenchmarks, setManualBenchmarks] = useState({})   // mode → ambang manual
   const [priorities, setPriorities] = useState([])
-  const [sessionMappingVersion, setSessionMappingVersion] = useState(null)
 
   const availableMonths = useMemo(
     () => [...new Set((sessions || []).map(s => s.periodValue).filter(v => /^\d{4}-\d{2}$/.test(v || '')))].sort(),
@@ -127,6 +126,25 @@ export function QuadrantProvider({ children, onSessionsChange }) {
       return { periodValue: m, label: monthLabel(m), benchmark: v.benchmark, products: v.products }
     }).filter(v => v.products.length > 0)
   }, [sessions, availableMonths, availablePlatforms, effMarketplace, mappings])
+
+  // Sesi yang benar-benar sedang ditampilkan. Dibaca dari data, BUKAN dari
+  // state terpisah yang harus diperbarui manual di tiap jalur (import, buka
+  // riwayat, ganti bulan) — jalur yang terlewat dulu membuat banner "Mapping
+  // Lama" tak pernah padam meski periodenya sudah di-import ulang.
+  const activeSessions = useMemo(() => {
+    if (!sessions.length) return []
+    const plats = effMarketplace === 'all' ? availablePlatforms : [effMarketplace]
+    if (useDerived) return sessionsInRange(sessions, effRange, plats)
+    return sessions.filter(s => s.platform === platform &&
+      (periodValue ? s.periodValue === periodValue : s.label === periodLabel))
+  }, [sessions, useDerived, effRange, effMarketplace, availablePlatforms, platform, periodValue, periodLabel])
+
+  // Legacy = ada sesi penyusun tampilan ini yang mapping-nya di bawah v3.
+  const isLegacyMapping = useMemo(
+    () => activeSessions.length > 0 &&
+      activeSessions.some(s => (s.settings?.mappingVersion ?? 0) < METRIC_MAPPING_VERSION),
+    [activeSessions],
+  )
 
   const trafficThreshold = useMemo(
     () => getTrafficThreshold(derived?.settings || settings),
@@ -262,7 +280,6 @@ export function QuadrantProvider({ children, onSessionsChange }) {
     setPeriodLabel(session.label.replace(/ · .*$/, ''))
     setPeriodValue(session.periodValue ?? null)
     setPeriodType(session.periodType ?? null)
-    setSessionMappingVersion(session.settings?.mappingVersion ?? null)
     setProducts(displayProducts)
     setActiveQuadrant(null)
   }
@@ -320,8 +337,8 @@ export function QuadrantProvider({ children, onSessionsChange }) {
     mappings, refreshMappings,
     trendViews,
     // Sesi aktif memakai mapping lama? (< v3 atau tanpa versi = legacy)
-    isLegacyMapping: sessionMappingVersion == null || sessionMappingVersion < METRIC_MAPPING_VERSION,
-    sessionMappingVersion,
+    isLegacyMapping,
+    legacySessions: activeSessions.filter(s => (s.settings?.mappingVersion ?? 0) < METRIC_MAPPING_VERSION),
     priorities, refreshPriorities,
     // Membuat Log Optimasi TIDAK otomatis — hanya lewat aksi user di UI.
     createPriorityFor: async (payload) => { await createPriority(payload); await refreshPriorities() },
