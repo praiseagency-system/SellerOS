@@ -1,83 +1,88 @@
-// Penggabungan snapshot Kuadran: lintas PERIODE (bulan → lifetime/custom) dan
+// Penyusunan tampilan Kuadran: lintas PERIODE (bulan → lifetime/custom) dan
 // lintas MARKETPLACE (TikTok + Shopee).
 //
-// Dua aturan yang memandu seluruh berkas ini:
+// Alur: sesi tersimpan → metrik ternormalisasi per platform → digabung lintas
+// periode (cacah dijumlah, rate dihitung ulang) → dikelompokkan jadi canonical
+// product → di-blend lintas marketplace → dikuadrankan dengan ambang mode itu.
 //
-// 1. Rasio tak boleh dirata-rata mentah. CTR/CR/%ATC harus ditimbang dengan
-//    penyebutnya sendiri, kalau tidak bulan sepi bersuara sama keras dengan
-//    bulan ramai. CTR gabungan = Σklik ÷ Σimpresi, bukan rata-rata CTR bulanan.
-//
-// 2. Antar-marketplace, hanya RUPIAH dan PESANAN yang boleh dijumlah. Impresi
-//    TikTok bukan satuan yang sama dengan kunjungan Shopee, jadi traffic/CTR/CR
-//    tetap dipegang per platform dan tak pernah dilebur.
+// Yang TIDAK boleh terjadi lagi (ini bug yang diperbaiki): baris gabungan
+// mengambil GMV dari dua marketplace tapi traffic/konversi dari satu saja.
 
-import { getQuadrant } from './quadrantUtils'
+import { sumPeriods, blendMembers, safeRate } from './blendMetrics'
+import { buildCanonicalGroups, buildShortNames, MAPPING_STATUS } from './canonicalProduct'
+import { computeBenchmark, quadrantOf } from './quadrantBenchmark'
+import { getQuadrant, getTrafficThreshold } from './quadrantUtils'
 
-// ── Nama produk sebagai kunci silang-platform ───────────────────────────────
-// Tak ada ID atau SKU yang sama antara export Shopee dan TikTok, jadi nama
-// adalah satu-satunya jembatan. Normalisasi seagresif mungkin TANPA membuang
-// pembeda nyata (angka ukuran, ml, gr tetap dipertahankan).
-export function normalizeName(name) {
-  return (name || '')
-    .toLowerCase()
-    .replace(/\[[^\]]*\]/g, ' ')          // [Exclusive Bunding], [Promo]
-    .replace(/\([^)]*\)/g, ' ')           // (free pouch)
-    .replace(/\|.*$/, ' ')                // ekor SEO setelah pipa
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
+export { normalizeProductName as normalizeName } from './canonicalProduct'
 
 const sum = (arr, f) => arr.reduce((s, x) => s + (f(x) || 0), 0)
 
-// Penyebut rasio konversi berbeda per sumber: TikTok memakai KLIK, Shopee
-// memakai pengunjung. Simpan apa adanya supaya bobotnya benar.
-function crBase(p) {
-  return (p.klik_produk != null && p.klik_produk > 0) ? p.klik_produk : (p.pengunjung || 0)
-}
-
-// Impresi satu snapshot: TikTok "Daftar Produk" menyimpannya di pengunjung,
-// tapi untuk format lain bisa dipulihkan dari klik ÷ CTR.
-function impresiOf(p) {
-  if (p.klik_produk > 0 && p.ctr > 0) return (p.klik_produk / p.ctr) * 100
-  return p.pengunjung || 0
+// ── Kompatibilitas snapshot lama ────────────────────────────────────────────
+// Periode yang di-import sebelum lapisan metrik ada tak punya `metrics`.
+// Turunkan seadanya dari kolom lama, dan TANDAI bahwa ini fallback — jangan
+// pura-pura ini qualified traffic atau buyer count yang sebenarnya.
+export function legacyToMetrics(p, platform) {
+  if (p.metrics) return p.metrics
+  const isTok = platform === 'tiktok'
+  const traffic = isTok ? (p.klik_produk ?? p.pengunjung ?? null) : (p.pengunjung ?? null)
+  return {
+    qualifiedTraffic: traffic,
+    trafficSource: isTok
+      ? (p.klik_produk != null ? 'product_clicks_fallback' : 'impressions_fallback')
+      : 'visits_fallback',
+    visits: isTok ? null : (p.pengunjung ?? null),
+    impressions: isTok && p.klik_produk != null && p.ctr > 0 ? Math.round((p.klik_produk / p.ctr) * 100) : null,
+    productClicks: p.klik_produk ?? null,
+    atcUsers: null,
+    atcQuantity: null,
+    atcRateReported: p.atc_rate ?? null,
+    atcSource: p.atc_rate != null ? 'atc_rate_only' : null,
+    buyers: p.pesanan ?? null,
+    buyerSource: p.pesanan != null ? 'order_fallback' : null,
+    orders: p.pesanan ?? null,
+    quantitySold: null,
+    gmv: p.total_penjualan ?? null,
+    gmvBasis: isTok ? 'paid' : 'created',
+    attributedGmv: null,
+    adSpend: null,
+    ctrReported: p.ctr ?? null,
+    conversionRateReported: p.conversion_rate ?? null,
+    price: p.harga ?? null,
+    warnings: ['legacy_snapshot'],
+  }
 }
 
 // ── Gabungan lintas periode (platform sama) ─────────────────────────────────
-// snapshots = array produk dari beberapa sesi platform yang sama.
-export function aggregateProduct(snapshots) {
+export function aggregateProduct(snapshots, platform) {
   if (!snapshots.length) return null
   const last = snapshots[snapshots.length - 1]
+  const metrics = sumPeriods(snapshots.map(s => legacyToMetrics(s, platform)))
+
+  // Kolom lama tetap diisi supaya tampilan & perbandingan yang sudah ada jalan.
   const traffic = sum(snapshots, p => p.pengunjung)
   const klikList = snapshots.filter(p => p.klik_produk != null)
   const klik = klikList.length ? sum(klikList, p => p.klik_produk) : null
-  const impresi = klikList.length ? sum(klikList, impresiOf) : null
-
-  const crDenom = sum(snapshots, crBase)
-  const wRate = key => {
-    if (!crDenom) return null
-    const withVal = snapshots.filter(p => p[key] != null)
-    if (!withVal.length) return null
-    return (sum(withVal, p => crBase(p) * (p[key] / 100)) / crDenom) * 100
-  }
-
-  // ROAS gabungan bukan rata-rata: biaya tiap periode dipulihkan dari
-  // sales ÷ roas, lalu Σsales ÷ Σbiaya. Hanya periode yang punya roas ikut.
+  const impresi = klikList.length
+    ? sum(klikList, p => (p.klik_produk > 0 && p.ctr > 0) ? (p.klik_produk / p.ctr) * 100 : (p.pengunjung || 0))
+    : null
   const withRoas = snapshots.filter(p => p.roas > 0 && p.total_penjualan > 0)
   const cost = sum(withRoas, p => p.total_penjualan / p.roas)
-  const roas = cost > 0 ? sum(withRoas, p => p.total_penjualan) / cost : null
 
   return {
     kode_produk: last.kode_produk,
     nama_produk: last.nama_produk,
+    sku: last.sku ?? null,
+    platform,
+    metrics,
     pengunjung: traffic,
     klik_produk: klik,
     ctr: (klik != null && impresi > 0) ? (klik / impresi) * 100 : null,
     ctr_derived: snapshots.some(p => p.ctr_derived) || null,
-    atc_rate: wRate('atc_rate'),
-    conversion_rate: wRate('conversion_rate'),
-    pesanan: sum(snapshots, p => p.pesanan),
-    total_penjualan: sum(snapshots, p => p.total_penjualan),
-    roas,
+    atc_rate: metrics.atcRateReported,
+    conversion_rate: metrics.conversionRateReported,
+    pesanan: metrics.orders,
+    total_penjualan: metrics.gmv,
+    roas: cost > 0 ? sum(withRoas, p => p.total_penjualan) / cost : null,
     harga: last.harga ?? null,
     stok: last.stok ?? null,
     periodsCount: snapshots.length,
@@ -85,9 +90,9 @@ export function aggregateProduct(snapshots) {
 }
 
 // Gabungkan beberapa sesi (platform sama) jadi satu daftar produk.
-// Ambang traffic ikut dikalikan jumlah periode — kalau tidak, 5 bulan traffic
-// dibandingkan dengan ambang 1 bulan dan semua produk terlihat ramai.
-export function aggregateSessions(sessions, fallbackSettings) {
+// Ambang traffic gaya lama ikut dikalikan jumlah periode — kalau tidak,
+// traffic N bulan dibandingkan dengan ambang 1 bulan.
+export function aggregateSessions(sessions, fallbackSettings, platform) {
   if (!sessions.length) return { products: [], settings: fallbackSettings, periods: 0 }
   const base = sessions[sessions.length - 1].settings || fallbackSettings
   const settings = { ...base, periodDays: (base.periodDays || 30) * sessions.length }
@@ -100,82 +105,12 @@ export function aggregateSessions(sessions, fallbackSettings) {
     }
   }
   const products = [...byProduct.values()]
-    .map(aggregateProduct)
+    .map(list => aggregateProduct(list, platform))
     .filter(Boolean)
-    .map(p => ({ ...p, quadrant: getQuadrant(p, settings) }))
   return { products, settings, periods: sessions.length }
 }
 
-// ── Gabungan lintas marketplace ─────────────────────────────────────────────
-// Dicocokkan lewat nama ternormalisasi. Rupiah & pesanan dijumlah; traffic,
-// CTR, CR, %ATC TIDAK dilebur — disimpan per platform di `platforms`, dan
-// kolom rasio di baris induk memakai angka platform dominan (omzet terbesar)
-// supaya jelas asalnya, bukan hasil pencampuran.
-export function mergeAcrossPlatforms(byPlatform) {
-  const groups = new Map()
-  for (const [platform, list] of Object.entries(byPlatform)) {
-    for (const p of list || []) {
-      const key = normalizeName(p.nama_produk) || `#${platform}:${p.kode_produk}`
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key).push({ ...p, platform })
-    }
-  }
-
-  const rows = []
-  for (const members of groups.values()) {
-    if (members.length === 1) {
-      const m = members[0]
-      rows.push({ ...m, platforms: [m], merged: false })
-      continue
-    }
-    const dom = [...members].sort((a, b) => (b.total_penjualan || 0) - (a.total_penjualan || 0))[0]
-    rows.push({
-      ...dom,
-      nama_produk: dom.nama_produk,
-      kode_produk: members.map(m => `${m.platform}:${m.kode_produk}`).join('+'),
-      total_penjualan: sum(members, m => m.total_penjualan),
-      pesanan: sum(members, m => m.pesanan),
-      platforms: members,
-      merged: true,
-      dominantPlatform: dom.platform,
-    })
-  }
-  rows.sort((a, b) => (b.total_penjualan || 0) - (a.total_penjualan || 0))
-  return {
-    products: rows,
-    matched: rows.filter(r => r.merged).length,
-    single: rows.filter(r => !r.merged).length,
-  }
-}
-
-// Satu tampilan utuh untuk rentang + daftar platform yang diminta.
-export function buildRangeView(sessions, range, platforms, defaultsByPlatform) {
-  const byPlatform = {}
-  let settings = null, periods = 0
-  for (const plat of platforms) {
-    const list = sessionsInRange(sessions, range, [plat])
-    if (!list.length) continue
-    const agg = aggregateSessions(list, defaultsByPlatform[plat])
-    byPlatform[plat] = agg.products
-    periods = Math.max(periods, agg.periods)
-    if (!settings) settings = agg.settings
-  }
-  const keys = Object.keys(byPlatform)
-  if (!keys.length) return { products: [], settings, periods: 0, platforms: [], matched: 0, single: 0 }
-  if (keys.length === 1) {
-    const plat = keys[0]
-    const products = byPlatform[plat].map(p => {
-      const withPlat = { ...p, platform: plat }
-      return { ...withPlat, platforms: [withPlat], merged: false }
-    })
-    return { products, settings, periods, platforms: keys, matched: 0, single: products.length }
-  }
-  const merged = mergeAcrossPlatforms(byPlatform)
-  return { ...merged, settings, periods, platforms: keys }
-}
-
 // ── Pemilihan sesi menurut rentang ──────────────────────────────────────────
-// range = { mode:'month'|'lifetime'|'custom', month, from, to } (nilai 'YYYY-MM')
 export function sessionsInRange(sessions, range, platforms) {
   const inPlat = (sessions || []).filter(s => platforms.includes(s.platform))
   const byVal = s => s.periodValue || ''
@@ -189,8 +124,6 @@ export function sessionsInRange(sessions, range, platforms) {
 }
 
 // Rentang setara sebelumnya, untuk tab Perubahan.
-// Bulan → bulan sebelumnya; Custom N bulan → N bulan tepat sebelum `from`.
-// Lifetime tak punya pembanding.
 export function previousRange(range) {
   if (!range || range.mode === 'lifetime') return null
   const shift = (ym, n) => {
@@ -198,15 +131,137 @@ export function previousRange(range) {
     const d = new Date(y, m - 1 - n, 1)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   }
-  if (range.mode === 'month') {
-    return range.month ? { mode: 'month', month: shift(range.month, 1) } : null
-  }
+  if (range.mode === 'month') return range.month ? { mode: 'month', month: shift(range.month, 1) } : null
   const { from, to } = range
   if (!from || !to) return null
-  const monthsBetween = (a, b) => {
-    const [ay, am] = a.split('-').map(Number), [by, bm] = b.split('-').map(Number)
-    return (by - ay) * 12 + (bm - am) + 1
-  }
-  const n = monthsBetween(from, to)
+  const [ay, am] = from.split('-').map(Number), [by, bm] = to.split('-').map(Number)
+  const n = (by - ay) * 12 + (bm - am) + 1
   return { mode: 'custom', from: shift(from, n), to: shift(from, 1) }
 }
+
+// Periode yang benar-benar tersedia per platform — dipakai untuk memperingatkan
+// kalau satu marketplace tak punya bulan yang sama (gabungan jadi timpang).
+export function periodCoverage(sessions, range, platforms) {
+  const cov = {}
+  for (const plat of platforms) cov[plat] = sessionsInRange(sessions, range, [plat]).map(s => s.periodValue)
+  const all = [...new Set(Object.values(cov).flat())].sort()
+  const partial = Object.entries(cov).filter(([, months]) => months.length !== all.length)
+  return { byPlatform: cov, months: all, isAligned: partial.length === 0, partial: partial.map(([p]) => p) }
+}
+
+// ── Tampilan utuh untuk satu rentang + daftar marketplace ───────────────────
+export function buildRangeView(sessions, range, platforms, defaultsByPlatform, opts = {}) {
+  const { mappings = [], manualBenchmark = null, benchmarkMode = 'auto' } = opts
+  const listingsByPlatform = {}
+  let periods = 0, legacySettings = null
+
+  for (const plat of platforms) {
+    const list = sessionsInRange(sessions, range, [plat])
+    if (!list.length) continue
+    const agg = aggregateSessions(list, defaultsByPlatform[plat], plat)
+    listingsByPlatform[plat] = agg.products
+    periods = Math.max(periods, agg.periods)
+    if (!legacySettings) legacySettings = agg.settings
+  }
+  const activePlatforms = Object.keys(listingsByPlatform)
+  if (!activePlatforms.length) {
+    return { products: [], settings: legacySettings, periods: 0, platforms: [], matched: 0, single: 0,
+      benchmark: null, suggestions: [], coverage: null }
+  }
+
+  const listings = activePlatforms.flatMap(p => listingsByPlatform[p])
+  const { groups, suggestions } = buildCanonicalGroups(listings, mappings)
+  const coverage = periodCoverage(sessions, range, activePlatforms)
+
+  // Metrik gabungan per canonical product — SEMUA rate dihitung ulang dari
+  // cacah, tak ada satu pun yang diambil dari salah satu platform saja.
+  let rows = groups.map(g => {
+    const blended = blendMembers(g.members.map(m => ({ platform: m.platform, metrics: m.metrics })))
+    const dominant = [...g.members].sort((a, b) => (b.metrics?.gmv || 0) - (a.metrics?.gmv || 0))[0]
+    return {
+      kode_produk: g.id,
+      // Kode yang enak dibaca manusia — id kanonik ("name:…") hanya kunci internal.
+      displayCode: g.members.map(m => `${m.platform}:${m.kode_produk}`).join(' + '),
+      nama_produk: g.name,
+      canonicalProductId: g.id,
+      platform: dominant?.platform ?? g.members[0]?.platform ?? null,
+      platforms: g.members.map(m => ({ platform: m.platform, kode_produk: m.kode_produk, nama_produk: m.nama_produk })),
+      merged: g.members.length > 1,
+      mappingStatus: g.members.length > 1 ? g.status : MAPPING_STATUS.UNMATCHED,
+      mappingSource: g.source,
+      mappingConfidence: g.confidence,
+      mappingReasons: g.reasons,
+      members: g.members,
+
+      // ── metrik blended (nama kanonik) ──
+      qualifiedTraffic: blended.qualifiedTraffic,
+      buyers: blended.buyers,
+      conversionRate: blended.conversionRate,
+      conversionSource: blended.conversionSource,
+      atcRate: blended.atcRate,
+      atcCompatible: blended.atcCompatible,
+      gmv: blended.gmv,
+      gmvBases: blended.gmvBases,
+      isGmvComparable: blended.isGmvComparable,
+      ctrBlended: blended.ctr,
+      roasBlended: blended.roas,
+      adSpend: blended.adSpend,
+      attributedGmv: blended.attributedGmv,
+      quantitySold: blended.quantitySold,
+      flags: blended.flags,
+      breakdown: blended.breakdown,
+      periodsCount: g.members[0]?.periodsCount ?? periods,
+
+      // ── alias kolom lama, supaya tampilan & perbandingan lama tetap jalan ──
+      pengunjung: blended.qualifiedTraffic,
+      conversion_rate: blended.conversionRate,
+      atc_rate: blended.atcRate,
+      total_penjualan: blended.gmv,
+      pesanan: blended.orders,
+      klik_produk: blended.productClicks,
+      ctr: blended.ctr,
+      ctr_derived: null,
+      roas: blended.roas,
+      harga: dominant?.harga ?? null,
+      stok: dominant?.stok ?? null,
+    }
+  })
+
+  // ── Ambang & kuadran ──
+  // Mode gabungan tak punya ambang bawaan, jadi memakai median. Mode native
+  // mempertahankan ambang lama (target harian × hari) kecuali diminta median.
+  const single = activePlatforms.length === 1
+  const wantLegacy = single && benchmarkMode !== 'median' && !manualBenchmark
+  let benchmark
+  if (wantLegacy) {
+    benchmark = {
+      trafficThreshold: getTrafficThreshold(legacySettings),
+      conversionThreshold: legacySettings.conversionThreshold,
+      source: 'target_harian',
+      pool: null,
+    }
+  } else {
+    benchmark = computeBenchmark(rows, manualBenchmark)
+  }
+  rows = rows.map(p => ({ ...p, quadrant: quadrantOf(p.qualifiedTraffic, p.conversionRate, benchmark) ?? getQuadrant(p, legacySettings) }))
+  // Nama ringkas dihitung sekali untuk seluruh daftar (butuh melihat semua
+  // produk agar bisa mengenali token brand yang berulang).
+  const shorts = buildShortNames(rows)
+  rows = rows.map((r, i) => ({ ...r, shortName: shorts[i] }))
+  rows.sort((a, b) => (b.gmv || 0) - (a.gmv || 0))
+
+  return {
+    products: rows,
+    settings: { ...legacySettings, trafficThreshold: benchmark.trafficThreshold, conversionThreshold: benchmark.conversionThreshold },
+    periods,
+    platforms: activePlatforms,
+    matched: rows.filter(r => r.merged).length,
+    single: rows.filter(r => !r.merged).length,
+    benchmark,
+    suggestions,
+    coverage,
+  }
+}
+
+// Dipakai tampilan lama & tes: rasio aman tanpa pembagian nol.
+export { safeRate }

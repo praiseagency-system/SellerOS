@@ -5,6 +5,11 @@ const CLS = {
   shopee: 'bg-orange-500/15 text-orange-300',
 }
 const NAME = { tiktok: 'TikTok', shopee: 'Shopee' }
+const STATUS_BADGE = {
+  verified:     { label: 'digabung · terverifikasi', cls: 'bg-green-500/12 text-green-300' },
+  auto_matched: { label: 'digabung · otomatis',      cls: 'bg-blue-600/15 text-blue-300' },
+  needs_review: { label: 'perlu review',             cls: 'bg-amber-500/12 text-amber-300' },
+}
 
 export default function PlatformTag({ product }) {
   const list = product?.platforms
@@ -18,11 +23,17 @@ export default function PlatformTag({ product }) {
           {NAME[m.platform] || m.platform}
         </span>
       ))}
-      {product.merged && (
-        <span title="Sales & pesanan dijumlah dari dua marketplace; traffic, CTR, dan CR memakai angka marketplace dengan omzet terbesar"
-          className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-600/15 text-blue-300">
-          digabung
-        </span>
+      {product.merged && (() => {
+        const st = STATUS_BADGE[product.mappingStatus] || STATUS_BADGE.auto_matched
+        return (
+          <span title={`Semua metrik dihitung ulang dari cacah kedua marketplace. Dasar: ${(product.mappingReasons || []).join(' · ') || 'mapping tersimpan'}`}
+            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${st.cls}`}>
+            {st.label}
+          </span>
+        )
+      })()}
+      {!product.merged && Array.isArray(product.platforms) && product.platforms.length === 1 && product.mappingStatus === 'unmatched' && (
+        <span title="Produk ini hanya ditemukan di satu marketplace" className="text-[9px] text-ink-faint px-1">hanya 1 marketplace</span>
       )}
     </span>
   )

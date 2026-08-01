@@ -1,12 +1,13 @@
-import { useState, useMemo } from 'react'
-import { ArrowUpDown, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react'
+import { useState, useMemo, Fragment } from 'react'
+import { ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, ChevronDown } from 'lucide-react'
+import ProductBreakdown from './ProductBreakdown'
 import { QUADRANT_CONFIG, fmtNum, fmtIDR } from '../utils/quadrantUtils'
 import PlatformTag from './PlatformTag'
 
 const COLUMNS = [
   { key: 'nama_produk', label: 'Produk', sortable: true },
   { key: 'quadrant', label: 'Kuadran', sortable: true },
-  { key: 'pengunjung', label: 'Pengunjung', sortable: true },
+  { key: 'pengunjung', label: 'TRAFFIC', sortable: true },
   { key: 'ctr', label: 'CTR', sortable: true },
   { key: 'conversion_rate', label: 'Konversi', sortable: true },
   { key: 'atc_rate', label: 'ATC Rate', sortable: true },
@@ -14,9 +15,10 @@ const COLUMNS = [
   { key: 'total_penjualan', label: 'Total Penjualan', sortable: true },
 ]
 
-export default function ProductTable({ products, activeQuadrant, onReset }) {
+export default function ProductTable({ products, activeQuadrant, onReset, trafficLabel = 'Pengunjung' }) {
   const [sort, setSort] = useState({ key: 'pengunjung', dir: 'desc' })
   const [search, setSearch] = useState('')
+  const [openRow, setOpenRow] = useState(null)
 
   function toggleSort(key) {
     setSort(prev =>
@@ -103,8 +105,11 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
                     ${col.key === 'nama_produk' ? 'min-w-56' : ''}
                   `}
                 >
-                  <div className="flex items-center gap-1">
-                    {col.label}
+                  <div className="flex items-center gap-1"
+                    title={col.key === 'pengunjung'
+                      ? 'Jumlah pengguna unik yang menunjukkan intent dengan mengklik atau mengunjungi halaman produk dari Shopee dan TikTok Shop.'
+                      : undefined}>
+                    {col.label === 'TRAFFIC' ? trafficLabel : col.label}
                     {col.sortable && <SortIcon col={col.key} />}
                   </div>
                 </th>
@@ -114,15 +119,28 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
           <tbody className="divide-y divide-line/5">
             {filtered.map((p, i) => {
               const cfg = QUADRANT_CONFIG[p.quadrant]
+              const canOpen = Array.isArray(p.breakdown) && p.breakdown.length > 0
+              const isOpen = openRow === p.kode_produk
+              const Chev = isOpen ? ChevronDown : ChevronRight
               return (
-                <tr key={p.kode_produk + i} className="hover:bg-fill/5 transition-colors">
+                <Fragment key={p.kode_produk + i}>
+                <tr className="hover:bg-fill/5 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="max-w-xs">
+                    <div className="max-w-xs flex items-start gap-1.5">
+                      {canOpen && (
+                        <button onClick={() => setOpenRow(isOpen ? null : p.kode_produk)}
+                          title="Lihat rincian per marketplace"
+                          className="mt-0.5 text-ink-faint hover:text-ink flex-shrink-0">
+                          <Chev className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <div className="min-w-0">
                       <p className="text-ink text-xs font-medium leading-snug line-clamp-2">
                         {p.nama_produk}
                       </p>
                       <PlatformTag product={p} />
-                      <p className="text-ink-muted text-xs mt-0.5">{p.kode_produk}</p>
+                      <p className="text-ink-muted text-xs mt-0.5">{p.displayCode || p.kode_produk}</p>
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -159,6 +177,14 @@ export default function ProductTable({ products, activeQuadrant, onReset }) {
                     {fmtIDR(p.total_penjualan)}
                   </td>
                 </tr>
+                {isOpen && (
+                  <tr>
+                    <td colSpan={COLUMNS.length} className="px-4 pb-3">
+                      <ProductBreakdown product={p} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
           </tbody>

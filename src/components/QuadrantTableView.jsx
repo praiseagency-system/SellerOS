@@ -2,6 +2,7 @@
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react'
 import { QUADRANT_CONFIG, fmtNum, fmtCompact } from '../utils/quadrantUtils'
 import PlatformTag from './PlatformTag'
+import { METRIC_TOOLTIP } from '../utils/metricLabels'
 
 const MOVE_ICON = {
   up:   { Icon: TrendingUp,   cls: 'text-green-500', title: 'Naik kuadran' },
@@ -49,13 +50,13 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
             <tr>
               <th className="px-2 py-1.5 text-left text-ink-faint font-medium border-b border-line/5 w-6">#</th>
               <th className="px-2 py-1.5 text-left text-ink-faint font-medium border-b border-line/5 min-w-32">Nama</th>
-              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 whitespace-nowrap">{trafficLabel}</th>
-              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">CTR</th>
-              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">%ATC</th>
-              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">CR</th>
+              <th title={METRIC_TOOLTIP.qualifiedTraffic} className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 whitespace-nowrap cursor-help">{trafficLabel}</th>
+              <th title={METRIC_TOOLTIP.uniqueCtr} className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 cursor-help">CTR Unik</th>
+              <th title={METRIC_TOOLTIP.atcRate} className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 cursor-help">Rasio ATC</th>
+              <th title={METRIC_TOOLTIP.conversionRate} className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 cursor-help">Rasio Konversi</th>
               <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">ROAS</th>
-              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">Sales</th>
-              <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 whitespace-nowrap">Qty Sold</th>
+              <th title={METRIC_TOOLTIP.gmv} className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 cursor-help">GMV</th>
+              <th title={METRIC_TOOLTIP.orders} className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5 whitespace-nowrap cursor-help">Pesanan</th>
               <th className="px-2 py-1.5 text-right text-ink-faint font-medium border-b border-line/5">Stok</th>
             </tr>
           </thead>

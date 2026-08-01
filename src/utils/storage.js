@@ -2,6 +2,8 @@
 // (lihat src/data/periods.js). File ini hanya: bentuk-ulang produk, pilih
 // periode pembanding, dan export/import sesi sebagai file .json.
 
+import { METRIC_MAPPING_VERSION } from './metricSchema'
+
 // Padatkan produk untuk disimpan (buang delta perbandingan, simpan data inti).
 export function compactProduct(p) {
   return {
@@ -22,6 +24,13 @@ export function compactProduct(p) {
     klik_produk:    p.klik_produk ?? null,
     ctr_derived:    p.ctr_derived ?? null,
     quadrant:       p.quadrant,
+    // Lapisan baru: metrik ternormalisasi (qualified traffic, buyers, ATC
+    // users, biaya iklan, basis GMV) + nilai mentahnya. Snapshot lama tak
+    // punya ini — pembacanya WAJIB tahan `metrics` bernilai undefined.
+    platform:       p.platform ?? null,
+    metrics:        p.metrics ?? null,
+    rawMetrics:     p.rawMetrics ?? null,
+    metricMappingVersion: p.metrics ? METRIC_MAPPING_VERSION : null,
   }
 }
 
