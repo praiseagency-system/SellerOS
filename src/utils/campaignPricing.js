@@ -10,6 +10,14 @@ export function marginCls(m) {
 }
 export function fmtPct(n) { return (n == null || isNaN(n)) ? '—' : `${(+n).toFixed(0)}%` }
 
+// URL link halaman campaign marketplace — auto-prefix https:// bila user hanya
+// menulis domain. null bila kosong (dipakai CampaignPanel + ApprovalPage).
+export function hrefOf(url) {
+  const s = (url || '').trim()
+  if (!s) return null
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`
+}
+
 // Kalkulasi penuh sebuah item (varian pada harga campaign). Mengembalikan objek
 // computeCalc (punya adminRate, adminCut, marginNoAd, dst) atau null.
 export function itemCalc(item, productMap, sellerPerUnit = 0) {
@@ -166,14 +174,47 @@ export const APPROVAL = {
 export function approvalStatusOf(approvals, productId) {
   return approvals?.[productId]?.status || 'pending'
 }
-export function approvalSummary(c) {
-  const ids = [...new Set(activeItems(c.items).map(it => it.productId))]
-  const appr = c.approvals || {}
+
+// --- Persetujuan per SKU ---------------------------------------------------
+// `approvals` di-key bebas: `<productId>` (keputusan lama, level produk) atau
+// `<productId>:<varIdx>` = itemKey (keputusan khusus satu SKU). Satu SKU dibaca
+// dari kunci SKU-nya dulu, kalau belum ada JATUH ke keputusan produk — jadi
+// campaign lama yang sudah disetujui per produk tetap terbaca disetujui, tanpa
+// backfill. Kunci komposit tak butuh migrasi: RPC set_product_approval menulis
+// apa pun kunci yang dikirim.
+export function approvalEntryOfItem(approvals, it) {
+  return approvals?.[itemKey(it)] || approvals?.[it.productId] || null
+}
+export function approvalStatusOfItem(approvals, it) {
+  return approvalEntryOfItem(approvals, it)?.status || 'pending'
+}
+// true bila SKU ini punya keputusan sendiri (bukan warisan level produk).
+export function hasOwnApproval(approvals, it) { return !!approvals?.[itemKey(it)] }
+
+// Hitungan status untuk sekumpulan varian (yang dikecualikan tak dihitung).
+export function skuApprovalSummary(items, approvals) {
+  const act = activeItems(items)
   let approved = 0, rejected = 0
-  for (const id of ids) {
-    const s = appr[id]?.status
+  for (const it of act) {
+    const s = approvalStatusOfItem(approvals, it)
     if (s === 'approved') approved++
     else if (s === 'rejected') rejected++
   }
-  return { total: ids.length, approved, rejected, pending: ids.length - approved - rejected }
+  return { total: act.length, approved, rejected, pending: act.length - approved - rejected }
+}
+
+// Ringkasan satu campaign — dihitung per SKU (bukan per produk) supaya badge
+// kartu ikut turun begitu ada satu SKU yang ditolak.
+export function approvalSummary(c) {
+  return skuApprovalSummary(c.items, c.approvals)
+}
+
+// Entri riwayat yang menyangkut satu produk: level produk maupun per SKU-nya.
+// Mengembalikan entri + `sku` (nama varian) bila kuncinya kunci SKU.
+export function approvalLogOfProduct(c, productId, its) {
+  const nameOf = new Map((its || []).map(it => [itemKey(it), it.name || `Varian ${it.varIdx + 1}`]))
+  return (c.approvalLog || [])
+    .filter(e => e.productId === productId || nameOf.has(e.productId))
+    .map(e => ({ ...e, sku: nameOf.get(e.productId) || null }))
+    .slice().reverse()
 }
