@@ -3,20 +3,13 @@ import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
 } from 'lucide-react'
-
-// Normalisasi URL untuk href (tambah https:// bila skema tak ada).
-function hrefOf(url) {
-  const s = (url || '').trim()
-  if (!s) return null
-  return /^https?:\/\//i.test(s) ? s : `https://${s}`
-}
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings } from '../data/campaigns'
 import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
 import {
-  fmt, marginCls, fmtPct, itemMargin, itemCalc, totalFee, feeBreakdown, voucherEffect, voucherList,
+  fmt, marginCls, fmtPct, hrefOf, itemMargin, itemCalc, totalFee, feeBreakdown, voucherEffect, voucherList,
   worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
   APPROVAL, approvalStatusOf, approvalSummary,
   activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey,

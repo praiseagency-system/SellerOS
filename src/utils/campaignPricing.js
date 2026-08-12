@@ -10,6 +10,14 @@ export function marginCls(m) {
 }
 export function fmtPct(n) { return (n == null || isNaN(n)) ? '—' : `${(+n).toFixed(0)}%` }
 
+// URL link halaman campaign marketplace — auto-prefix https:// bila user hanya
+// menulis domain. null bila kosong (dipakai CampaignPanel + ApprovalPage).
+export function hrefOf(url) {
+  const s = (url || '').trim()
+  if (!s) return null
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`
+}
+
 // Kalkulasi penuh sebuah item (varian pada harga campaign). Mengembalikan objek
 // computeCalc (punya adminRate, adminCut, marginNoAd, dst) atau null.
 export function itemCalc(item, productMap, sellerPerUnit = 0) {

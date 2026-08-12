@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User, ChevronDown, ChevronRight, FileText, CalendarRange } from 'lucide-react'
+import { Bolt, Lock, Mail, Check, X, RefreshCw, LogOut, User, ChevronDown, ChevronRight, FileText, CalendarRange, ExternalLink } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCampaignByToken, submitApproval } from '../data/campaignApproval'
 import {
-  fmt, marginCls, fmtPct, itemMargin, voucherEffect, voucherList, APPROVAL, approvalStatusOf,
-  activeItems,
+  fmt, marginCls, fmtPct, hrefOf, itemMargin, itemCalc, totalFee, feeBreakdown,
+  voucherEffect, voucherList, APPROVAL, approvalStatusOf, activeItems,
 } from '../utils/campaignPricing'
 import { campaignPeriods, periodsSummary, periodRange, periodLabel, periodStatus } from '../utils/campaignPeriods'
 
@@ -96,6 +96,12 @@ function ApprovalBody({ token, email }) {
           {c.approvalAccess === 'public' ? ' · akses publik' : ' · privat'}
         </p>
         {c.description && <p className="text-xs text-ink-muted mt-1">{c.description}</p>}
+        {hrefOf(c.link) && (
+          <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-400 hover:text-blue-300 border border-line/15 hover:border-blue-500/40 rounded-lg px-2.5 py-1.5 transition-colors">
+            <ExternalLink className="w-3.5 h-3.5" /> Buka halaman campaign
+          </a>
+        )}
       </div>
 
       {/* Periode efektif — ditampilkan rinci bila campaign aktif di beberapa rentang */}
@@ -160,6 +166,7 @@ function ApprovalBody({ token, email }) {
 }
 
 function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled, onAct, onSaveNote }) {
+  const [openFee, setOpenFee] = useState(null)
   const st = approvalStatusOf(c.approvals, productId)
   const meta = APPROVAL[st]
   const p = productMap[productId]
@@ -181,16 +188,47 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled
         {its.map(it => {
           const m = itemMargin(it, productMap)
           const vname = it.name || `Varian ${it.varIdx + 1}`
+          // Komisi & biaya = total semua fee platform/komisi/program + biaya
+          // proses pada harga campaign (sama dengan Kalkulator), bisa diklik
+          // untuk melihat rinciannya per komponen.
+          const calc = itemCalc(it, productMap)
+          const fee = totalFee(calc)
+          const feeRows = openFee === it.varIdx ? feeBreakdown(calc) : null
           return (
             <div key={it.varIdx}>
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] text-ink truncate">{vname}</p>
-                  <p className="text-[11px] text-ink-faint truncate">{it.sku || 'tanpa SKU'}</p>
+                  <p className="text-[11px] text-ink-faint truncate">
+                    {it.sku || 'tanpa SKU'}
+                    {fee && +it.price > 0 && (
+                      <> · <button onClick={() => setOpenFee(o => o === it.varIdx ? null : it.varIdx)}
+                        className="text-ink-muted hover:text-blue-400 underline decoration-dotted underline-offset-2">
+                        komisi &amp; biaya {fee.pct.toFixed(1)}% ({fmt(fee.amount)})
+                      </button></>
+                    )}
+                  </p>
                 </div>
-                <span className="text-[13px] font-semibold text-ink-strong tabular-nums flex-shrink-0">{fmt(+it.price)}</span>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[9px] text-ink-faint leading-none mb-0.5">Harga campaign</p>
+                  <span className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(+it.price)}</span>
+                </div>
                 <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
               </div>
+              {feeRows && (
+                <div className="mt-1.5 mb-1 rounded-lg bg-fill/5 border border-line/8 p-2.5 space-y-1">
+                  {feeRows.map((r, k) => (
+                    <div key={k} className="flex items-center justify-between text-[11px]">
+                      <span className="text-ink-muted">{r.label}{r.pct != null ? ` (${r.pct.toFixed(r.pct % 1 ? 1 : 0)}%)` : ''}</span>
+                      <span className="text-ink tabular-nums">−{fmt(r.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-line/8 font-semibold">
+                    <span className="text-ink-strong">Total komisi &amp; biaya</span>
+                    <span className="text-ink-strong tabular-nums">−{fmt(fee.amount)}</span>
+                  </div>
+                </div>
+              )}
               {vouchers.length > 0 && +it.price > 0 && (
                 <div className="mt-1.5 mb-1">
                   <div className="grid gap-2 text-[10px] text-ink-faint pb-1" style={{ gridTemplateColumns: cols }}>
