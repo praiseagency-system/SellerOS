@@ -11,7 +11,8 @@ import { productFees, productVariations } from '../utils/product'
 import {
   fmt, marginCls, fmtPct, hrefOf, itemMargin, itemCalc, totalFee, feeBreakdown, voucherEffect, voucherList,
   worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
-  APPROVAL, approvalStatusOf, approvalSummary,
+  APPROVAL, approvalStatusOf, approvalSummary, skuApprovalSummary,
+  approvalStatusOfItem, hasOwnApproval, approvalLogOfProduct,
   activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey,
 } from '../utils/campaignPricing'
 import {
@@ -317,8 +318,8 @@ export default function CampaignPanel({ products }) {
                           if (!ap.total) return null
                           const cls = ap.approved === ap.total ? 'bg-green-500/12 text-green-300'
                             : ap.rejected > 0 ? 'bg-red-500/12 text-red-300' : 'bg-amber-500/12 text-amber-300'
-                          const txt = ap.approved === ap.total ? 'Semua disetujui'
-                            : `${ap.approved}/${ap.total} disetujui${ap.rejected ? ` · ${ap.rejected} ditolak` : ''}`
+                          const txt = ap.approved === ap.total ? 'Semua SKU disetujui'
+                            : `${ap.approved}/${ap.total} SKU disetujui${ap.rejected ? ` · ${ap.rejected} ditolak` : ''}`
                           return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${cls}`}>{txt}</span> })()}
                       </div>
                       <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
@@ -532,8 +533,17 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
     setItems(prev => [...prev.filter(it => it.productId !== p.id), ...add])
   }
   function removeProduct(productId) { setItems(prev => prev.filter(it => it.productId !== productId)) }
+  // Status level produk = berlaku untuk SEMUA SKU-nya, jadi keputusan per SKU
+  // (kunci `productId:varIdx`, mis. dari client di /approve) ikut dibersihkan —
+  // kalau tidak, SKU ber-override tak akan ikut berubah dan terlihat seperti
+  // tombol yang tak berfungsi.
   function setApproval(productId, status) {
-    setApprovals(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), status, at: new Date().toISOString() } }))
+    setApprovals(prev => {
+      const next = {}
+      for (const [k, v] of Object.entries(prev)) if (!k.startsWith(`${productId}:`)) next[k] = v
+      next[productId] = { ...(prev[productId] || {}), status, at: new Date().toISOString() }
+      return next
+    })
   }
   function setApprovalNote(productId, note) {
     setApprovals(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), note } }))
@@ -848,9 +858,10 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                   {activeItems(its).length === 0 && (
                     <p className="text-[11px] text-amber-300 mb-2">Semua varian dikecualikan — produk ini tidak diajukan ke client.</p>
                   )}
-                  {/* Persetujuan per produk */}
+                  {/* Persetujuan — di sini berlaku untuk semua SKU produk ini;
+                      keputusan per SKU dari client ditimpa (lihat setApproval). */}
                   <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                    <span className="text-[10px] font-medium text-ink-faint">Persetujuan:</span>
+                    <span className="text-[10px] font-medium text-ink-faint">Persetujuan (semua SKU):</span>
                     <div className="inline-flex rounded-lg border border-line/12 overflow-hidden">
                       {['approved', 'pending', 'rejected'].map(st => {
                         const active = approvalStatusOf(approvals, productId) === st
@@ -867,6 +878,15 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                       placeholder="catatan (opsional, mis. alasan tolak / revisi)"
                       className="flex-1 min-w-[160px] bg-fill/5 border border-line/10 rounded-lg px-2.5 py-1 text-[11px] text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
                   </div>
+                  {(() => {
+                    const ov = activeItems(its).filter(it => hasOwnApproval(approvals, it))
+                    if (!ov.length) return null
+                    return (
+                      <p className="text-[10px] text-amber-300 mb-2 -mt-1">
+                        {ov.length} SKU punya keputusan sendiri dari client — memakai tombol di atas akan menimpanya.
+                      </p>
+                    )
+                  })()}
                   <div className="space-y-1.5">
                     {its.map((it, vi) => {
                       const m = itemMargin(it, productMap)
@@ -957,17 +977,24 @@ function ProductCard({ c, productId, its, productMap }) {
   const cfg = c.voucherConfig
   const kind = cfg?.kind || 'normal'
   const cvs = voucherList(cfg)
-  const st = approvalStatusOf(c.approvals, productId)
   const target = +(cfg?.targetMargin) || DEFAULT_TARGET_MARGIN
   // Varian yang dikecualikan tak ikut hitungan; tetap ditampilkan (dicoret) di
   // aplikasi supaya tim tahu apa yang dikeluarkan — di /approve disembunyikan.
   const act = activeItems(its)
   const worst = worstProductMargin(act, productMap, cfg)
   const verdict = worthVerdict(worst, target)
-  const plog = (c.approvalLog || []).filter(e => e.productId === productId).slice().reverse()
+  // Ringkasan per SKU (client bisa memutuskan SKU satu per satu di /approve).
+  const sum = skuApprovalSummary(its, c.approvals)
+  const stLabel = sum.total === 0 ? null
+    : sum.approved === sum.total ? { label: 'Semua SKU disetujui', cls: APPROVAL.approved.cls }
+    : sum.rejected === sum.total ? { label: 'Semua SKU ditolak', cls: APPROVAL.rejected.cls }
+    : sum.approved === 0 && sum.rejected === 0 ? { label: 'Menunggu', cls: APPROVAL.pending.cls }
+    : { label: `${sum.approved}/${sum.total} SKU disetujui${sum.rejected ? ` · ${sum.rejected} ditolak` : ''}`,
+        cls: sum.rejected > 0 ? APPROVAL.rejected.cls : APPROVAL.pending.cls }
+  const plog = approvalLogOfProduct(c, productId, its)
   const a = c.approvals?.[productId]
   const logRows = plog.length > 0 ? plog.slice(0, 4)
-    : (a?.at && a.status !== 'pending') ? [{ status: a.status, by: a.by, byName: a.byName, at: a.at, note: a.note }] : []
+    : (a?.at && a.status !== 'pending') ? [{ status: a.status, by: a.by, byName: a.byName, at: a.at, note: a.note, sku: null }] : []
 
   return (
     <div className="bg-surface rounded-2xl border border-line/12 shadow-sm overflow-hidden">
@@ -976,7 +1003,7 @@ function ProductCard({ c, productId, its, productMap }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-[13px] font-semibold text-ink-strong">{p ? p.name : '(produk dihapus)'}</p>
-            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${APPROVAL[st].cls}`}>{APPROVAL[st].label}</span>
+            {stLabel && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${stLabel.cls}`}>{stLabel.label}</span>}
             {verdict && <span title={`margin terburuk ${worst?.toFixed(1)}% vs target ${target}%`} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${VERDICT_CLS[verdict.key]}`}>{verdict.label}</span>}
           </div>
           <p className="text-[11px] text-ink-faint mt-0.5">
@@ -993,6 +1020,7 @@ function ProductCard({ c, productId, its, productMap }) {
             <p key={k} className="text-[10px] text-ink-faint flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.status === 'approved' ? 'bg-green-400' : e.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'}`} />
               <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
+              <span className="text-ink-faint flex-shrink-0">· {e.sku || 'semua SKU'}</span>
               <span className="truncate">{(e.by || e.byName) ? `oleh ${e.byName ? `${e.byName} (${e.by})` : e.by}` : ''}{e.note ? ` · "${e.note}"` : ''}</span>
               <span className="ml-auto flex-shrink-0">{fmtWhen(e.at)}</span>
             </p>
@@ -1033,6 +1061,11 @@ function ProductCard({ c, productId, its, productMap }) {
                   <span className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(+it.price)}</span>
                 </div>
                 <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+                {(() => { const ist = approvalStatusOfItem(c.approvals, it)
+                  return <span title={hasOwnApproval(c.approvals, it) ? 'diputuskan khusus SKU ini' : 'ikut keputusan produk'}
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 w-[62px] text-center ${APPROVAL[ist].cls}`}>
+                    {APPROVAL[ist].label}
+                  </span> })()}
               </div>
               {feeRows && (
                 <div className="mt-1.5 mb-1 rounded-lg bg-fill/5 border border-line/8 p-2.5 space-y-1">
