@@ -191,6 +191,19 @@ export function approvalStatusOfItem(approvals, it) {
 // true bila SKU ini punya keputusan sendiri (bukan warisan level produk).
 export function hasOwnApproval(approvals, it) { return !!approvals?.[itemKey(it)] }
 
+// Status EFEKTIF satu produk dari SKU aktifnya: semua sama -> status itu;
+// beda-beda -> 'mixed'; tanpa SKU aktif -> 'pending'. Dipakai editor supaya
+// keputusan client per SKU ikut terbaca di kontrol level produk.
+export function productApprovalStatus(approvals, items) {
+  const act = activeItems(items)
+  if (!act.length) return 'pending'
+  const first = approvalStatusOfItem(approvals, act[0])
+  for (const it of act.slice(1)) {
+    if (approvalStatusOfItem(approvals, it) !== first) return 'mixed'
+  }
+  return first
+}
+
 // Hitungan status untuk sekumpulan varian (yang dikecualikan tak dihitung).
 export function skuApprovalSummary(items, approvals) {
   const act = activeItems(items)

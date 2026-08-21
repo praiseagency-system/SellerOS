@@ -11,8 +11,8 @@ import { productFees, productVariations } from '../utils/product'
 import {
   fmt, marginCls, fmtPct, hrefOf, itemMargin, itemCalc, totalFee, feeBreakdown, voucherEffect, voucherList,
   worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
-  APPROVAL, approvalStatusOf, approvalSummary, skuApprovalSummary,
-  approvalStatusOfItem, hasOwnApproval, approvalLogOfProduct,
+  APPROVAL, approvalSummary, skuApprovalSummary,
+  approvalStatusOfItem, hasOwnApproval, approvalLogOfProduct, productApprovalStatus,
   activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey,
 } from '../utils/campaignPricing'
 import {
@@ -510,6 +510,9 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
     return cfg
   }
 
+  // Filter daftar produk per status persetujuan (chips di atas daftar).
+  const [approvalTab, setApprovalTab] = useState('all')
+
   // Item dikelompokkan per produk (urut sesuai produk).
   const byProduct = useMemo(() => {
     const groups = new Map()
@@ -834,14 +837,46 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
           </div>
         )}
 
+        {/* Filter per status persetujuan. Produk berstatus campuran ikut
+            muncul di tiap chip yang relevan (dihitung per SKU aktif). */}
+        {items.length > 0 && (() => {
+          const hasStatus = (its, st) => activeItems(its).some(it => approvalStatusOfItem(approvals, it) === st)
+          const chips = [
+            ['all', 'Semua', byProduct.length],
+            ['pending', 'Menunggu', byProduct.filter(([, its]) => hasStatus(its, 'pending')).length],
+            ['approved', 'Disetujui', byProduct.filter(([, its]) => hasStatus(its, 'approved')).length],
+            ['rejected', 'Ditolak', byProduct.filter(([, its]) => hasStatus(its, 'rejected')).length],
+          ]
+          const on = { all: 'bg-blue-600/15 border-blue-500/40 text-blue-300', pending: 'bg-amber-500/12 border-amber-500/40 text-amber-300', approved: 'bg-green-500/12 border-green-500/40 text-green-300', rejected: 'bg-red-500/12 border-red-500/40 text-red-300' }
+          return (
+            <div className="flex flex-wrap items-center gap-1.5 px-5 pt-3">
+              {chips.map(([id, label, n]) => (
+                <button key={id} type="button" onClick={() => setApprovalTab(id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                    approvalTab === id ? on[id] : 'border-line/12 text-ink-muted hover:text-ink hover:border-line/30'
+                  }`}>
+                  {label} <span className="font-normal opacity-70">({n})</span>
+                </button>
+              ))}
+            </div>
+          )
+        })()}
+
         {items.length === 0 ? (
           <div className="text-center py-12">
             <Package className="w-8 h-8 text-ink-faint mx-auto mb-2" />
             <p className="text-sm text-ink-muted">Belum ada produk. Klik "Tambah Produk".</p>
           </div>
-        ) : (
+        ) : (() => {
+          const visible = approvalTab === 'all'
+            ? byProduct
+            : byProduct.filter(([, its]) => activeItems(its).some(it => approvalStatusOfItem(approvals, it) === approvalTab))
+          if (!visible.length) return (
+            <p className="text-center py-8 text-sm text-ink-muted">Tidak ada produk berstatus ini.</p>
+          )
+          return (
           <div className="divide-y divide-line/8">
-            {byProduct.map(([productId, its]) => {
+            {visible.map(([productId, its]) => {
               const p = productMap[productId]
               return (
                 <div key={productId} className="px-5 py-3">
@@ -864,7 +899,9 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                     <span className="text-[10px] font-medium text-ink-faint">Persetujuan (semua SKU):</span>
                     <div className="inline-flex rounded-lg border border-line/12 overflow-hidden">
                       {['approved', 'pending', 'rejected'].map(st => {
-                        const active = approvalStatusOf(approvals, productId) === st
+                        // Status EFEKTIF dari SKU aktif — keputusan client per
+                        // SKU ikut terbaca; 'mixed' = tak ada tombol aktif.
+                        const active = productApprovalStatus(approvals, its) === st
                         const on = { approved: 'bg-green-600 text-white', pending: 'bg-amber-500 text-black', rejected: 'bg-red-600 text-white' }[st]
                         return (
                           <button key={st} type="button" onClick={() => setApproval(productId, st)}
@@ -874,6 +911,14 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                         )
                       })}
                     </div>
+                    {productApprovalStatus(approvals, its) === 'mixed' && (() => {
+                      const sm = skuApprovalSummary(its, approvals)
+                      return (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-fill/8 text-ink-muted whitespace-nowrap" title="Status SKU berbeda-beda">
+                          Campuran{sm.approved > 0 && <span className="text-green-300"> {sm.approved}✓</span>}{sm.rejected > 0 && <span className="text-red-300"> {sm.rejected}✗</span>}{sm.pending > 0 && <span className="text-amber-300"> {sm.pending}•</span>}
+                        </span>
+                      )
+                    })()}
                     <input value={approvals[productId]?.note ?? ''} onChange={e => setApprovalNote(productId, e.target.value)}
                       placeholder="catatan (opsional, mis. alasan tolak / revisi)"
                       className="flex-1 min-w-[160px] bg-fill/5 border border-line/10 rounded-lg px-2.5 py-1 text-[11px] text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
@@ -935,7 +980,8 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
               )
             })}
           </div>
-        )}
+          )
+        })()}
         <p className="text-[11px] text-ink-faint px-5 py-3 border-t border-line/8">
           Harga campaign default dari "Harga Campaign" tiap varian (price list), bisa diubah khusus campaign ini. Margin dihitung dari HPP &amp; biaya varian.
           {campaignType === 'cofunded' && activeVouchers.length > 0 && (
