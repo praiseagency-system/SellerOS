@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   itemKey, approvalStatusOfItem, hasOwnApproval, skuApprovalSummary,
-  approvalSummary, approvalLogOfProduct,
+  approvalSummary, approvalLogOfProduct, productApprovalStatus,
 } from '../campaignPricing'
 
 // Varian campaign minimal (harga/HPP tak dipakai oleh helper persetujuan).
@@ -75,5 +75,38 @@ describe('riwayat per produk', () => {
 
   it('tidak mencampur entri produk lain', () => {
     expect(approvalLogOfProduct(c, 'p1', its).some(e => e.productId === 'p2:0')).toBe(false)
+  })
+})
+
+describe('status efektif produk (kontrol editor)', () => {
+  const its = ITEMS.filter(i => i.productId === 'p1')
+
+  it('tanpa keputusan apa pun = pending', () => {
+    expect(productApprovalStatus({}, its)).toBe('pending')
+  })
+
+  it('keputusan client per SKU terbaca walau kunci produk kosong (kasus 1 varian)', () => {
+    const one = [IT('p3', 0)]
+    expect(productApprovalStatus({ 'p3:0': { status: 'approved' } }, one)).toBe('approved')
+  })
+
+  it('semua SKU seragam (warisan produk + override senada) = status itu', () => {
+    const approvals = { p1: { status: 'approved' }, 'p1:1': { status: 'approved' } }
+    expect(productApprovalStatus(approvals, its)).toBe('approved')
+  })
+
+  it('status SKU berbeda-beda = mixed', () => {
+    const approvals = { p1: { status: 'approved' }, 'p1:2': { status: 'rejected' } }
+    expect(productApprovalStatus(approvals, its)).toBe('mixed')
+  })
+
+  it('SKU dikecualikan tidak ikut menentukan status', () => {
+    const items = [IT('p1', 0), IT('p1', 1, { excluded: true })]
+    const approvals = { 'p1:0': { status: 'approved' }, 'p1:1': { status: 'rejected' } }
+    expect(productApprovalStatus(approvals, items)).toBe('approved')
+  })
+
+  it('semua varian dikecualikan = pending', () => {
+    expect(productApprovalStatus({ 'p1:0': { status: 'approved' } }, [IT('p1', 0, { excluded: true })])).toBe('pending')
   })
 })
