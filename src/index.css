@@ -2,21 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Font — disamakan dengan web affiliate (Praise): Plus Jakarta Sans utk
+   UI + JetBrains Mono utk angka. File woff2 disalin dari repo Praise
+   (self-host, tidak bergantung Google Fonts saat build). ===== */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('/fonts/jakarta.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jbmono.woff2') format('woff2');
+  font-weight: 100 800;
+  font-display: swap;
+}
+
 /* ===== Token tema (default: gelap). Diselaraskan dengan palet webapp
-   affiliate (Praise dark #0a0c0f + accent blue-600). Surface pakai channel
+   affiliate (Praise dark carbon #141416 + accent blue-600). Surface pakai channel
    rgb agar mendukung modifier opacity Tailwind, mis. bg-app/50. ===== */
 :root {
-  --c-app: 10 12 15;        /* #0a0c0f background aplikasi */
-  --c-surface: 17 20 26;    /* #11141a kartu / panel        */
-  --c-surface2: 19 23 30;   /* #13171e panel bertingkat      */
+  /* Opsi A "Midnight Command" (2026-08-21): token PERSIS dark carbon Praise
+     (globals.css web affiliate) supaya dua produk satu keluarga visual. */
+  --c-app: 20 20 22;        /* #141416 background aplikasi   */
+  --c-surface: 27 27 31;    /* #1b1b1f kartu / panel          */
+  --c-surface2: 24 24 27;   /* #18181b panel bertingkat       */
+  --c-sidebar: 17 17 19;    /* #111113 sidebar/topbar (Praise --sidebar-bg) */
   --c-line: 255 255 255;    /* garis/border (dipakai dgn alpha) */
   --c-fill: 255 255 255;    /* isian halus (dipakai dgn alpha)  */
   --c-accent: 37 99 235;    /* #2563eb accent (blue-600)   */
-  --c-accent-hover: 59 130 246; /* #3b82f6 accent hover    */
-  --c-ink: #f8fafc;         /* teks utama        */
+  --c-accent-hover: 29 78 216; /* #1d4ed8 accent hover (Praise) */
+  --c-ink: #f1f1f3;         /* teks utama (Praise --text-primary) */
   --c-ink-strong: #ffffff;  /* judul / penekanan */
-  --c-ink-muted: rgba(255,255,255,0.55);  /* teks sekunder */
-  --c-ink-faint: rgba(255,255,255,0.35);  /* teks samar    */
+  --c-ink-muted: #a9a9b2;   /* teks sekunder (Praise --text-muted) */
+  --c-ink-faint: #77777f;   /* teks samar (Praise --text-faint)    */
 }
 
 /* ===== Mode terang ===== */
@@ -24,6 +43,7 @@ html.light {
   --c-app: 244 245 247;     /* #f4f5f7 */
   --c-surface: 255 255 255; /* #ffffff */
   --c-surface2: 249 250 251;/* #f9fafb */
+  --c-sidebar: 255 255 255; /* #ffffff (Praise light --sidebar-bg) */
   --c-line: 15 23 42;
   --c-fill: 15 23 42;
   --c-accent: 79 70 229;    /* #4f46e5 accent (indigo)  */
@@ -38,8 +58,8 @@ body {
   margin: 0;
   background: rgb(var(--c-app));
   color: var(--c-ink);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    Roboto, Arial, sans-serif;
+  font-family: 'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui,
+    -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -50,93 +70,77 @@ body {
   text-align: left;
 }
 
-/* ===== Glassmorphism (dipilih user 2026-07-12): full glass utk chrome app
-   (sidebar+topbar) + halaman Overview & GMV Max Dashboard. Glow latar BIRU
-   saja. Resep beda per tema: dark = kaca gelap putih-tipis; light = frosted
-   white di atas tint. Halaman tabel/form tetap solid (bg-surface). ===== */
+/* ===== Midnight Command (Opsi A, 2026-08-21) — resep glass DIGANTI solid
+   carbon paritas Praise. NAMA KELAS DIPERTAHANKAN (.app-glow/.glass-panel/
+   .glass-card/.glass-modal) supaya tidak ada perubahan JSX/UX sama sekali:
+   hanya kulitnya yang berubah. Glow & backdrop-blur dihapus. ===== */
 
-/* Glow ambient biru — fixed di belakang seluruh app; konten dinaikkan z-10
-   sehingga backdrop-filter panel/kartu kaca mem-blur blob ini. */
+/* Glow ambient — dimatikan. Elemen .app-glow tetap ada di Layout, hanya tak
+   lagi menggambar blob. */
 .app-glow::before,
-.app-glow::after {
-  content: '';
-  position: fixed;
-  border-radius: 9999px;
-  filter: blur(90px);
-  pointer-events: none;
-  z-index: 0;
-}
-.app-glow::before {
-  width: 520px; height: 520px;
-  top: -180px; left: 28%;
-  background: rgba(37, 99, 235, 0.16);
-}
-.app-glow::after {
-  width: 420px; height: 420px;
-  bottom: -160px; right: -100px;
-  background: rgba(37, 99, 235, 0.10);
-}
-/* Light v2 (2026-07-12): latar gradasi tint biru-indigo + glow lebih pekat,
-   supaya blur kaca benar-benar terlihat di mode terang. */
-html.light .app-glow {
-  background: linear-gradient(130deg, #dbe4f5 0%, #e6e3f5 40%, #d7e6f2 75%, #e9e7df 100%);
-}
-html.light .app-glow::before { background: rgba(59, 110, 235, 0.30); }
-html.light .app-glow::after  { background: rgba(56, 189, 248, 0.26); }
+.app-glow::after { content: none; }
+html.light .app-glow { background: rgb(var(--c-app)); }
 
-/* Panel kaca besar: sidebar & topbar */
+/* Panel chrome (sidebar & topbar): solid #111113 seperti sidebar Praise. */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgb(var(--c-sidebar));
 }
 html.light .glass-panel {
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: rgb(var(--c-sidebar));
 }
 
-/* Kartu kaca compact (opsi 1): border hairline + garis aksen biru di sudut */
+/* Kartu metrik: solid surface + border putih 10% (Praise --bg-border).
+   Garis aksen gradien di sudut dihapus. */
 .glass-card {
   position: relative;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line) / 0.10);
 }
-.glass-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 12px; right: 55%;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(96, 165, 250, 0.6), transparent);
-}
+.glass-card::before { content: none; }
 html.light .glass-card {
-  background: rgba(255, 255, 255, 0.38);
-  border-color: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
-  box-shadow: 0 8px 32px rgba(31, 60, 130, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  background: rgb(var(--c-surface));
+  border-color: #e5e7eb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
-html.light .glass-card::before {
-  background: linear-gradient(90deg, rgba(79, 70, 229, 0.45), transparent);
-}
+html.light .glass-card::before { content: none; }
 
-/* Panel modal kaca: nyaris solid supaya konten halaman TIDAK tembus (beda dari
-   .glass-card yang sengaja transparan). Dipakai overlay/dialog. */
+/* Modal: solid surface (blur tak lagi diperlukan; createPortal tetap dipakai
+   komponen modal — lihat catatan backdrop trap). */
 .glass-modal {
-  background: rgba(17, 20, 28, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 50px rgba(0, 0, 0, 0.45);
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line) / 0.12);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
 }
 html.light .glass-modal {
-  background: rgba(255, 255, 255, 0.94);
+  background: #ffffff;
   border-color: rgba(15, 23, 42, 0.08);
-  box-shadow: 0 20px 50px rgba(31, 60, 130, 0.18), inset 0 1px 0 rgba(255, 255, 255, 1);
+  box-shadow: 0 20px 50px rgba(31, 60, 130, 0.18);
 }
+
+/* ===== Micro-interactions — disalin dari globals.css Praise ===== */
+button:not(:disabled) {
+  transition: transform 80ms ease, background-color 150ms ease, color 150ms ease,
+              border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+button:not(:disabled):active { transform: scale(0.97); }
+
+.hover-lift { transition: transform 200ms ease, box-shadow 200ms ease; }
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+html.light .hover-lift:hover { box-shadow: 0 8px 28px rgba(0, 0, 0, 0.09); }
+
+:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Angka (metrik, tabel, harga) memakai JetBrains Mono seperti web affiliate.
+   Menumpang utility tabular-nums yang sudah dipakai di seluruh halaman —
+   tanpa perlu mengubah JSX. */
+.tabular-nums { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
 /* Scrollbar mengikuti tema */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

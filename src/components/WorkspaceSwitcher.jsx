@@ -82,7 +82,7 @@ function CreateModal({ onClose, onCreated }) {
             <div className="flex flex-wrap gap-2">
               {PRESET_COLORS.map(c => (
                 <button key={c} onClick={() => setColor(c)}
-                  className={`w-7 h-7 rounded-lg transition-all ${color === c ? 'ring-2 ring-offset-2 ring-offset-[#11141a] ring-white' : ''}`}
+                  className={`w-7 h-7 rounded-lg transition-all ${color === c ? 'ring-2 ring-offset-2 ring-offset-[#1b1b1f] ring-white' : ''}`}
                   style={{ background: c }} />
               ))}
             </div>
