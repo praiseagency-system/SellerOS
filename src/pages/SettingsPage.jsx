@@ -10,6 +10,7 @@ import { fileToAvatarDataUrl } from '../data/localIdentity'
 import { supabase } from '../lib/supabase'
 import { createPkce, buildAuthorizeUrl, refreshAccessToken, stashOAuthSession, fetchAdvertisers } from '../lib/tiktokOAuth'
 import { getConnection, saveConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
+import { getExecutionSettings, saveExecutionSettings, createApproval } from '../data/gmvmaxApprovals'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: User },
@@ -42,7 +43,12 @@ export default function SettingsPage({ initialTab = 'profil', currentWorkspace }
 
       {tab === 'profil' && <ProfilTab />}
       {tab === 'brand' && <BrandTab currentWorkspace={currentWorkspace} />}
-      {tab === 'integrasi' && <IntegrasiTab currentWorkspace={currentWorkspace} />}
+      {tab === 'integrasi' && (
+        <div className="space-y-6">
+          <IntegrasiTab currentWorkspace={currentWorkspace} />
+          <ExecutionSection currentWorkspace={currentWorkspace} />
+        </div>
+      )}
       {tab === 'team' && <TeamTab />}
     </div>
   )
@@ -531,6 +537,109 @@ function PrivacySection({ user, profile, refreshProfile }) {
 }
 
 const inputCls = 'w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-600/50'
+// Execute Layer E0 — kill switch + bounds + cooldown + uji alur approval.
+// Eksekusi nyata ke TikTok = Fase E1+; panel ini mengatur pagarnya duluan.
+function ExecutionSection({ currentWorkspace }) {
+  const wsId = currentWorkspace?.id || null
+  const [s, setS] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!wsId) return
+    getExecutionSettings(wsId).then(setS).catch(e => setError(e.message))
+  }, [wsId])
+
+  async function patch(p) {
+    setBusy(true); setError(null); setMsg(null)
+    try { await saveExecutionSettings(p, wsId); setS(await getExecutionSettings(wsId)); setMsg('Tersimpan.') }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  async function sendTest() {
+    setBusy(true); setError(null); setMsg(null)
+    try {
+      await createApproval({
+        actionType: 'TEST',
+        target: { campaign_name: 'Uji alur — tanpa efek apa pun' },
+        currentValue: { status: 'sebelum' }, proposedValue: { status: 'sesudah' },
+        reason: 'Kartu uji E0: pastikan antrean, kartu, dan log otomatis bekerja.',
+        source: 'MANUAL', risk: 'LOW',
+      })
+      setMsg('Approval uji dibuat — cek ikon 🔔 di topbar.')
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  if (!wsId || !s) return null
+  const num = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d }
+
+  return (
+    <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
+      <h2 className="text-sm font-semibold text-ink-strong mb-1 flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-blue-500" /> Eksekusi ke TikTok Ads
+        <span className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${s.enabled ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>
+          {s.enabled ? 'AKTIF' : 'DIMATIKAN'}
+        </span>
+      </h2>
+      <p className="text-xs text-ink-muted mb-4 leading-relaxed">
+        Pagar untuk lapisan eksekusi: semua aksi (budget, ROI, spark, exclude) wajib lewat persetujuan
+        dan tunduk pada batas di bawah. Kill switch menghentikan seluruh eksekusi seketika.
+      </p>
+
+      <div className="space-y-3 text-sm">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-ink">Kill switch — matikan semua eksekusi</span>
+          <button disabled={busy} onClick={() => patch({ enabled: !s.enabled })}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 ${s.enabled
+              ? 'border border-red-500/25 text-red-400 hover:bg-red-500/10'
+              : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+            {s.enabled ? 'Matikan' : 'Nyalakan kembali'}
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-ink">Batas kenaikan budget per hari per campaign</span>
+          <div className="flex items-center gap-1.5">
+            <input type="number" min="0" max="500" defaultValue={s.max_budget_increase_pct} disabled={busy}
+              onBlur={(e) => num(e.target.value, s.max_budget_increase_pct) !== s.max_budget_increase_pct && patch({ max_budget_increase_pct: num(e.target.value, 50) })}
+              className="w-20 bg-surface2 border border-line/15 rounded-lg px-2 py-1.5 text-right text-xs text-ink" />
+            <span className="text-xs text-ink-faint">%</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-ink">Cooldown antar aksi per campaign</span>
+          <div className="flex items-center gap-1.5">
+            <input type="number" min="0" max="10080" defaultValue={s.cooldown_minutes} disabled={busy}
+              onBlur={(e) => num(e.target.value, s.cooldown_minutes) !== s.cooldown_minutes && patch({ cooldown_minutes: num(e.target.value, 360) })}
+              className="w-20 bg-surface2 border border-line/15 rounded-lg px-2 py-1.5 text-right text-xs text-ink" />
+            <span className="text-xs text-ink-faint">menit</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-ink">Approval kedaluwarsa setelah</span>
+          <div className="flex items-center gap-1.5">
+            <input type="number" min="1" max="168" defaultValue={s.approval_ttl_hours} disabled={busy}
+              onBlur={(e) => num(e.target.value, s.approval_ttl_hours) !== s.approval_ttl_hours && patch({ approval_ttl_hours: num(e.target.value, 24) })}
+              className="w-20 bg-surface2 border border-line/15 rounded-lg px-2 py-1.5 text-right text-xs text-ink" />
+            <span className="text-xs text-ink-faint">jam</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-line/10 flex items-center gap-3">
+        <button disabled={busy || !s.enabled} onClick={sendTest}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-blue-500/30 text-blue-300 hover:bg-blue-500/10 disabled:opacity-40">
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Kirim approval uji
+        </button>
+        <span className="text-[11px] text-ink-faint">Membuat kartu TEST di antrean 🔔 — tanpa menyentuh TikTok.</span>
+      </div>
+
+      {error && <p className="mt-3 text-xs text-red-300 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" />{error}</p>}
+      {msg && !error && <p className="mt-3 text-xs text-green-300 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" />{msg}</p>}
+    </section>
+  )
+}
+
 function Field({ label, children }) {
   return (
     <label className="block">

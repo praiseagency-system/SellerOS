@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
+import ApprovalBell from './gmvmax/ApprovalBell'
 import HistoryPanel from './HistoryPanel'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
@@ -434,6 +435,7 @@ export default function Layout({
               <p className="text-xs text-ink-muted truncate">{pageSubtitle}</p>
             )}
           </div>
+          <ApprovalBell />
           <HeaderControls
             onNavigate={onNavigate}
             showPeriod={!currentPage.startsWith('gmv_') && !['overview', 'import', 'calculator', 'products', 'performance', 'settings'].includes(currentPage)} />
