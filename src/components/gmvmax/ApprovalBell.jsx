@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, Loader2, Check, X, ShieldAlert } from 'lucide-react'
 import { listApprovals, decideApproval, ACTION_LABELS, getExecutionSettings } from '../../data/gmvmaxApprovals'
+import { executeSparkBind } from '../../data/gmvmaxSpark'
 import { getCurrentWorkspaceId } from '../../utils/workspace'
 
 const fmtVal = (v) => {
@@ -45,10 +46,26 @@ export default function ApprovalBell() {
     return () => clearTimeout(kick)
   }, [open, refresh])
 
+  const [notice, setNotice] = useState(null)
+
   async function decide(id, decision) {
-    setBusyId(id); setError(null)
-    try { await decideApproval(id, decision); await refresh() }
-    catch (e) { setError(e.message) } finally { setBusyId(null) }
+    setBusyId(id); setError(null); setNotice(null)
+    try {
+      const row = await decideApproval(id, decision)
+      // Aksi yang jalurnya sudah AKTIF dieksekusi langsung setelah disetujui.
+      if (decision === 'APPROVED' && row.action_type === 'SPARK_BIND') {
+        setNotice('Menerapkan ke TikTok…')
+        const r = await executeSparkBind(row)
+        const rb = r?.read_back
+        setNotice(rb?.verified === true
+          ? '✓ Kode terikat & terverifikasi di daftar Spark posts.'
+          : '✓ Kode diterapkan. Cek daftar Spark posts di Boost Center untuk konfirmasi.')
+      }
+      await refresh()
+    } catch (e) {
+      setError(e.failed ? `Eksekusi gagal: ${e.message}` : e.message)
+      await refresh()
+    } finally { setBusyId(null) }
   }
 
   return (
@@ -113,6 +130,7 @@ export default function ApprovalBell() {
                 </div>
               ))}
             </div>
+            {notice && !error && <p className="text-[11px] text-green-300 mt-3">{notice}</p>}
             {error && <p className="text-[11px] text-red-300 mt-3">{error}</p>}
           </div>
         </div>,

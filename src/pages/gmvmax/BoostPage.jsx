@@ -8,6 +8,7 @@ import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, Pill, RoasBadge, VideoLabel, fmtRp, fmtRpC, fmtRoasX, DeltaBadge } from '../../components/gmvmax/ui'
 import { loadVideosDaily } from '../../data/gmvmaxImports'
 import { boostStatus, boostWindow, computeBoostPerf } from '../../utils/boostPerf'
+import SparkBindingSection from '../../components/gmvmax/SparkBindingSection'
 
 const STATUS = [
   { id: 'diminta', label: 'Diminta ke kreator', tone: 'amber' },
@@ -126,6 +127,9 @@ export default function BoostPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
+      {/* ── Spark Binding (Execute Layer E1) ─────────────────────── */}
+      <SparkBindingSection />
+
       {/* ── Rekomendasi ─────────────────────────────────────────── */}
       <section>
         <div className="flex items-center gap-2 mb-3">
