@@ -63,6 +63,12 @@ create policy gmvmax_approvals_admin_read on public.gmvmax_approvals
             where w.id = workspace_id and public.admin_can_view(w.user_id))
   );
 
+-- PERBAIKAN LAMA: gmvmax_action_log (migrasi 0014) tak pernah diberi GRANT →
+-- semua insert dari browser ditolak diam-diam (jurnal kosong sejak dibuat).
+-- Log otomatis approval menulis ke tabel ini, jadi grant-nya wajib.
+grant select, insert, update, delete on public.gmvmax_action_log to authenticated;
+grant all on public.gmvmax_action_log to service_role;
+
 -- ── Setelan eksekusi per workspace: kill switch + bounds + cooldown ─────────
 -- enabled=false = KILL SWITCH: semua jalur eksekusi (UI & proxy) wajib menolak.
 create table if not exists public.gmvmax_execution_settings (
