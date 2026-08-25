@@ -1,4 +1,4 @@
-import { Moon, Sun, Bell, ChevronDown, LogOut, User, Palette, Users, Globe, History } from 'lucide-react'
+import { Moon, Sun, ChevronDown, LogOut, User, Palette, Users, Globe, History } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
@@ -9,7 +9,7 @@ import MonthPicker from './MonthPicker'
 
 const isMonth = (v) => /^\d{4}-\d{2}$/.test(v || '')
 
-export default function HeaderControls({ notifCount = '8+', showPeriod = true, onNavigate }) {
+export default function HeaderControls({ showPeriod = true, onNavigate }) {
   const { theme, setTheme } = useTheme()
   const { lang, setLang, t } = useLang()
   const { periodValue, prevLabel, isCompareMode, setShowHistory, sessions, platform, loadSession,
@@ -31,16 +31,8 @@ export default function HeaderControls({ notifCount = '8+', showPeriod = true, o
     <div className="flex items-center gap-2 flex-shrink-0">
       {/* Toggle tema & bahasa dipindah ke dropdown profil (hemat area header). */}
 
-      {/* Notifikasi */}
-      <button
-        aria-label={t('header.notifications')}
-        className="relative flex items-center justify-center w-7 h-7 rounded-full bg-fill/5 border border-line/10 text-ink-muted hover:text-ink hover:bg-fill/10 transition-colors"
-      >
-        <Bell className="w-3.5 h-3.5" />
-        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 flex items-center justify-center text-[9px] font-bold text-white bg-emerald-500 rounded-full border-2 border-app">
-          {notifCount}
-        </span>
-      </button>
+      {/* Lonceng notifikasi lama (dummy, badge hardcode '8+', tanpa onClick)
+          DIHAPUS — digantikan ApprovalBell (🔔 Persetujuan) di Layout. */}
 
       {/* Pemilih periode — MonthPicker (lompat langsung ke bulan tersimpan) +
           tombol Riwayat (buka panel lengkap). Disembunyikan di halaman Import. */}
