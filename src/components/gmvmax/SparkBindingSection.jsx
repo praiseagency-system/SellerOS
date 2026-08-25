@@ -3,9 +3,10 @@
 // video mana yang akan diikat) → Ajukan (masuk antrean 🔔) → Setujui → apply +
 // read-back. Tabel bawah = sumber kebenaran ikatan (tt_video_list_get).
 import { useState, useEffect, useCallback } from 'react'
-import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react'
 import { fetchSparkInfo, fetchSparkList } from '../../data/gmvmaxSpark'
 import { createApproval } from '../../data/gmvmaxApprovals'
+import { listImports, loadCreatives } from '../../data/gmvmaxImports'
 
 // Respons TikTok bentuknya longgar — gali field umum dengan aman.
 const pickItemId = (info) => info?.item_id || info?.item_info?.item_id || info?.video_info?.item_id || null
@@ -20,13 +21,37 @@ export default function SparkBindingSection() {
   const [listErr, setListErr] = useState(null)
   const [loadingList, setLoadingList] = useState(false)
 
+  // Peta video_id → campaign yang MEMAKAI video itu (dari snapshot creatives
+  // terbaru — rotasi nyata, bukan konfigurasi). AUTO_SELECTION tak menyimpan
+  // daftar eksplisit, jadi report harian adalah satu-satunya sumber kebenaran.
+  const [campMap, setCampMap] = useState(new Map())
+  const [copied, setCopied] = useState(null)
+
   const loadList = useCallback(async () => {
     setLoadingList(true); setListErr(null)
-    try { setList(await fetchSparkList({ page: 1 })) }
-    catch (e) { setListErr(e.message) }
+    try {
+      const [spark, imports] = await Promise.all([fetchSparkList({ page: 1 }), listImports()])
+      setList(spark)
+      const latest = imports?.[0]
+      if (latest) {
+        const creatives = await loadCreatives([latest.id])
+        const m = new Map()
+        for (const c of creatives) {
+          if (!c.videoId || !c.campaignName) continue
+          if (!m.has(c.videoId)) m.set(c.videoId, new Map())
+          // Satu campaign sekali; simpan status delivery-nya.
+          if (!m.get(c.videoId).has(c.campaignName)) m.get(c.videoId).set(c.campaignName, c.status)
+        }
+        setCampMap(m)
+      }
+    } catch (e) { setListErr(e.message) }
     finally { setLoadingList(false) }
   }, [])
   useEffect(() => { const t = setTimeout(loadList, 0); return () => clearTimeout(t) }, [loadList])
+
+  async function copyCode(id, code) {
+    try { await navigator.clipboard.writeText(code); setCopied(id); setTimeout(() => setCopied(null), 1600) } catch { /* clipboard ditolak browser */ }
+  }
 
   async function submit() {
     const items = [...new Set(codes.split('\n').map(s => s.trim()).filter(Boolean))]
@@ -116,6 +141,8 @@ export default function SparkBindingSection() {
                 <thead><tr className="text-left text-ink-faint">
                   <th className="py-1.5 pr-3 font-semibold">Video</th>
                   <th className="py-1.5 pr-3 font-semibold">Akun</th>
+                  <th className="py-1.5 pr-3 font-semibold">Dipakai campaign</th>
+                  <th className="py-1.5 pr-3 font-semibold">Kode</th>
                   <th className="py-1.5 pr-3 font-semibold">Status</th>
                   <th className="py-1.5 pr-3 font-semibold">Berlaku s/d</th>
                 </tr></thead>
@@ -143,6 +170,27 @@ export default function SparkBindingSection() {
                           </div>
                         </td>
                         <td className="py-1.5 pr-3 text-ink-muted whitespace-nowrap">{it.user_info?.tiktok_name || '—'}</td>
+                        <td className="py-1.5 pr-3">
+                          {campMap.has(String(id)) ? (
+                            <div className="flex flex-wrap gap-1 max-w-[220px]">
+                              {[...campMap.get(String(id)).entries()].map(([name, st]) => (
+                                <span key={name} title={st || ''}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium truncate max-w-[200px] ${st === 'Delivering' ? 'bg-blue-500/15 text-blue-400' : 'bg-fill/10 text-ink-muted'}`}>
+                                  {name}
+                                </span>
+                              ))}
+                            </div>
+                          ) : <span className="text-ink-faint text-[10px]">belum di rotasi</span>}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          {it.item_info?.auth_code ? (
+                            <button onClick={() => copyCode(id, it.item_info.auth_code)} title={it.item_info.auth_code}
+                              className="flex items-center gap-1 font-mono text-[10px] text-ink-muted hover:text-ink border border-line/15 rounded-md px-1.5 py-0.5">
+                              {copied === id ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                              …{it.item_info.auth_code.slice(-8)}
+                            </button>
+                          ) : '—'}
+                        </td>
                         <td className="py-1.5 pr-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${tone}`}>{authStatus}</span></td>
                         <td className="py-1.5 pr-3 font-mono text-ink-muted whitespace-nowrap">{it.auth_info?.auth_end_time?.slice(0, 10) || '—'}</td>
                       </tr>
