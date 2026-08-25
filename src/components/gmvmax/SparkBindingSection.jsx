@@ -4,8 +4,7 @@
 // read-back. Tabel bawah = sumber kebenaran ikatan (tt_video_list_get).
 import { useState, useEffect, useCallback } from 'react'
 import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react'
-import { fetchSparkInfo, fetchSparkList } from '../../data/gmvmaxSpark'
-import { createApproval } from '../../data/gmvmaxApprovals'
+import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '../../data/gmvmaxSpark'
 import { listImports, loadCreatives } from '../../data/gmvmaxImports'
 
 // Respons TikTok bentuknya longgar — gali field umum dengan aman.
@@ -65,24 +64,34 @@ export default function SparkBindingSection() {
         try { info = await fetchSparkInfo(code) } catch (e) { throw new Error(`kode tak valid / tak bisa dipratinjau: ${e.message}`, { cause: e }) }
         const videoId = pickItemId(info)
         const title = pickTitle(info)
-        // 2) Ajukan approval — eksekusi terjadi setelah kamu Setujui di 🔔.
-        await createApproval({
-          actionType: 'SPARK_BIND',
-          target: { video_id: videoId, video_title: title || `kode …${code.slice(-6)}`, author: pickAuthor(info) },
-          currentValue: { terikat: 'belum' },
-          proposedValue: { terikat: 'ya', auth_code: code },
-          reason: title ? `Ikat video "${title.slice(0, 80)}" ke ad account.` : 'Ikat Spark post ke ad account.',
-          evidence: videoId ? { item_id: videoId } : null,
-          source: 'MANUAL', risk: 'LOW',
-        })
-        out.push({ code, ok: true, msg: `masuk antrean 🔔${videoId ? ` · video ${videoId}` : ''}${title ? ` · ${title.slice(0, 60)}` : ''}` })
+        // 2) LANGSUNG ikat — approval dibuat & disetujui atas nama kamu (audit
+        //    utuh: baris approval + log otomatis + kill switch tetap berlaku).
+        const r = await bindSparkNow({ authCode: code, videoId, videoTitle: title, author: pickAuthor(info) })
+        const verified = r?.read_back?.verified === true
+        out.push({ code, ok: true, msg: `terikat${verified ? ' ✓ terverifikasi' : ''}${videoId ? ` · video ${videoId}` : ''}${title ? ` · ${title.slice(0, 60)}` : ''}` })
       } catch (e) {
         out.push({ code, ok: false, msg: e.message })
       }
       setResults([...out])
     }
-    if (out.some(r => r.ok)) setCodes(items.filter(c => !out.find(r => r.code === c && r.ok)).join('\n'))
+    if (out.some(r => r.ok)) {
+      setCodes(items.filter(c => !out.find(r => r.code === c && r.ok)).join('\n'))
+      loadList() // daftar terikat berubah — segarkan
+    }
     setBusy(false)
+  }
+
+  // Lepas ikatan: konfirmasi dua-langkah di baris (klik "Lepas" → "Yakin?").
+  const [confirmUnbind, setConfirmUnbind] = useState(null) // item_id
+  const [unbinding, setUnbinding] = useState(null)
+  async function doUnbind(id, title) {
+    setUnbinding(id); setListErr(null)
+    try {
+      await unbindSparkNow({ videoId: String(id), videoTitle: title || '' })
+      setConfirmUnbind(null)
+      await loadList()
+    } catch (e) { setListErr(`Lepas ikatan gagal: ${e.message}`) }
+    finally { setUnbinding(null) }
   }
 
   const rows = list?.list || []
@@ -106,8 +115,9 @@ export default function SparkBindingSection() {
           </button>
         </div>
         <p className="text-[11px] text-ink-faint leading-relaxed">
-          Kode dipratinjau dulu (read-only) supaya kelihatan video mana yang akan diikat, lalu masuk antrean
-          <span className="mx-1">🔔</span>Persetujuan — pengikatan baru terjadi setelah kamu Setujui.
+          Kode dipratinjau dulu (read-only), lalu <span className="text-ink-muted font-medium">langsung diikat</span> ke
+          ad account — setiap ikatan tetap tercatat penuh di antrean persetujuan &amp; Log Optimasi, dan tunduk pada
+          kill switch di Pengaturan.
         </p>
         {results.length > 0 && (
           <div className="space-y-1.5">
@@ -145,6 +155,7 @@ export default function SparkBindingSection() {
                   <th className="py-1.5 pr-3 font-semibold">Kode</th>
                   <th className="py-1.5 pr-3 font-semibold">Status</th>
                   <th className="py-1.5 pr-3 font-semibold">Berlaku s/d</th>
+                  <th className="py-1.5 font-semibold"></th>
                 </tr></thead>
                 <tbody>
                   {rows.map((it, i) => {
@@ -193,6 +204,24 @@ export default function SparkBindingSection() {
                         </td>
                         <td className="py-1.5 pr-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${tone}`}>{authStatus}</span></td>
                         <td className="py-1.5 pr-3 font-mono text-ink-muted whitespace-nowrap">{it.auth_info?.auth_end_time?.slice(0, 10) || '—'}</td>
+                        <td className="py-1.5 whitespace-nowrap">
+                          {authStatus === 'AUTHORIZED' && (
+                            confirmUnbind === id ? (
+                              <span className="inline-flex items-center gap-1">
+                                <button disabled={unbinding === id} onClick={() => doUnbind(id, it.item_info?.text)}
+                                  className="px-2 py-1 rounded-md text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-40">
+                                  {unbinding === id ? '…' : 'Yakin? Lepas'}
+                                </button>
+                                <button onClick={() => setConfirmUnbind(null)} className="px-1.5 py-1 text-[10px] text-ink-faint hover:text-ink">batal</button>
+                              </span>
+                            ) : (
+                              <button onClick={() => setConfirmUnbind(id)} title={campMap.has(String(id)) ? 'PERHATIAN: video ini sedang dipakai campaign — melepas ikatan menghentikan tayangnya.' : 'Lepas ikatan dari ad account'}
+                                className="px-2 py-1 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10">
+                                Lepas
+                              </button>
+                            )
+                          )}
+                        </td>
                       </tr>
                     )
                   })}

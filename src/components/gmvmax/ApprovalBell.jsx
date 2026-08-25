@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, Loader2, Check, X, ShieldAlert } from 'lucide-react'
 import { listApprovals, decideApproval, ACTION_LABELS, getExecutionSettings } from '../../data/gmvmaxApprovals'
-import { executeSparkBind } from '../../data/gmvmaxSpark'
+import { executeSparkBind, executeSparkUnbind } from '../../data/gmvmaxSpark'
 import { getCurrentWorkspaceId } from '../../utils/workspace'
 
 const fmtVal = (v) => {
@@ -53,13 +53,14 @@ export default function ApprovalBell() {
     try {
       const row = await decideApproval(id, decision)
       // Aksi yang jalurnya sudah AKTIF dieksekusi langsung setelah disetujui.
-      if (decision === 'APPROVED' && row.action_type === 'SPARK_BIND') {
+      const EXEC = { SPARK_BIND: executeSparkBind, SPARK_UNBIND: executeSparkUnbind }
+      if (decision === 'APPROVED' && EXEC[row.action_type]) {
         setNotice('Menerapkan ke TikTok…')
-        const r = await executeSparkBind(row)
+        const r = await EXEC[row.action_type](row)
         const rb = r?.read_back
         setNotice(rb?.verified === true
-          ? '✓ Kode terikat & terverifikasi di daftar Spark posts.'
-          : '✓ Kode diterapkan. Cek daftar Spark posts di Boost Center untuk konfirmasi.')
+          ? '✓ Diterapkan & terverifikasi (read-back cocok).'
+          : '✓ Diterapkan. Cek daftar Spark posts di Boost Center untuk konfirmasi.')
       }
       await refresh()
     } catch (e) {

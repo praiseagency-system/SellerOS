@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
 import { getConnection } from './tiktokConnection'
 import { addActionLog } from './gmvmaxActionLog'
+import { createApproval, decideApproval } from './gmvmaxApprovals'
 
 async function post(url, body) {
   const res = await fetch(url, {
@@ -90,6 +91,78 @@ export async function executeSparkBind(approvalRow) {
       body: failMsg
         ? `[AUTO] Eksekusi GAGAL: Daftarkan kode spark · ${failMsg}`
         : `[AUTO] Dieksekusi: kode spark terikat ke advertiser ${conn.advertiser_id}${rb?.item_id ? ` · video ${rb.item_id}` : ''}${rb?.verified === true ? ' · read-back COCOK ✓' : rb?.verified === false ? ' · read-back BELUM terlihat (cek daftar)' : ''}`,
+    })
+  } catch { /* log gagal tak mengubah hasil */ }
+
+  if (failMsg) { const e = new Error(failMsg); e.failed = true; throw e }
+  return result
+}
+
+// ── Jalur LANGSUNG (tanpa mampir 🔔) — untuk aksi yang dipicu user sendiri ──
+// Audit tetap utuh: baris approval dibuat lalu diputuskan APPROVED atas nama
+// user (kill switch tetap dicek di createApproval/decideApproval), eksekusi +
+// read-back + log otomatis sama persis dengan jalur antrean.
+export async function bindSparkNow({ authCode, videoId = null, videoTitle = '', author = '' }) {
+  const row = await createApproval({
+    actionType: 'SPARK_BIND',
+    target: { video_id: videoId, video_title: videoTitle || `kode …${authCode.slice(-6)}`, author },
+    currentValue: { terikat: 'belum' },
+    proposedValue: { terikat: 'ya', auth_code: authCode },
+    reason: videoTitle ? `Ikat video "${videoTitle.slice(0, 80)}" ke ad account (langsung).` : 'Ikat Spark post ke ad account (langsung).',
+    evidence: videoId ? { item_id: videoId } : null,
+    source: 'MANUAL', risk: 'LOW',
+  })
+  const approved = await decideApproval(row.id, 'APPROVED')
+  return executeSparkBind(approved)
+}
+
+export async function unbindSparkNow({ videoId, videoTitle = '' }) {
+  const row = await createApproval({
+    actionType: 'SPARK_UNBIND',
+    target: { video_id: videoId, video_title: videoTitle },
+    currentValue: { terikat: 'ya' },
+    proposedValue: { terikat: 'lepas' },
+    reason: 'Lepas ikatan Spark post dari ad account (langsung).',
+    source: 'MANUAL', risk: 'MEDIUM',
+  })
+  const approved = await decideApproval(row.id, 'APPROVED')
+  return executeSparkUnbind(approved)
+}
+
+// Eksekusi SPARK_UNBIND untuk baris approval APPROVED.
+export async function executeSparkUnbind(approvalRow) {
+  const wsId = getCurrentWorkspaceId()
+  if (!wsId) throw new Error('Workspace tidak aktif.')
+  const conn = await requireConn()
+  const itemId = approvalRow?.target?.video_id
+  if (!itemId) throw new Error('Approval tidak membawa video_id.')
+
+  let result = null, failMsg = null
+  try {
+    result = await post('/api/gmvmax/execute', {
+      access_token: conn.access_token,
+      action_type: 'SPARK_UNBIND',
+      approval_id: approvalRow.id,
+      params: { advertiser_id: conn.advertiser_id, item_id: itemId },
+    })
+  } catch (e) { failMsg = e.message }
+
+  const status = failMsg ? 'FAILED' : 'EXECUTED'
+  await supabase.from('gmvmax_approvals')
+    .update({
+      status, executed_at: new Date().toISOString(),
+      execution_result: failMsg ? { error: failMsg } : { apply: result.apply_result, read_back: result.read_back },
+    })
+    .eq('id', approvalRow.id).eq('workspace_id', wsId)
+
+  try {
+    await addActionLog({
+      videoId: itemId,
+      videoTitle: approvalRow?.target?.video_title || null,
+      actionTag: 'SPARK_UNBIND',
+      body: failMsg
+        ? `[AUTO] Eksekusi GAGAL: Lepas ikatan spark · ${failMsg}`
+        : `[AUTO] Dieksekusi: ikatan spark video ${itemId} dilepas dari advertiser ${conn.advertiser_id}${result?.read_back?.verified === true ? ' · read-back COCOK ✓' : ''}`,
     })
   } catch { /* log gagal tak mengubah hasil */ }
 

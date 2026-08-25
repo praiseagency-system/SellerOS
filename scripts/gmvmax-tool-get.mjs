@@ -8,7 +8,7 @@ const t = await loadMcpTokenFromSupabase({ supabase: sb, workspaceId: '10280d7b-
 const provider = new TikTokMcpProvider({ token: t.accessToken, serverUrl: t.serverUrl, expiresAt: t.expiresAt })
 await provider.ensureInit?.()
 
-for (const name of ['tt_video_authorize_apply', 'tt_video_list_get', 'tt_video_info_get']) {
+for (const name of ['tt_video_unbind']) {
   const r = await provider._post({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name: 'tool_get', arguments: { tool_name_list: [name] } } })
   const text = r?.data?.result?.content?.[0]?.text || r?.result?.content?.[0]?.text || JSON.stringify(r).slice(0, 300)
   console.log(`\n===== ${name} =====\n${text.slice(0, 2500)}`)
