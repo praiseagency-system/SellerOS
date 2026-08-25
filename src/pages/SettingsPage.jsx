@@ -280,7 +280,12 @@ function IntegrasiTab({ currentWorkspace }) {
       applyConn(await getConnection(wsId))
       setOkMsg('Token diperbarui.')
     } catch (e) {
-      setError(e.message || 'Gagal memperbarui token.')
+      const msg = String(e?.message || '')
+      // Refresh token TikTok punya masa hidup sendiri; kalau ikut hangus,
+      // satu-satunya jalan adalah OAuth ulang — arahkan ke "Sambungkan ulang".
+      setError(/expired|invalid_grant/i.test(msg)
+        ? 'Refresh token sudah hangus — klik "Sambungkan ulang" untuk login TikTok lagi (koneksi & pemetaan toko tetap tersimpan).'
+        : msg || 'Gagal memperbarui token.')
     } finally { setBusy(false) }
   }
 
@@ -330,6 +335,14 @@ function IntegrasiTab({ currentWorkspace }) {
             <button onClick={renew} disabled={busy || !conn.refresh_token}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Perbarui token
+            </button>
+            {/* OAuth ulang di atas baris koneksi yang SAMA (saveConnection upsert
+                by workspace_id) — id koneksi tak berubah, jadi aman dari FK
+                gmvmax_tenant_adv_conn_same_ws dan pemetaan tenant tetap valid.
+                Ini jalur wajib bila refresh_token ikut kedaluwarsa. */}
+            <button onClick={connect} disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-blue-500/30 text-blue-300 hover:bg-blue-500/10 disabled:opacity-40 transition-colors">
+              <Plug className="w-3.5 h-3.5" /> Sambungkan ulang
             </button>
             <button onClick={disconnect} disabled={busy}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors">

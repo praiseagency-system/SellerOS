@@ -17,14 +17,18 @@ async function mcpPost(token, body) {
     body: JSON.stringify(body),
   })
   const txt = await res.text()
+  // MCP kadang balas teks polos (mis. "unauthorized" saat 401) — jangan biarkan
+  // JSON.parse melempar sebelum status sempat diperiksa penelepon.
   let data = null
-  if (txt.trim()) {
-    if (txt.includes('data:')) {
-      const line = txt.split('\n').find(x => x.startsWith('data:'))
-      data = line ? JSON.parse(line.slice(5).trim()) : null
-    } else data = JSON.parse(txt)
-  }
-  return { status: res.status, data }
+  try {
+    if (txt.trim()) {
+      if (txt.includes('data:')) {
+        const line = txt.split('\n').find(x => x.startsWith('data:'))
+        data = line ? JSON.parse(line.slice(5).trim()) : null
+      } else data = JSON.parse(txt)
+    }
+  } catch { data = null }
+  return { status: res.status, data, raw: txt.slice(0, 200) }
 }
 
 export default async function handler(req, res) {
@@ -37,8 +41,8 @@ export default async function handler(req, res) {
 
     // Handshake MCP (sama seperti worker): initialize → initialized → tools/call.
     const init = await mcpPost(token, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'selleros', version: '1' } } })
-    if (init.status === 401) { res.status(401).json({ error: 'auth', error_description: 'Token kedaluwarsa/invalid — perbarui token dulu.' }); return }
-    if (init.status !== 200 || !init.data?.result) { res.status(502).json({ error: 'mcp_init', error_description: `initialize gagal (${init.status})` }); return }
+    if (init.status === 401) { res.status(401).json({ error: 'auth', error_description: 'Token kedaluwarsa/invalid — perbarui token atau sambungkan ulang.' }); return }
+    if (init.status !== 200 || !init.data?.result) { res.status(502).json({ error: 'mcp_init', error_description: `initialize gagal (${init.status})${init.raw ? `: ${init.raw}` : ''}` }); return }
     await mcpPost(token, { jsonrpc: '2.0', method: 'notifications/initialized' })
 
     const r = await mcpPost(token, { jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name: 'tool_execute', arguments: { tool_name: 'auth_advertiser_get', params: {} } } })
