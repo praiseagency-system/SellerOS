@@ -116,21 +116,38 @@ export default function SparkBindingSection() {
                 <thead><tr className="text-left text-ink-faint">
                   <th className="py-1.5 pr-3 font-semibold">Video</th>
                   <th className="py-1.5 pr-3 font-semibold">Akun</th>
-                  <th className="py-1.5 pr-3 font-semibold">Kedaluwarsa otorisasi</th>
+                  <th className="py-1.5 pr-3 font-semibold">Status</th>
+                  <th className="py-1.5 pr-3 font-semibold">Berlaku s/d</th>
                 </tr></thead>
                 <tbody>
-                  {rows.map((it, i) => (
-                    <tr key={it.item_id || i} className="border-t border-line/5">
-                      <td className="py-1.5 pr-3">
-                        <span className="text-ink line-clamp-1">{it.text || it.video_info?.title || '(tanpa judul)'}</span>
-                        <span className="font-mono text-ink-faint">{it.item_id}</span>
-                      </td>
-                      <td className="py-1.5 pr-3 text-ink-muted">{it.user_name || it.author_name || '—'}</td>
-                      <td className="py-1.5 pr-3 font-mono text-ink-muted">
-                        {it.auth_end_time || it.authorized_end_time || '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((it, i) => {
+                    // Bentuk nyata respons (diverifikasi runtime): item_info.{item_id,text},
+                    // user_info.tiktok_name, auth_info.{ad_auth_status,auth_end_time},
+                    // video_info.poster_url (thumbnail).
+                    const id = it.item_info?.item_id || it.item_id
+                    const authStatus = it.auth_info?.ad_auth_status || '—'
+                    const tone = authStatus === 'AUTHORIZED' ? 'bg-emerald-500/15 text-emerald-400'
+                      : authStatus === 'EXPIRED' ? 'bg-red-500/15 text-red-400' : 'bg-fill/10 text-ink-faint'
+                    return (
+                      <tr key={id || i} className="border-t border-line/5">
+                        <td className="py-1.5 pr-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {it.video_info?.poster_url && (
+                              <img src={it.video_info.poster_url} alt="" loading="lazy"
+                                className="w-7 h-9 rounded-md object-cover border border-line/10 flex-shrink-0" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-ink truncate max-w-[340px]">{it.item_info?.text?.trim() || '(tanpa judul)'}</p>
+                              <p className="font-mono text-ink-faint">{id}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-1.5 pr-3 text-ink-muted whitespace-nowrap">{it.user_info?.tiktok_name || '—'}</td>
+                        <td className="py-1.5 pr-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${tone}`}>{authStatus}</span></td>
+                        <td className="py-1.5 pr-3 font-mono text-ink-muted whitespace-nowrap">{it.auth_info?.auth_end_time?.slice(0, 10) || '—'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

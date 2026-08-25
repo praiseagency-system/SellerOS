@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     })
     const listItems = list.error ? null : (list.data?.list || [])
     const verified = itemId
-      ? !!(listItems || []).find(x => String(x.item_id) === String(itemId))
+      ? !!(listItems || []).find(x => String(x?.item_info?.item_id ?? x?.item_id) === String(itemId))
       : null // tanpa item_id, kebenaran diverifikasi klien dari daftar
 
     res.status(200).json({
