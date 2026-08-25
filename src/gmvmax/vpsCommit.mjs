@@ -29,6 +29,8 @@ import { findAdvertiser, eligibleAdvertisers, groupByWorkspace } from './adverti
 import { advertiserTargetsForDate } from './sourceModel.mjs'
 import { loadEligibleConnections } from './connections.mjs'
 import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
+import { fetchRegistryInputs, fetchAuthorizedAdvertiserIds } from './featureRegistryFetch.mjs'
+import { persistRegistry, resolveWorkspaceOwner } from './featureRegistryWriter.mjs'
 import { generateAndPersistDecisions } from './decisions.mjs'
 import { evaluateExperiments } from './experimentEval.mjs'
 
@@ -149,6 +151,31 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
         safeLog({ event: 'EXP_EVAL_OK', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, absent: r.absent === true })
       } catch (e) {
         safeLog({ event: 'EXP_EVAL_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
+      }
+    }
+
+    // 7) Refresh Feature Registry (NON-FATAL, flag). Skill men-gate saran pada
+    //    registry (dailyFacts feature.X.available) — tanpa refresh, gating memakai
+    //    potret basi. Idempoten by-signature (persistRegistry); tenant tak eligible
+    //    tetap tercatat (fetchRegistryInputs meng-gate ke record tenant saja).
+    //    Default OFF sampai GMVMAX_REFRESH_REGISTRY=1 (pola flag cutover bertahap).
+    if (!dryRun && process.env.GMVMAX_REFRESH_REGISTRY === '1') {
+      try {
+        const authorizedAdvertiserIds = await fetchAuthorizedAdvertiserIds(provider)
+        const userId = await resolveWorkspaceOwner(sb, workspaceId)
+        for (const en of entries) {
+          try {
+            const out = await fetchRegistryInputs(provider,
+              { advertiserId: en.advertiserId, storeId: en.storeId, storeAuthorizedBcId: en.storeAuthorizedBcId ?? null },
+              { authorizedAdvertiserIds })
+            const pr = await persistRegistry(sb, { workspaceId, userId, connectionId: en.connectionId ?? null, records: out.records })
+            safeLog({ event: 'FEATURE_REGISTRY_REFRESHED', workspace_id: workspaceId, advertiser_id: en.advertiserId, eligibility: out.tenant?.status ?? null, records: out.records.length, inserted: pr.inserted, updated: pr.updated, changes: pr.changes })
+          } catch (e) {
+            safeLog({ event: 'FEATURE_REGISTRY_FAILED', level: 'warn', workspace_id: workspaceId, advertiser_id: en.advertiserId, message: e.message }, console.error)
+          }
+        }
+      } catch (e) {
+        safeLog({ event: 'FEATURE_REGISTRY_FAILED', level: 'warn', workspace_id: workspaceId, message: e.message }, console.error)
       }
     }
 

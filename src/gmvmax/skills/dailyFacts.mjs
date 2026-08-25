@@ -193,7 +193,9 @@ export function buildDailyFacts(input) {
   push(S, sid, 'recommended_roi', null, 'x', ML.UNKNOWN, src, 'sumber: bid_recommend (tak dimuat)')
   // Feature capabilities from registry — availability/enabled kept as-is (null-safe).
   const featOf = (code) => Array.isArray(featureRegistry) ? featureRegistry.find(f => f.feature_code === code) : null
-  const FEATURES = ['MAX_DELIVERY', 'AUTO_BUDGET_INCREASE', 'PROMOTION_DAYS', 'ROI_PROTECTION', 'ACCELERATE_TESTING', 'CREATIVE_BOOST']
+  // Kode HARUS sama dengan feature_code di gmvmax_feature_registry (featureRegistry.mjs) —
+  // 'ACCELERATE_TESTING' lama tak pernah match (registry memakai ACCELERATE_NEW_VIDEO_TESTING).
+  const FEATURES = ['MAX_DELIVERY', 'AUTO_BUDGET_INCREASE', 'PROMOTION_DAYS', 'ROI_PROTECTION', 'ACCELERATE_NEW_VIDEO_TESTING', 'CREATIVE_BOOST']
   if (!Array.isArray(featureRegistry)) missing.push('feature_registry')
   for (const code of FEATURES) {
     const f = featOf(code)
