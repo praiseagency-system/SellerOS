@@ -41,6 +41,11 @@ create index if not exists gmvmax_approvals_ws_idx
 
 alter table public.gmvmax_approvals enable row level security;
 
+-- GRANT WAJIB: policy RLS tidak memberi privilege (pelajaran migrasi 0019 —
+-- tanpa grant, klien authenticated kena "permission denied for table").
+grant select, insert, update, delete on public.gmvmax_approvals to authenticated;
+grant all on public.gmvmax_approvals to service_role;
+
 drop policy if exists gmvmax_approvals_owner_all on public.gmvmax_approvals;
 create policy gmvmax_approvals_owner_all on public.gmvmax_approvals
   for all using (
@@ -70,6 +75,9 @@ create table if not exists public.gmvmax_execution_settings (
 );
 
 alter table public.gmvmax_execution_settings enable row level security;
+
+grant select, insert, update, delete on public.gmvmax_execution_settings to authenticated;
+grant all on public.gmvmax_execution_settings to service_role;
 
 drop policy if exists gmvmax_exec_settings_owner_all on public.gmvmax_execution_settings;
 create policy gmvmax_exec_settings_owner_all on public.gmvmax_execution_settings
