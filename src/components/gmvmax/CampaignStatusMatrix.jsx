@@ -187,8 +187,10 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     const items = pids.map(pid => {
       const c = curM.get(pid) || { total: 0 }
       const p = prevM.get(pid) || { total: 0 }
+      const vid = vidByPid.get(pid) || { cost: 0, revenue: 0, orders: 0 }
       return {
         pid,
+        vidCost: vid.cost, vidRevenue: vid.revenue,
         name: pid === '(tanpa produk)' ? '🛒 Product card — iklan kartu produk (gabungan)' : (productNames[pid] || `…${String(pid).slice(-8)}`),
         isCard: pid === '(tanpa produk)',
         total: c.total, dTotal: c.total - (p.total || 0),
@@ -397,7 +399,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                     {c.label}<br /><span className="text-[8px] normal-case tracking-normal">{c.code}</span>
                   </th>
                 ))}
-                <th className="py-2 pl-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Revenue</th>
+                <th className="py-2 px-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Biaya video</th>
+                <th className="py-2 pl-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Revenue video</th>
               </tr>
             </thead>
             <tbody>
@@ -414,11 +417,12 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                       <Delta d={c.d} />
                     </td>
                   ))}
-                  <td className="py-2.5 pl-2 text-right font-mono tabular-nums text-ink">{fmtRpC(it.revenue)}</td>
+                  <td className="py-2.5 px-2 text-right font-mono tabular-nums text-ink-muted">{it.isCard ? '—' : fmtRpC(it.vidCost)}</td>
+                  <td className="py-2.5 pl-2 text-right font-mono tabular-nums text-ink">{it.isCard ? '—' : fmtRpC(it.vidRevenue)}</td>
                 </tr>
               ))}
               {data.items.length === 0 && (
-                <tr><td colSpan={COLS.length + 3} className="py-8 text-center text-xs text-ink-faint">
+                <tr><td colSpan={COLS.length + 4} className="py-8 text-center text-xs text-ink-faint">
                   Belum ada materi video ter-snapshot untuk campaign ini di periode terpilih.
                 </td></tr>
               )}
@@ -431,7 +435,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
             {data.insights.slice(0, 4).map((t, i) => <p key={i} className="text-[11px] text-amber-200/90">{t}</p>)}
           </div>
         )}
-        <p className="mt-2 text-[10px] text-ink-faint">Klik angka pada sel untuk melihat daftar videonya. Delta = perbandingan dua snapshot harian terakhir dalam periode.</p>
+        <p className="mt-2 text-[10px] text-ink-faint">Klik angka pada sel untuk melihat daftar videonya. Delta = perbandingan dua snapshot harian terakhir dalam periode. <span className="text-ink-muted">Biaya &amp; Revenue di tabel ini MATERI VIDEO saja</span> — tanpa iklan Product card (yang ikut dihitung di tabel Performa produk di atas).</p>
 
         {/* Daftar video utk sel terpilih */}
         {cell && (
