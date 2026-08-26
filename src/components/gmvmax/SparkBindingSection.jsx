@@ -2,7 +2,7 @@
 // Alur aman: tempel kode → PRATINJAU (tt_video_info_get, read-only; kamu lihat
 // video mana yang akan diikat) → Ajukan (masuk antrean 🔔) → Setujui → apply +
 // read-back. Tabel bawah = sumber kebenaran ikatan (tt_video_list_get).
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react'
 import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '../../data/gmvmaxSpark'
 import { listImports, loadCreatives } from '../../data/gmvmaxImports'
@@ -132,10 +132,12 @@ export default function SparkBindingSection() {
     .sort((a, b) => (b.grossRevenue || 0) - (a.grossRevenue || 0))
   // KEDALUWARSA: otorisasi aktif yang habis ≤7 hari (minta kreator perpanjang
   // dari Ad settings — TANPA kode baru) + hitungan EXPIRED utk bersih-bersih.
+  // "now" diambil saat daftar dimuat (bukan saat render — aturan komponen murni).
+  const loadedAt = useMemo(() => Date.now(), [list])
   const soon = rows.filter(it => {
     if (it.auth_info?.ad_auth_status !== 'AUTHORIZED' || !it.auth_info?.auth_end_time) return false
     const end = new Date(it.auth_info.auth_end_time.replace(' ', 'T'))
-    const days = (end - Date.now()) / 86400000
+    const days = (end - loadedAt) / 86400000
     return days >= 0 && days <= 7
   })
   const expiredCount = rows.filter(it => it.auth_info?.ad_auth_status === 'EXPIRED').length
