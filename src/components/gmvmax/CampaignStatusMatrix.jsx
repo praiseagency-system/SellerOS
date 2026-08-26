@@ -7,7 +7,7 @@ import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { fmtRpC, tiktokVideoUrl } from './ui'
+import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
 const COLS = [
@@ -27,7 +27,7 @@ function Delta({ d }) {
 
 export default function CampaignStatusMatrix({ campaign, onClose, inline = false }) {
   // campaign: { campaign_id, campaign_name }
-  const { rows, productNames } = useGmvMax()
+  const { rows, productNames, prev } = useGmvMax()
   const [cell, setCell] = useState(null) // { productId, status } → daftar video
 
   const data = useMemo(() => {
@@ -52,11 +52,25 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     }
     const curM = count(cur), prevM = count(prevRows)
 
-    // Revenue per produk dlm campaign — akumulasi seluruh window terpilih.
-    const revByPid = new Map()
-    for (const r of mine) revByPid.set(r.productId || '(tanpa produk)', (revByPid.get(r.productId || '(tanpa produk)') || 0) + (r.grossRevenue || 0))
+    // PERFORMA per produk dlm campaign — akumulasi seluruh window, SEMUA tipe
+    // creative (video + product card) agar spend/omset utuh.
+    const mineAll = rows.filter(r => String(r.campaignId) === cid)
+    const perfByPid = new Map()
+    for (const r of mineAll) {
+      const pid = r.productId || '(tanpa produk)'
+      if (!perfByPid.has(pid)) perfByPid.set(pid, { cost: 0, revenue: 0, orders: 0 })
+      const e = perfByPid.get(pid)
+      e.cost += r.cost || 0; e.revenue += r.grossRevenue || 0; e.orders += r.skuOrders || 0
+    }
+    const totalSpend = [...perfByPid.values()].reduce((a, e) => a + e.cost, 0)
+    // Pembanding periode: prev.products (sah dipakai per-campaign karena aturan
+    // TikTok 1 produk = maks 1 campaign Product GMV Max).
+    const prevByPid = new Map((prev?.products || []).map(pp => [pp.productId, pp]))
 
-    const pids = [...curM.keys()].sort((a, b) => (revByPid.get(b) || 0) - (revByPid.get(a) || 0))
+    const revByPid = new Map([...perfByPid.entries()].map(([k, v]) => [k, v.revenue]))
+    // Urutan baris SAMA utk kedua tabel: revenue desc (union perf + matriks).
+    const pids = [...new Set([...perfByPid.keys(), ...curM.keys()])]
+      .sort((a, b) => (revByPid.get(b) || 0) - (revByPid.get(a) || 0))
     const items = pids.map(pid => {
       const c = curM.get(pid) || { total: 0 }
       const p = prevM.get(pid) || { total: 0 }
@@ -84,8 +98,20 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     const cellVideos = cell
       ? cur.filter(r => (r.productId || '(tanpa produk)') === cell.productId && r.status === cell.status)
       : []
-    return { d0, d1, items, insights, totalMateri, cellVideos }
-  }, [rows, campaign, productNames, cell])
+    const perf = pids.map(pid => {
+      const e = perfByPid.get(pid) || { cost: 0, revenue: 0, orders: 0 }
+      const pp = prevByPid.get(pid) || null
+      return {
+        pid, name: productNames[pid] || (pid === '(tanpa produk)' ? pid : `…${String(pid).slice(-8)}`),
+        cost: e.cost, revenue: e.revenue, orders: e.orders,
+        roas: e.cost > 0 ? e.revenue / e.cost : null,
+        cpo: e.orders > 0 ? e.cost / e.orders : null,
+        share: totalSpend > 0 ? e.cost / totalSpend : 0,
+        prev: pp ? { cost: pp.cost, revenue: pp.revenue, orders: pp.orders, roas: pp.roas, cpo: pp.cpo } : null,
+      }
+    })
+    return { d0, d1, items, insights, totalMateri, cellVideos, perf, totalSpend }
+  }, [rows, campaign, productNames, cell, prev])
 
   if (!campaign) return null
 
@@ -108,6 +134,62 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
           <button onClick={onClose} className="text-ink-faint hover:text-ink p-1"><X className="w-4 h-4" /></button>
         </div>
 
+        {/* ── PERFORMA PRODUK (Opsi 1: tabel bertumpuk, urutan baris = matriks) ── */}
+        <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">
+          Performa produk · periode terpilih{campaign.budget ? <> · budget campaign {fmtRp(Number(campaign.budget) || 0)}/hari</> : null}
+        </p>
+        <div className="overflow-x-auto mb-5">
+          <table className="w-full text-[12px] min-w-[820px]">
+            <thead>
+              <tr className="text-left">
+                <th className="py-2 pr-3 text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Produk</th>
+                <th className="py-2 px-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Spend</th>
+                <th className="py-2 px-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Porsi spend</th>
+                <th className="py-2 px-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Omset</th>
+                <th className="py-2 px-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">ROAS</th>
+                <th className="py-2 px-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Orders</th>
+                <th className="py-2 pl-2 text-right text-[10px] uppercase tracking-widest text-ink-faint font-semibold">Cost/Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.perf.map(it => (
+                <tr key={it.pid} className="border-t border-line/8">
+                  <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[240px] truncate" title={String(it.pid)}>{it.name}</td>
+                  <td className="py-2.5 px-2 text-right font-mono tabular-nums">
+                    {fmtRpC(it.cost)}
+                    {it.prev && <div className="text-[9px]"><DeltaBadge cur={it.cost} prev={it.prev.cost} fmt={fmtRpC} goodDown /></div>}
+                  </td>
+                  <td className="py-2.5 px-2">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <div className="w-16 h-1.5 rounded-full bg-fill/10 overflow-hidden">
+                        <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.round(it.share * 100)}%` }} />
+                      </div>
+                      <span className="font-mono tabular-nums text-[10px] text-ink-muted w-8 text-right">{Math.round(it.share * 100)}%</span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-2 text-right font-mono tabular-nums text-ink">
+                    {fmtRpC(it.revenue)}
+                    {it.prev && <div className="text-[9px]"><DeltaBadge cur={it.revenue} prev={it.prev.revenue} fmt={fmtRpC} /></div>}
+                  </td>
+                  <td className={`py-2.5 px-2 text-right font-mono tabular-nums font-semibold ${it.roas == null ? 'text-ink-faint' : it.roas >= 4 ? 'text-emerald-400' : it.roas >= 1 ? 'text-amber-400' : 'text-red-400'}`}>
+                    {fmtRoasX(it.roas)}
+                    {it.prev?.roas != null && it.roas != null && <div className="text-[9px] font-normal"><DeltaBadge cur={it.roas} prev={it.prev.roas} fmt={(v) => v.toFixed(2)} /></div>}
+                  </td>
+                  <td className="py-2.5 px-2 text-right font-mono tabular-nums">
+                    {(it.orders || 0).toLocaleString('id-ID')}
+                    {it.prev && <div className="text-[9px]"><DeltaBadge cur={it.orders} prev={it.prev.orders} /></div>}
+                  </td>
+                  <td className="py-2.5 pl-2 text-right font-mono tabular-nums">
+                    {it.cpo != null ? fmtRp(Math.round(it.cpo)) : '—'}
+                    {it.prev?.cpo != null && it.cpo != null && <div className="text-[9px]"><DeltaBadge cur={it.cpo} prev={it.prev.cpo} fmt={(v) => fmtRp(Math.round(v))} goodDown /></div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">Matriks status materi</p>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] min-w-[820px]">
             <thead>
