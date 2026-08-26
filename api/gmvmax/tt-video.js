@@ -105,6 +105,18 @@ export default async function handler(req, res) {
       return
     }
 
+    // Daftar sesi boost (Max Delivery / Creative Boost) satu campaign.
+    if (op === 'session_list') {
+      const campaignId = String(body.campaign_id || '')
+      if (!campaignId) { res.status(400).json({ error: 'invalid_request', error_description: 'campaign_id wajib untuk op session_list' }); return }
+      const r = await callBusinessTool(access_token, 'campaign_gmv_max_session_list_get', {
+        advertiser_id: String(advertiser_id), campaign_id: campaignId,
+      })
+      if (r.error) { res.status(r.http).json(r); return }
+      res.status(200).json({ sessions: r.data?.session_list || [] })
+      return
+    }
+
     res.status(400).json({ error: 'invalid_request', error_description: `op tak dikenal: ${op}` })
   } catch (e) {
     res.status(502).json({ error: 'proxy_error', error_description: String(e?.message || e) })

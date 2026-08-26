@@ -12,7 +12,7 @@ const ALLOWED = new Set([
   'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'PRODUCTS_UPDATE',
   'STATUS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE',
 ])
-const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE', 'CREATIVE_EXCLUDE']) // E1 + E3 + E4a
+const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE']) // E1..E4
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
@@ -25,6 +25,70 @@ export default async function handler(req, res) {
     if (!approval_id) { res.status(400).json({ error: 'approval_required', error_description: 'Eksekusi hanya menerima aksi ber-approval (approval_id wajib).' }); return }
     if (!ENABLED.has(action_type)) {
       res.status(501).json({ error: 'not_enabled', error_description: `Aksi ${action_type} belum diaktifkan (aktivasi bertahap; kini baru SPARK_BIND).` })
+      return
+    }
+
+    // ── E4b: SESSION_CREATE (Max Delivery / Creative Boost) ─────────────────
+    if (action_type === 'SESSION_CREATE') {
+      const advId = String(params?.advertiser_id || '')
+      const campaignId = String(params?.campaign_id || '')
+      const storeId = String(params?.store_id || '')
+      const sess = params?.session
+      if (!advId || !campaignId || !storeId || !sess) { res.status(400).json({ error: 'invalid_request', error_description: 'advertiser_id, campaign_id, store_id & session wajib' }); return }
+      if (!['NO_BID', 'CREATIVE_NO_BID'].includes(sess.bid_type)) { res.status(400).json({ error: 'invalid_request', error_description: 'bid_type hanya NO_BID (Max Delivery) / CREATIVE_NO_BID (Creative Boost).' }); return }
+      if (!(Number(sess.budget) > 0)) { res.status(400).json({ error: 'invalid_request', error_description: 'budget sesi tidak valid' }); return }
+      if (!Array.isArray(sess.product_list) || sess.product_list.length !== 1) { res.status(400).json({ error: 'invalid_request', error_description: 'product_list wajib tepat 1 SPU (aturan API).' }); return }
+      if (sess.bid_type === 'CREATIVE_NO_BID' && !sess.item_id) { res.status(400).json({ error: 'invalid_request', error_description: 'item_id wajib untuk Creative Boost.' }); return }
+
+      const payload = {
+        advertiser_id: advId, campaign_id: campaignId, store_id: storeId,
+        session: {
+          bid_type: sess.bid_type,
+          budget: Number(sess.budget),
+          product_list: sess.product_list.map(p => ({ spu_id: String(p.spu_id) })),
+          schedule_type: sess.schedule_type || 'SCHEDULE_FROM_NOW',
+          ...(sess.item_id ? { item_id: String(sess.item_id) } : {}),
+          ...(sess.schedule_end_time ? { schedule_end_time: sess.schedule_end_time } : {}),
+          ...(sess.schedule_start_time ? { schedule_start_time: sess.schedule_start_time } : {}),
+        },
+      }
+      const applied = await callBusinessTool(access_token, 'campaign_gmv_max_session_create', payload)
+      if (applied.error) { res.status(applied.http).json({ ...applied, step: 'apply' }); return }
+
+      // READ-BACK: sesi harus muncul di session_list campaign.
+      const list = await callBusinessTool(access_token, 'campaign_gmv_max_session_list_get', { advertiser_id: advId, campaign_id: campaignId })
+      const sessions = list.error ? null : (list.data?.session_list || [])
+      const createdId = applied.data?.session_id || null
+      const verified = sessions
+        ? !!(createdId
+          ? sessions.find(x => String(x.session_id) === String(createdId))
+          : sessions.find(x => x.bid_type === sess.bid_type && (!sess.item_id || String(x.item_id) === String(sess.item_id))))
+        : null
+      res.status(200).json({
+        executed: true, action_type, approval_id,
+        apply_result: applied.data ?? {},
+        read_back: { session_id: createdId, verified, session_count: sessions ? sessions.length : null, list_error: list.error ? list.error_description : null },
+      })
+      return
+    }
+
+    // ── E4b: SESSION_DELETE (hentikan sesi boost) ───────────────────────────
+    if (action_type === 'SESSION_DELETE') {
+      const advId = String(params?.advertiser_id || '')
+      const sessionId = String(params?.session_id || '')
+      if (!advId || !sessionId) { res.status(400).json({ error: 'invalid_request', error_description: 'advertiser_id & session_id wajib' }); return }
+      const applied = await callBusinessTool(access_token, 'campaign_gmv_max_session_delete', { advertiser_id: advId, session_id: sessionId })
+      if (applied.error) { res.status(applied.http).json({ ...applied, step: 'apply' }); return }
+      let verified = null
+      if (params?.campaign_id) {
+        const list = await callBusinessTool(access_token, 'campaign_gmv_max_session_list_get', { advertiser_id: advId, campaign_id: String(params.campaign_id) })
+        if (!list.error) verified = !(list.data?.session_list || []).find(x => String(x.session_id) === sessionId)
+      }
+      res.status(200).json({
+        executed: true, action_type, approval_id,
+        apply_result: applied.data ?? {},
+        read_back: { session_id: sessionId, verified },
+      })
       return
     }
 

@@ -3,12 +3,12 @@
 // API) dgn ▲/▼ vs snapshot sebelumnya → mendeteksi arus masuk/keluar status.
 // Klik angka sel → daftar video status itu. Data murni dari creatives snapshot
 // harian yang sudah dimuat context (nol panggilan API baru).
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
-import { requestCreativeExclude } from '../../data/gmvmaxCampaignControl'
+import { requestCreativeExclude, requestBoostSession, requestSessionStop, fetchSessions, SESSION_MIN_BUDGET_IDR } from '../../data/gmvmaxCampaignControl'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
 const COLS = [
@@ -34,6 +34,52 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
   const [exBusy, setExBusy] = useState(null)
 
   const campaignOn = campaign?.operation_status === 'ENABLE'
+
+  // ── E4b: sesi boost aktif campaign ini + form boost per video ─────────────
+  const [sessions, setSessions] = useState(null)
+  const [sessMsg, setSessMsg] = useState(null)
+  const [boostFor, setBoostFor] = useState(null) // { v, spuId } → form mini
+  const [boostBudget, setBoostBudget] = useState(String(SESSION_MIN_BUDGET_IDR))
+  const [boostHours, setBoostHours] = useState('24')
+  const [boostBusy, setBoostBusy] = useState(false)
+  useEffect(() => {
+    if (!campaign?.campaign_id) return
+    let alive = true
+    fetchSessions(campaign.campaign_id).then(x => { if (alive) setSessions(x) }).catch(() => { if (alive) setSessions([]) })
+    return () => { alive = false }
+  }, [campaign])
+
+  async function submitBoost() {
+    setBoostBusy(true); setSessMsg(null)
+    try {
+      const { kind, v, spuId } = boostFor
+      await requestBoostSession({
+        kind,
+        campaignId: campaign.campaign_id, campaignName: campaign.campaign_name,
+        storeId: campaign.store_id, spuId,
+        itemId: v?.videoId || null, videoTitle: v?.videoTitle || boostFor.name || '',
+        budget: Number(boostBudget), hours: Number(boostHours),
+        evidence: v
+          ? { status: cell?.status || null, cost: Math.round(v.cost || 0), revenue: Math.round(v.grossRevenue || 0) }
+          : { produk: boostFor.name || spuId },
+      })
+      setBoostFor(null)
+      setSessMsg(`${kind === 'MAX_DELIVERY' ? 'Max Delivery' : 'Creative Boost'} diajukan — buka 🔔 utk menyetujui. Nilai hasilnya di H+3–H+7, bukan hari ini.`)
+    } catch (e) { setSessMsg(`Gagal: ${e.message}`) }
+    finally { setBoostBusy(false) }
+  }
+
+  async function stopSession(sess) {
+    setSessMsg(null)
+    try {
+      await requestSessionStop({
+        campaignId: campaign.campaign_id, campaignName: campaign.campaign_name,
+        sessionId: sess.session_id,
+        label: `${sess.bid_type === 'NO_BID' ? 'Max Delivery' : 'Creative Boost'}${sess.item_id ? ` · video ${sess.item_id}` : ''}`,
+      })
+      setSessMsg('Penghentian sesi diajukan — buka 🔔 utk menyetujui.')
+    } catch (e) { setSessMsg(`Gagal: ${e.message}`) }
+  }
   async function submitExclude(v, mode) {
     setExBusy(v.videoId); setExq(null)
     try {
@@ -185,6 +231,50 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
           <button onClick={onClose} className="text-ink-faint hover:text-ink p-1"><X className="w-4 h-4" /></button>
         </div>
 
+        {/* ── Sesi boost aktif (E4b) ── */}
+        {Array.isArray(sessions) && sessions.length > 0 && (
+          <div className="mb-4 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-widest text-violet-300 font-semibold mb-1.5">Sesi boost aktif · {sessions.length}</p>
+            <div className="space-y-1">
+              {sessions.map((ss, i) => (
+                <div key={ss.session_id || i} className="flex items-center gap-2 text-[11px] text-ink-muted">
+                  <span className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 font-semibold text-[10px]">
+                    {ss.bid_type === 'NO_BID' ? 'MAX DELIVERY' : 'CREATIVE BOOST'}
+                  </span>
+                  <span className="font-mono">{ss.item_id ? `video ${ss.item_id}` : (ss.product_list?.[0]?.spu_id ? `SPU ${ss.product_list[0].spu_id}` : '')}</span>
+                  {ss.budget != null && <span className="font-mono">Rp {Number(ss.budget).toLocaleString('id-ID')}/hari</span>}
+                  {ss.schedule_end_time && <span className="text-ink-faint">s/d {ss.schedule_end_time}</span>}
+                  <button onClick={() => stopSession(ss)}
+                    className="ml-auto px-2 py-0.5 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10">
+                    Hentikan
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {sessMsg && <p className={`mb-3 text-[11px] ${sessMsg.startsWith('Gagal') ? 'text-red-300' : 'text-green-300'}`}>{sessMsg}</p>}
+        {boostFor && (
+          <div className="mt-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-2.5">
+            <p className="text-[11px] text-ink-strong font-semibold mb-1.5 truncate">{boostFor.kind === 'MAX_DELIVERY' ? 'Max Delivery · ' : 'Creative Boost · '}{boostFor.kind === 'MAX_DELIVERY' ? boostFor.name : `@${boostFor.v?.tiktokAccount || '?'} · ${String(boostFor.v?.videoTitle || boostFor.v?.videoId || '').slice(0, 50)}`}</p>
+            <div className="flex items-center gap-2 flex-wrap text-[11px]">
+              <input type="number" min={SESSION_MIN_BUDGET_IDR} step="10000" value={boostBudget} onChange={e => setBoostBudget(e.target.value)}
+                className="w-28 bg-surface border border-line/15 rounded-lg px-2 py-1.5 font-mono text-ink" />
+              <span className="text-ink-faint">Rp/hari (min {SESSION_MIN_BUDGET_IDR.toLocaleString('id-ID')})</span>
+              <select value={boostHours} onChange={e => setBoostHours(e.target.value)}
+                className="bg-surface border border-line/15 rounded-lg px-2 py-1.5 text-ink">
+                <option value="24">24 jam</option><option value="48">48 jam</option><option value="72">72 jam</option>
+              </select>
+              <button disabled={boostBusy} onClick={submitBoost}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40">
+                Ajukan boost
+              </button>
+              <button onClick={() => setBoostFor(null)} className="text-ink-faint hover:text-ink text-[11px]">batal</button>
+            </div>
+            <p className="text-[10px] text-ink-faint mt-1.5">Tanpa jaring ROI & di luar ROI Protection — jendela pendek, nilai hasil di H+3–H+7 dari nasib video pasca-boost.</p>
+          </div>
+        )}
+
         {/* ── PERFORMA PRODUK (Opsi 1: tabel bertumpuk, urutan baris = matriks) ── */}
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">
           Performa produk · periode terpilih{campaign.budget ? <> · budget campaign {fmtRp(Number(campaign.budget) || 0)}/hari</> : null}
@@ -205,7 +295,16 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
             <tbody>
               {data.perf.map(it => (
                 <tr key={it.pid} className="border-t border-line/8">
-                  <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[240px] truncate" title={String(it.pid)}>{it.name}</td>
+                  <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[260px]" title={String(it.pid)}>
+                    <span className="truncate inline-block max-w-[200px] align-middle">{it.name}</span>
+                    {!it.isCard && campaignOn && (
+                      <button onClick={() => { setBoostFor({ kind: 'MAX_DELIVERY', spuId: it.pid, name: it.name }); setSessMsg(null) }}
+                        title="Max Delivery utk produk ini — bakar budget tambahan demi volume (via 🔔)"
+                        className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 align-middle">
+                        ⚡MD
+                      </button>
+                    )}
+                  </td>
                   <td className="py-2.5 px-2 text-right font-mono tabular-nums">
                     {fmtRpC(it.cost)}
                     {it.prev && <div className="text-[9px]"><DeltaBadge cur={it.cost} prev={it.prev.cost} fmt={fmtRpC} goodDown /></div>}
@@ -309,6 +408,13 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                     {v.grossRevenue > 0 && <span className="text-emerald-400 font-mono"> · {fmtRpC(v.grossRevenue)}</span>}
                     {v.cost > 0 && <span className="text-ink-faint font-mono"> · spend {fmtRpC(v.cost)}</span>}
                   </a>
+                  {['IN_QUEUE', 'NOT_DELIVERING'].includes(cell.status) && cell.productId !== '(tanpa produk)' && (
+                    <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setSessMsg(null) }}
+                      title={campaignOn ? 'Creative Boost — beli data uji utk video ini (via 🔔)' : 'Campaign harus ENABLE'}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 flex-shrink-0">
+                      Boost
+                    </button>
+                  )}
                   {cell.status === 'EXCLUDED' ? (
                     <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'ADD')}
                       title={campaignOn ? 'Pulihkan ke rotasi (via 🔔)' : 'Campaign harus ENABLE'}
@@ -326,6 +432,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               ))}
             </div>
             {exq && <p className={`mt-2 text-[11px] ${exq.startsWith('Gagal') ? 'text-red-300' : 'text-green-300'}`}>{exq}</p>}
+
           </div>
         )}
       </div>

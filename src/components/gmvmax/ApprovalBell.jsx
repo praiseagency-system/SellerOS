@@ -13,7 +13,13 @@ import { getCurrentWorkspaceId } from '../../utils/workspace'
 
 const fmtVal = (v) => {
   if (v == null) return '—'
-  if (typeof v === 'object') return Object.entries(v).map(([k, x]) => `${k}: ${typeof x === 'number' ? x.toLocaleString('id-ID') : x}`).join(' · ')
+  if (typeof v === 'object') {
+    // objek bersarang (payload teknis spt session/items) tak usah ditampilkan mentah
+    return Object.entries(v)
+      .filter(([, x]) => typeof x !== 'object' || x == null)
+      .map(([k, x]) => `${k}: ${typeof x === 'number' ? x.toLocaleString('id-ID') : x}`)
+      .join(' · ') || '…'
+  }
   return typeof v === 'number' ? v.toLocaleString('id-ID') : String(v)
 }
 
@@ -58,6 +64,7 @@ export default function ApprovalBell() {
         SPARK_BIND: executeSparkBind, SPARK_UNBIND: executeSparkUnbind,
         BUDGET_UPDATE: executeCampaignAction, ROI_UPDATE: executeCampaignAction, STATUS_UPDATE: executeCampaignAction,
         PRODUCTS_UPDATE: executeCampaignAction, CREATIVE_EXCLUDE: executeCampaignAction,
+        SESSION_CREATE: executeCampaignAction, SESSION_DELETE: executeCampaignAction,
       }
       if (decision === 'APPROVED' && EXEC[row.action_type]) {
         setNotice('Menerapkan ke TikTok…')

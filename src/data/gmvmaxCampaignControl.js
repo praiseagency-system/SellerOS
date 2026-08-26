@@ -157,6 +157,71 @@ export async function requestCreativeExclude({ campaignId, campaignName, videoId
   })
 }
 
+// ── E4b: Sesi boost (Max Delivery / Creative Boost) ─────────────────────────
+// Pagar best-practice resmi ditegakkan DI SINI: budget min ≈ US$10 (Rp160rb),
+// jendela default 24 jam maks 72 jam, Creative Boost hanya utk video yang
+// eligible (validasi status di UI; API menolak AUTH_NEEDED/EXCLUDED/dll).
+export const SESSION_MIN_BUDGET_IDR = 160000
+const toUtc = (d) => d.toISOString().slice(0, 19).replace('T', ' ')
+
+export async function requestBoostSession({ kind, campaignId, campaignName, storeId, spuId, itemId = null, videoTitle = '', budget, hours = 24, reason = null, evidence = null }) {
+  // kind: 'MAX_DELIVERY' | 'CREATIVE_BOOST'
+  if (!['MAX_DELIVERY', 'CREATIVE_BOOST'].includes(kind)) throw new Error('kind tidak dikenal.')
+  if (!spuId) throw new Error('SPU produk wajib.')
+  if (kind === 'CREATIVE_BOOST' && !itemId) throw new Error('videoId wajib untuk Creative Boost.')
+  const b = Number(budget)
+  if (!Number.isFinite(b) || b < SESSION_MIN_BUDGET_IDR) throw new Error(`Budget sesi minimal Rp ${SESSION_MIN_BUDGET_IDR.toLocaleString('id-ID')}/hari (≈ US$10, aturan TikTok).`)
+  const h = Math.min(Math.max(Number(hours) || 24, 1), 72) // pagar: maks 72 jam
+  const end = toUtc(new Date(Date.now() + h * 3600 * 1000))
+  const settings = await getExecutionSettings()
+  await assertCooldown(campaignId, settings)
+  return createApproval({
+    actionType: 'SESSION_CREATE',
+    target: { campaign_id: String(campaignId), campaign_name: campaignName, video_id: itemId ? String(itemId) : null, video_title: videoTitle || null },
+    currentValue: { sesi: 'tidak ada' },
+    proposedValue: {
+      sesi: kind, budget: b, jam: h,
+      store_id: String(storeId),
+      session: {
+        bid_type: kind === 'MAX_DELIVERY' ? 'NO_BID' : 'CREATIVE_NO_BID',
+        budget: b,
+        product_list: [{ spu_id: String(spuId) }],
+        schedule_type: 'SCHEDULE_START_END',
+        schedule_end_time: end,
+        ...(itemId ? { item_id: String(itemId) } : {}),
+      },
+    },
+    reason: reason || (kind === 'MAX_DELIVERY'
+      ? `Max Delivery ${h} jam utk 1 produk — prioritas volume di atas ROI (budget terpisah, tanpa ROI protection).`
+      : `Creative Boost ${h} jam utk 1 video — beli data uji utk video yang belum diuji algoritma.`),
+    evidence,
+    source: 'MANUAL',
+    risk: 'HIGH', // tanpa jaring ROI — selalu ditinjau sadar-sadar
+  })
+}
+
+export async function requestSessionStop({ campaignId, campaignName, sessionId, label = '' }) {
+  if (!sessionId) throw new Error('session_id wajib.')
+  return createApproval({
+    actionType: 'SESSION_DELETE',
+    target: { campaign_id: String(campaignId), campaign_name: campaignName },
+    currentValue: { sesi: label || sessionId },
+    proposedValue: { sesi: 'dihentikan', session_id: String(sessionId) },
+    reason: 'Hentikan sesi boost.',
+    source: 'MANUAL', risk: 'LOW',
+  })
+}
+
+// Daftar sesi aktif satu campaign (read-only, utk strip sesi di detail).
+export async function fetchSessions(campaignId) {
+  const conn = await requireConn()
+  const r = await post('/api/gmvmax/tt-video', {
+    access_token: conn.access_token, advertiser_id: conn.advertiser_id,
+    op: 'session_list', campaign_id: String(campaignId),
+  })
+  return r.sessions || []
+}
+
 async function post(url, body) {
   const res = await fetch(url, {
     method: 'POST',
@@ -186,6 +251,13 @@ export async function executeCampaignAction(approvalRow) {
   if (approvalRow.action_type === 'CREATIVE_EXCLUDE') {
     params.action = approvalRow.proposed_value?.action
     params.items = approvalRow.proposed_value?.items
+  }
+  if (approvalRow.action_type === 'SESSION_CREATE') {
+    params.store_id = approvalRow.proposed_value?.store_id
+    params.session = approvalRow.proposed_value?.session
+  }
+  if (approvalRow.action_type === 'SESSION_DELETE') {
+    params.session_id = approvalRow.proposed_value?.session_id
   }
 
   let result = null, failMsg = null
