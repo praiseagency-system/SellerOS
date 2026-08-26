@@ -17,6 +17,7 @@ export const ACTION_LABELS = {
   PRODUCTS_UPDATE: 'Ubah produk campaign',
   CREATIVE_EXCLUDE: 'Keluarkan video dari rotasi',
   SESSION_CREATE: 'Mulai sesi boost',
+  SESSION_UPDATE: 'Ubah sesi boost',
   SESSION_DELETE: 'Hentikan sesi boost',
 }
 

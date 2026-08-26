@@ -207,6 +207,32 @@ export async function requestBoostSession({ kind, campaignId, campaignName, stor
   })
 }
 
+// Ajukan ubah sesi aktif: budget baru dan/atau perpanjang jendela (jam dari sekarang).
+export async function requestSessionUpdate({ campaignId, campaignName, storeId, sessionId, kind, label = '', currentBudget = null, newBudget = null, extendHours = null }) {
+  if (!sessionId) throw new Error('session_id wajib.')
+  const patch = {}
+  if (newBudget != null) {
+    const b = Number(newBudget)
+    const minB = SESSION_MIN_BUDGET_IDR[kind] ?? SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST
+    if (!Number.isFinite(b) || b < minB) throw new Error(`Budget minimal Rp ${minB.toLocaleString('id-ID')}/hari.`)
+    patch.budget = b
+  }
+  if (extendHours != null) {
+    const h = Math.min(Math.max(Number(extendHours) || 24, 1), 72)
+    patch.schedule_type = 'SCHEDULE_START_END'
+    patch.schedule_end_time = toUtc(new Date(Date.now() + h * 3600 * 1000))
+  }
+  if (!Object.keys(patch).length) throw new Error('Tidak ada perubahan.')
+  return createApproval({
+    actionType: 'SESSION_UPDATE',
+    target: { campaign_id: String(campaignId), campaign_name: campaignName },
+    currentValue: { sesi: label || sessionId, ...(currentBudget != null ? { budget: Number(currentBudget) } : {}) },
+    proposedValue: { ...(patch.budget != null ? { budget: patch.budget } : {}), ...(patch.schedule_end_time ? { 's/d': patch.schedule_end_time } : {}), store_id: String(storeId), session_id: String(sessionId), session: patch },
+    reason: 'Ubah sesi boost yang sedang berjalan.',
+    source: 'MANUAL', risk: patch.budget != null && currentBudget != null && patch.budget > Number(currentBudget) ? 'HIGH' : 'MEDIUM',
+  })
+}
+
 export async function requestSessionStop({ campaignId, campaignName, sessionId, label = '' }) {
   if (!sessionId) throw new Error('session_id wajib.')
   return createApproval({
@@ -261,6 +287,11 @@ export async function executeCampaignAction(approvalRow) {
   }
   if (approvalRow.action_type === 'SESSION_CREATE') {
     params.store_id = approvalRow.proposed_value?.store_id
+    params.session = approvalRow.proposed_value?.session
+  }
+  if (approvalRow.action_type === 'SESSION_UPDATE') {
+    params.store_id = approvalRow.proposed_value?.store_id
+    params.session_id = approvalRow.proposed_value?.session_id
     params.session = approvalRow.proposed_value?.session
   }
   if (approvalRow.action_type === 'SESSION_DELETE') {

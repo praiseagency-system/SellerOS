@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
-import { requestCreativeExclude, requestBoostSession, requestSessionStop, fetchSessions, SESSION_MIN_BUDGET_IDR } from '../../data/gmvmaxCampaignControl'
+import { requestCreativeExclude, requestBoostSession, requestSessionStop, requestSessionUpdate, fetchSessions, SESSION_MIN_BUDGET_IDR } from '../../data/gmvmaxCampaignControl'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
 const COLS = [
@@ -39,6 +39,26 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
   const [sessions, setSessions] = useState(null)
   const [sessMsg, setSessMsg] = useState(null)
   const [boostFor, setBoostFor] = useState(null) // { v, spuId } → form mini
+  const [editSess, setEditSess] = useState(null) // sesi yang mau diubah
+  const [editBudget, setEditBudget] = useState('')
+  const [editHours, setEditHours] = useState('')
+  async function submitSessionUpdate() {
+    setBoostBusy(true); setSessMsg(null)
+    try {
+      const kind = editSess.bid_type === 'NO_BID' ? 'MAX_DELIVERY' : 'CREATIVE_BOOST'
+      await requestSessionUpdate({
+        campaignId: campaign.campaign_id, campaignName: campaign.campaign_name,
+        storeId: campaign.store_id, sessionId: editSess.session_id, kind,
+        label: `${kind === 'MAX_DELIVERY' ? 'Max Delivery' : 'Creative Boost'}${editSess.item_id ? ` · video ${editSess.item_id}` : ''}`,
+        currentBudget: editSess.budget ?? null,
+        newBudget: editBudget !== '' ? Number(editBudget) : null,
+        extendHours: editHours !== '' ? Number(editHours) : null,
+      })
+      setEditSess(null)
+      setSessMsg('Perubahan sesi diajukan — buka 🔔 utk menyetujui.')
+    } catch (e) { setSessMsg(`Gagal: ${e.message}`) }
+    finally { setBoostBusy(false) }
+  }
   const [boostBudget, setBoostBudget] = useState(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST))
   const [boostHours, setBoostHours] = useState('24')
   const [boostBusy, setBoostBusy] = useState(false)
@@ -244,12 +264,33 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                   <span className="font-mono">{ss.item_id ? `video ${ss.item_id}` : (ss.product_list?.[0]?.spu_id ? `SPU ${ss.product_list[0].spu_id}` : '')}</span>
                   {ss.budget != null && <span className="font-mono">Rp {Number(ss.budget).toLocaleString('id-ID')}/hari</span>}
                   {ss.schedule_end_time && <span className="text-ink-faint">s/d {ss.schedule_end_time}</span>}
+                  <button onClick={() => { setEditSess(ss); setEditBudget(ss.budget != null ? String(ss.budget) : ''); setEditHours(''); setSessMsg(null) }}
+                    className="ml-auto px-2 py-0.5 rounded-md text-[10px] font-semibold border border-line/20 text-ink-muted hover:text-ink">
+                    Ubah
+                  </button>
                   <button onClick={() => stopSession(ss)}
-                    className="ml-auto px-2 py-0.5 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10">
+                    className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10">
                     Hentikan
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {editSess && (
+          <div className="mb-3 rounded-lg border border-line/20 bg-surface2 p-2.5">
+            <p className="text-[11px] text-ink-strong font-semibold mb-1.5">Ubah sesi · {editSess.bid_type === 'NO_BID' ? 'Max Delivery' : 'Creative Boost'}{editSess.item_id ? ` · video ${editSess.item_id}` : ''}</p>
+            <div className="flex items-center gap-2 flex-wrap text-[11px]">
+              <input type="number" step="10000" value={editBudget} onChange={e => setEditBudget(e.target.value)} placeholder="budget baru"
+                className="w-28 bg-surface border border-line/15 rounded-lg px-2 py-1.5 font-mono text-ink" />
+              <span className="text-ink-faint">Rp/hari</span>
+              <select value={editHours} onChange={e => setEditHours(e.target.value)}
+                className="bg-surface border border-line/15 rounded-lg px-2 py-1.5 text-ink">
+                <option value="">jendela tetap</option><option value="24">perpanjang s/d +24 jam</option><option value="48">+48 jam</option><option value="72">+72 jam</option>
+              </select>
+              <button disabled={boostBusy} onClick={submitSessionUpdate}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40">Ajukan</button>
+              <button onClick={() => setEditSess(null)} className="text-ink-faint hover:text-ink text-[11px]">batal</button>
             </div>
           </div>
         )}

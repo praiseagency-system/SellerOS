@@ -12,7 +12,7 @@ const ALLOWED = new Set([
   'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'PRODUCTS_UPDATE',
   'STATUS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE',
 ])
-const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE']) // E1..E4
+const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_UPDATE', 'SESSION_DELETE']) // E1..E4
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
@@ -68,6 +68,43 @@ export default async function handler(req, res) {
         executed: true, action_type, approval_id,
         apply_result: applied.data ?? {},
         read_back: { session_id: createdId, verified, session_count: sessions ? sessions.length : null, list_error: list.error ? list.error_description : null },
+      })
+      return
+    }
+
+    // ── E4b: SESSION_UPDATE (ubah budget/jadwal sesi aktif) ─────────────────
+    if (action_type === 'SESSION_UPDATE') {
+      const advId = String(params?.advertiser_id || '')
+      const campaignId = String(params?.campaign_id || '')
+      const storeId = String(params?.store_id || '')
+      const sessionId = String(params?.session_id || '')
+      const sess = params?.session || {}
+      if (!advId || !campaignId || !storeId || !sessionId) { res.status(400).json({ error: 'invalid_request', error_description: 'advertiser_id, campaign_id, store_id & session_id wajib' }); return }
+      if (sess.budget != null && !(Number(sess.budget) > 0)) { res.status(400).json({ error: 'invalid_request', error_description: 'budget sesi tidak valid' }); return }
+
+      const applied = await callBusinessTool(access_token, 'campaign_gmv_max_session_update', {
+        advertiser_id: advId, campaign_id: campaignId, store_id: storeId, session_id: sessionId,
+        session: {
+          ...(sess.budget != null ? { budget: Number(sess.budget) } : {}),
+          ...(sess.schedule_type ? { schedule_type: sess.schedule_type } : {}),
+          ...(sess.schedule_end_time ? { schedule_end_time: sess.schedule_end_time } : {}),
+        },
+      })
+      if (applied.error) { res.status(applied.http).json({ ...applied, step: 'apply' }); return }
+
+      // READ-BACK: budget sesi di session_list harus cocok.
+      const list = await callBusinessTool(access_token, 'campaign_gmv_max_session_list_get', { advertiser_id: advId, campaign_id: campaignId })
+      let verified = null, observed = null
+      if (!list.error) {
+        const found = (list.data?.session_list || []).find(x => String(x.session_id) === sessionId)
+        observed = found ? { budget: found.budget, schedule_end_time: found.schedule_end_time } : null
+        if (found && sess.budget != null) verified = Number(found.budget) === Number(sess.budget)
+        else verified = !!found
+      }
+      res.status(200).json({
+        executed: true, action_type, approval_id,
+        apply_result: applied.data ?? {},
+        read_back: { session_id: sessionId, observed, verified, list_error: list.error ? list.error_description : null },
       })
       return
     }
