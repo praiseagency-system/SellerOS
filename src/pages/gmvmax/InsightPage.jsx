@@ -33,7 +33,7 @@ export default function InsightPage({ onOpenUpload }) {
   const startExperiment = (draft) => { setExpDraft(draft); setTab('exp') }
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-6 space-y-5">
       <p className="text-sm text-ink-faint -mt-2">Analisis pola data GMV MAX — bukan model AI eksternal.</p>
       <div className="flex gap-1.5 flex-wrap">
         {TABS.map(t => (

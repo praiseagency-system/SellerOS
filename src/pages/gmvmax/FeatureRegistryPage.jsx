@@ -64,7 +64,7 @@ export default function FeatureRegistryPage() {
     desc="Registry diisi oleh proses verifikasi read-only per-tenant (Phase 1). Jalankan deteksi registry untuk workspace ini, atau tunggu worker read-only mengisinya." />
 
   return (
-    <div className="p-6 space-y-5 max-w-6xl mx-auto">
+    <div className="p-6 space-y-5">
       {/* Banner eligibility tenant */}
       <div className={`rounded-2xl border p-4 flex items-start gap-3 ${blocked ? 'bg-red-500/5 border-red-500/20' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
         <span className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${blocked ? 'bg-red-500/15 text-red-500' : 'bg-emerald-500/15 text-emerald-500'}`}>

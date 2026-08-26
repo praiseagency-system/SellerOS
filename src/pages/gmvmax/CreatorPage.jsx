@@ -44,7 +44,7 @@ export default function CreatorPage({ onOpenUpload }) {
   const rankColor = ['bg-amber-400', 'bg-slate-400', 'bg-orange-400']
 
   return (
-    <div className="p-6 space-y-4 max-w-5xl mx-auto">
+    <div className="p-6 space-y-4">
       {periodName && prev && (
         <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· vs {prev.name}</span></p>
       )}

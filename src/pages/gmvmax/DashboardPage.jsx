@@ -16,7 +16,7 @@ export default function DashboardPage({ onOpenUpload }) {
   const pt = prev?.typeTotals
   const brk = (get) => `Video ${fmtRpC(get(tt.video))} · Card ${fmtRpC(get(tt.card))}`
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-6 space-y-5">
       {periodName && (
         <p className="text-sm text-ink-muted -mb-1">
           <span className="text-ink font-medium">{periodName}</span>

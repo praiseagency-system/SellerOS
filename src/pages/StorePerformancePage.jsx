@@ -154,7 +154,7 @@ export default function StorePerformancePage() {
   ]
 
   return (
-    <div className="p-5 max-w-6xl mx-auto">
+    <div className="p-5">
       {/* Header: status data + tombol Import (ringkas, modal saat dipencet) */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="min-w-0">

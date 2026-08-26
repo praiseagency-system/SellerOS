@@ -275,7 +275,7 @@ export default function CalculatorPage({ initialProduct = null, onAfterSave }) {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6">
       {/* Header produk — nama produk yang sedang diedit (dari menu Produk) */}
       {initialProduct && (
         <div className="flex items-center gap-3 mb-4">

@@ -83,7 +83,7 @@ export default function QuadrantPage() {
   return (
     // Frame disamakan dgn section GMV Max (2026-07-12): kontainer p-6 max-w-7xl,
     // panel jadi kartu rounded — bukan workbench edge-to-edge lagi.
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-6 space-y-4">
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">

@@ -69,7 +69,7 @@ export default function OverviewPage({ onNavigate }) {
   const pt = prev?.typeTotals
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-6 space-y-5">
       {/* ── GMV Max Ads (affiliate) ─────────────────────────────── */}
       <section>
         <SectionHead icon={Rocket} tone="text-blue-400" title="GMV Max Ads"

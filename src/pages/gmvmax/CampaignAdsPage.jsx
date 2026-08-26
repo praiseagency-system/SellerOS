@@ -84,7 +84,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
   // Sub-halaman Detail produk & status materi (bukan jendela/modal).
   if (detail) {
     return (
-      <div className="p-6 max-w-7xl mx-auto space-y-3">
+      <div className="p-6 space-y-3">
         <p className="text-xs text-ink-faint">Campaign Ads <span className="opacity-60">›</span> <span className="text-ink">{detail.campaign_name}</span></p>
         <CampaignStatusMatrix inline campaign={detail} onClose={() => setDetail(null)} />
       </div>
@@ -101,7 +101,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
     return { spend, revenue, roas: spend > 0 ? revenue / spend : null }
   })()
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-6 space-y-4">
       {periodName && <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· performa periode ini · setting = kondisi terkini</span></p>}
 
       {err && (

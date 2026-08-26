@@ -48,7 +48,7 @@ export default function LogPage() {
     desc="Setiap kali kamu simpan aksi/catatan di sebuah video (naikkan budget, refresh hook, dll), tindakan itu tercatat di sini beserta tanggal & ROAS-nya." />
 
   return (
-    <div className="p-6 space-y-4 max-w-4xl mx-auto">
+    <div className="p-6 space-y-4">
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map(f => (
           <Pill key={f.id} active={filter === f.id} tone={f.tone} count={counts[f.id]} onClick={() => setFilter(f.id)}>{f.label}</Pill>

@@ -442,8 +442,13 @@ export default function Layout({
         </header>
 
         {/* Page content */}
+        {/* Frame konten disamakan dgn web affiliate Praise (AppShell): satu
+            container di SHELL — 1440px saat sidebar lebar, FULL saat sidebar
+            ciut. Halaman tak lagi memasang max-w sendiri (kecuali form). */}
         <main className="flex-1 overflow-auto">
-          {children}
+          <div className={`mx-auto w-full transition-[max-width] duration-200 ${sidebarOpen ? 'max-w-[1440px]' : 'max-w-none'}`}>
+            {children}
+          </div>
         </main>
       </div>
 

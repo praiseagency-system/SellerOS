@@ -126,7 +126,7 @@ export default function BoostPage() {
     desc="Upload dulu di Input Data untuk melihat rekomendasi video yang layak di-boost." />
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
+    <div className="p-6 space-y-6">
       {/* ── Spark Binding (Execute Layer E1) ─────────────────────── */}
       <SparkBindingSection />
 

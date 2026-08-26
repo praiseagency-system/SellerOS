@@ -146,7 +146,7 @@ export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const compareProducts = products.filter(p => selected.includes(p.id))
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6">
       {/* Tabs: Produk | Voucher */}
       <div className="flex items-center gap-1 mb-6 border-b border-line/8">
         {[
