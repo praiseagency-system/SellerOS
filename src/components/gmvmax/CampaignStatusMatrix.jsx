@@ -301,7 +301,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                       <button onClick={() => { setBoostFor({ kind: 'MAX_DELIVERY', spuId: it.pid, name: it.name }); setSessMsg(null) }}
                         title="Max Delivery utk produk ini — bakar budget tambahan demi volume (via 🔔)"
                         className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 align-middle">
-                        ⚡MD
+                        ⚡ Max Delivery
                       </button>
                     )}
                   </td>
@@ -396,7 +396,12 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         {cell && (
           <div className="mt-3 rounded-xl border border-blue-500/25 bg-surface2 p-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[12px] font-semibold text-ink-strong">{cell.label} · {cell.name} · {data.cellVideos.length} video</p>
+              <p className="text-[12px] font-semibold text-ink-strong">
+                {cell.label} · {cell.name} · {data.cellVideos.length} video
+                {!['IN_QUEUE', 'NOT_DELIVERING', 'EXCLUDED'].includes(cell.status) && (
+                  <span className="ml-2 text-[10px] font-normal text-ink-faint">· Boost hanya utk video Antre / Tak tayang (best practice)</span>
+                )}
+              </p>
               <button onClick={() => setCell(null)} className="text-ink-faint hover:text-ink"><X className="w-3.5 h-3.5" /></button>
             </div>
             <div className="max-h-56 overflow-auto space-y-1">
