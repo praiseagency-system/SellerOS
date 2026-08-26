@@ -9,6 +9,7 @@ import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, StatCard, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
 import { buildChangeLog } from '../../utils/gmvmaxCampaignDiff'
+import CampaignActionDialog from '../../components/gmvmax/CampaignActionDialog'
 
 const n = (v) => (v || 0).toLocaleString('id-ID')
 const isOn = (s) => s === 'ENABLE'
@@ -19,6 +20,8 @@ export default function CampaignAdsPage({ onOpenUpload }) {
   const [changes, setChanges] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
+  const [dialog, setDialog] = useState(null) // { action, campaign } | null
+  const [queuedMsg, setQueuedMsg] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -89,8 +92,15 @@ export default function CampaignAdsPage({ onOpenUpload }) {
         <StatCard icon={Target} tone="blue" label="ROAS periode" value={fmtRoasX(roas)} />
       </div>
 
+      {queuedMsg && (
+        <p className="text-xs text-green-300 bg-green-500/10 border border-green-500/25 rounded-xl px-3 py-2">
+          {queuedMsg} — buka 🔔 di topbar untuk menyetujui.
+        </p>
+      )}
+
       <div className="space-y-3">
-        {merged.map(m => <CampaignCard key={m.id} m={m} />)}
+        {merged.map(m => <CampaignCard key={m.id} m={m}
+          onAction={(action) => { setQueuedMsg(null); setDialog({ action, campaign: m.s }) }} />)}
         {merged.length === 0 && (
           <p className="text-sm text-ink-faint text-center py-10">
             Belum ada setting campaign ter-capture. Worker mengambilnya tiap hari — cek lagi setelah run berikutnya.
@@ -99,11 +109,17 @@ export default function CampaignAdsPage({ onOpenUpload }) {
       </div>
 
       <ChangeLog changes={changes} />
+
+      {dialog && (
+        <CampaignActionDialog action={dialog.action} campaign={dialog.campaign}
+          onClose={() => setDialog(null)}
+          onQueued={() => setQueuedMsg(`Aksi diajukan untuk ${dialog.campaign?.campaign_name || 'campaign'}`)} />
+      )}
     </div>
   )
 }
 
-function CampaignCard({ m }) {
+function CampaignCard({ m, onAction }) {
   const { s, p, name } = m
   const on = isOn(s?.operation_status)
   const ab = s?.auto_budget || {}
@@ -124,6 +140,32 @@ function CampaignCard({ m }) {
         {s?.promotion_type && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{s.promotion_type.replace('_GMV_MAX', '')}</span>}
         {s?.modify_time && <span className="ml-auto text-[10px] text-ink-faint">diubah {new Date(s.modify_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
       </div>
+
+      {/* Aksi E3 — hanya untuk campaign dgn setting ter-capture (campaign_id sahih).
+          Semua tombol MENGAJUKAN ke antrean 🔔, bukan eksekusi langsung. */}
+      {s?.campaign_id && onAction && (
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <button onClick={() => onAction('BUDGET_UPDATE')}
+            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
+            Ubah budget
+          </button>
+          <button onClick={() => onAction('ROI_UPDATE')}
+            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
+            Ubah ROI
+          </button>
+          {on ? (
+            <button onClick={() => onAction('DISABLE')}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 transition-colors">
+              Pause
+            </button>
+          ) : (
+            <button onClick={() => onAction('ENABLE')}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 transition-colors">
+              Aktifkan
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         <Cell label="Budget harian" value={s ? fmtRp(budget) : '—'} />

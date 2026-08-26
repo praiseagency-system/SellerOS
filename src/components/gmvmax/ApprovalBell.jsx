@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { Bell, Loader2, Check, X, ShieldAlert } from 'lucide-react'
 import { listApprovals, decideApproval, ACTION_LABELS, getExecutionSettings } from '../../data/gmvmaxApprovals'
 import { executeSparkBind, executeSparkUnbind } from '../../data/gmvmaxSpark'
+import { executeCampaignAction } from '../../data/gmvmaxCampaignControl'
 import { getCurrentWorkspaceId } from '../../utils/workspace'
 
 const fmtVal = (v) => {
@@ -53,7 +54,10 @@ export default function ApprovalBell() {
     try {
       const row = await decideApproval(id, decision)
       // Aksi yang jalurnya sudah AKTIF dieksekusi langsung setelah disetujui.
-      const EXEC = { SPARK_BIND: executeSparkBind, SPARK_UNBIND: executeSparkUnbind }
+      const EXEC = {
+        SPARK_BIND: executeSparkBind, SPARK_UNBIND: executeSparkUnbind,
+        BUDGET_UPDATE: executeCampaignAction, ROI_UPDATE: executeCampaignAction, STATUS_UPDATE: executeCampaignAction,
+      }
       if (decision === 'APPROVED' && EXEC[row.action_type]) {
         setNotice('Menerapkan ke TikTok…')
         const r = await EXEC[row.action_type](row)

@@ -12,7 +12,7 @@ const ALLOWED = new Set([
   'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE',
   'STATUS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE',
 ])
-const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND']) // E1
+const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE']) // E1 + E3
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
@@ -25,6 +25,53 @@ export default async function handler(req, res) {
     if (!approval_id) { res.status(400).json({ error: 'approval_required', error_description: 'Eksekusi hanya menerima aksi ber-approval (approval_id wajib).' }); return }
     if (!ENABLED.has(action_type)) {
       res.status(501).json({ error: 'not_enabled', error_description: `Aksi ${action_type} belum diaktifkan (aktivasi bertahap; kini baru SPARK_BIND).` })
+      return
+    }
+
+    // ── E3: CAMPAIGN CONTROL (budget / ROI / status) ────────────────────────
+    if (action_type === 'BUDGET_UPDATE' || action_type === 'ROI_UPDATE' || action_type === 'STATUS_UPDATE') {
+      const advId = String(params?.advertiser_id || '')
+      const campaignId = String(params?.campaign_id || '')
+      if (!advId || !campaignId) { res.status(400).json({ error: 'invalid_request', error_description: 'params.advertiser_id & params.campaign_id wajib' }); return }
+
+      let applied
+      if (action_type === 'STATUS_UPDATE') {
+        const op = params?.operation_status
+        // Pagar keras: DELETE tidak akan pernah lewat pintu ini.
+        if (!['ENABLE', 'DISABLE'].includes(op)) { res.status(400).json({ error: 'invalid_request', error_description: 'operation_status hanya ENABLE/DISABLE.' }); return }
+        applied = await callBusinessTool(access_token, 'campaign_status_update', {
+          advertiser_id: advId, campaign_ids: [campaignId], operation_status: op,
+        })
+      } else {
+        const upd = { advertiser_id: advId, campaign_id: campaignId }
+        if (action_type === 'BUDGET_UPDATE') {
+          const budget = Number(params?.budget)
+          if (!Number.isFinite(budget) || budget <= 0) { res.status(400).json({ error: 'invalid_request', error_description: 'params.budget tidak valid' }); return }
+          upd.budget = budget
+        } else {
+          const roas = Math.round(Number(params?.roas_bid) * 10) / 10 // aturan API: maks 1 desimal
+          if (!Number.isFinite(roas) || roas <= 0) { res.status(400).json({ error: 'invalid_request', error_description: 'params.roas_bid tidak valid' }); return }
+          upd.roas_bid = roas
+        }
+        applied = await callBusinessTool(access_token, 'campaign_gmv_max_update', upd)
+      }
+      if (applied.error) { res.status(applied.http).json({ ...applied, step: 'apply' }); return }
+
+      // READ-BACK: baca ulang setting campaign, cocokkan nilai yang diminta.
+      const info = await callBusinessTool(access_token, 'campaign_gmv_max_info_get', {
+        advertiser_id: advId, campaign_id: campaignId,
+      })
+      let verified = null, observed = null
+      if (!info.error) {
+        if (action_type === 'BUDGET_UPDATE') { observed = Number(info.data?.budget); verified = observed === Number(params.budget) }
+        else if (action_type === 'ROI_UPDATE') { observed = Number(info.data?.roas_bid); verified = observed === Math.round(Number(params.roas_bid) * 10) / 10 }
+        else { observed = info.data?.operation_status; verified = observed === params.operation_status }
+      }
+      res.status(200).json({
+        executed: true, action_type, approval_id,
+        apply_result: applied.data ?? {},
+        read_back: { observed, verified, info_error: info.error ? info.error_description : null },
+      })
       return
     }
 
