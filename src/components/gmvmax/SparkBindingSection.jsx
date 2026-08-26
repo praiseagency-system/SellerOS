@@ -6,6 +6,26 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react'
 import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '../../data/gmvmaxSpark'
 import { listImports, loadCreatives } from '../../data/gmvmaxImports'
+import { fmtRpC, tiktokVideoUrl } from './ui'
+
+// Kartu panel strategi supply (E2).
+const PANEL_TONE = {
+  amber: 'border-amber-500/25 bg-amber-500/5',
+  blue: 'border-blue-500/25 bg-blue-500/5',
+  red: 'border-red-500/25 bg-red-500/5',
+}
+function SupplyPanel({ tone, title, sub, action, children }) {
+  return (
+    <div className={`rounded-xl border p-3 ${PANEL_TONE[tone]}`}>
+      <div className="flex items-center justify-between gap-2 mb-0.5">
+        <p className="text-xs font-semibold text-ink-strong truncate">{title}</p>
+        {action || null}
+      </div>
+      <p className="text-[10px] text-ink-faint leading-snug mb-2">{sub}</p>
+      <div className="space-y-1">{children}</div>
+    </div>
+  )
+}
 
 // Respons TikTok bentuknya longgar — gali field umum dengan aman.
 const pickItemId = (info) => info?.item_id || info?.item_info?.item_id || info?.video_info?.item_id || null
@@ -24,6 +44,8 @@ export default function SparkBindingSection() {
   // terbaru — rotasi nyata, bukan konfigurasi). AUTO_SELECTION tak menyimpan
   // daftar eksplisit, jadi report harian adalah satu-satunya sumber kebenaran.
   const [campMap, setCampMap] = useState(new Map())
+  const [creatives, setCreatives] = useState([]) // baris Video snapshot terbaru (panel E2)
+  const [snapDate, setSnapDate] = useState(null)
   const [copied, setCopied] = useState(null)
 
   const loadList = useCallback(async () => {
@@ -33,10 +55,13 @@ export default function SparkBindingSection() {
       setList(spark)
       const latest = imports?.[0]
       if (latest) {
-        const creatives = await loadCreatives([latest.id])
+        setSnapDate(latest.snapshot_date || null)
+        const rows = await loadCreatives([latest.id])
+        const vids = rows.filter(c => c.creativeType === 'Video' && c.videoId)
+        setCreatives(vids)
         const m = new Map()
-        for (const c of creatives) {
-          if (!c.videoId || !c.campaignName) continue
+        for (const c of vids) {
+          if (!c.campaignName) continue
           if (!m.has(c.videoId)) m.set(c.videoId, new Map())
           // Satu campaign sekali; simpan status delivery-nya.
           if (!m.get(c.videoId).has(c.campaignName)) m.get(c.videoId).set(c.campaignName, c.status)
@@ -96,6 +121,32 @@ export default function SparkBindingSection() {
 
   const rows = list?.list || []
 
+  // ── Panel strategi supply (E2) — dihitung dari data yang sudah dimuat ──────
+  const boundIds = new Set(rows.map(it => String(it.item_info?.item_id ?? it.item_id ?? '')))
+  // GAP: TikTok sendiri menandai "mau kupakai tapi belum diizinkan kreator".
+  const gap = creatives.filter(c => c.status === 'AUTHORIZATION_NEEDED')
+  // PILAR: penyumbang revenue via jalur AFFILIATE (rapuh — bisa putus sepihak)
+  // yang belum diamankan kode → kandidat minta kode 60/365 hari.
+  const pilar = creatives
+    .filter(c => c.authType === 'AFFILIATE' && (c.grossRevenue || 0) > 0 && !boundIds.has(String(c.videoId)))
+    .sort((a, b) => (b.grossRevenue || 0) - (a.grossRevenue || 0))
+  // KEDALUWARSA: otorisasi aktif yang habis ≤7 hari (minta kreator perpanjang
+  // dari Ad settings — TANPA kode baru) + hitungan EXPIRED utk bersih-bersih.
+  const soon = rows.filter(it => {
+    if (it.auth_info?.ad_auth_status !== 'AUTHORIZED' || !it.auth_info?.auth_end_time) return false
+    const end = new Date(it.auth_info.auth_end_time.replace(' ', 'T'))
+    const days = (end - Date.now()) / 86400000
+    return days >= 0 && days <= 7
+  })
+  const expiredCount = rows.filter(it => it.auth_info?.ad_auth_status === 'EXPIRED').length
+
+  async function copyOutreach(items, mode) {
+    const lines = mode === 'soon'
+      ? items.map(it => `@${it.user_info?.tiktok_name || '?'} — habis ${it.auth_info?.auth_end_time?.slice(0, 10)} — video ${it.item_info?.item_id}`)
+      : items.map(c => `@${c.tiktokAccount || '?'} — ${String(c.videoTitle || '').slice(0, 70)} — ${tiktokVideoUrl(c.videoId, c.tiktokAccount) || c.videoId}`)
+    try { await navigator.clipboard.writeText(lines.join('\n')); setCopied(mode); setTimeout(() => setCopied(null), 1600) } catch { /* clipboard ditolak */ }
+  }
+
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
@@ -103,6 +154,54 @@ export default function SparkBindingSection() {
         <h3 className="text-sm font-bold text-ink-strong">Spark Binding</h3>
         <span className="text-xs text-ink-faint">daftarkan kode → video masuk kolam GMV Max</span>
       </div>
+
+      {/* ── Panel strategi supply (E2): Gap · Pilar · Kedaluwarsa ── */}
+      {(gap.length > 0 || pilar.length > 0 || soon.length > 0 || expiredCount > 0) && (
+        <div className="grid md:grid-cols-3 gap-3 mb-3">
+          <SupplyPanel tone="amber" title={`Butuh izin · ${gap.length}`}
+            sub={`TikTok mau memakai video ini tapi kreator belum memberi izin${snapDate ? ` (snapshot ${snapDate})` : ''}`}
+            action={gap.length > 0 && (
+              <button onClick={() => copyOutreach(gap, 'gap')} className="text-[10px] text-blue-400 hover:text-blue-300">
+                {copied === 'gap' ? '✓ tersalin' : `salin daftar outreach (${gap.length})`}
+              </button>
+            )}>
+            {gap.slice(0, 5).map(c => (
+              <a key={c.videoId} href={tiktokVideoUrl(c.videoId, c.tiktokAccount) || '#'} target="_blank" rel="noreferrer"
+                className="block text-[11px] text-ink-muted hover:text-ink truncate">
+                @{c.tiktokAccount || '?'} · {String(c.videoTitle || c.videoId).slice(0, 48)}
+              </a>
+            ))}
+          </SupplyPanel>
+
+          <SupplyPanel tone="blue" title={`Pilar tak terlindungi · ${pilar.length}`}
+            sub="Penyumbang revenue via jalur affiliate (bisa putus sepihak) — amankan dgn kode 60/365 hari"
+            action={pilar.length > 0 && (
+              <button onClick={() => copyOutreach(pilar.slice(0, 20), 'pilar')} className="text-[10px] text-blue-400 hover:text-blue-300">
+                {copied === 'pilar' ? '✓ tersalin' : `salin top ${Math.min(pilar.length, 20)} utk outreach`}
+              </button>
+            )}>
+            {pilar.slice(0, 5).map(c => (
+              <p key={c.videoId} className="text-[11px] text-ink-muted truncate">
+                @{c.tiktokAccount || '?'} · <span className="text-emerald-400 font-mono">{fmtRpC(c.grossRevenue)}</span> · {String(c.videoTitle || '').slice(0, 34)}
+              </p>
+            ))}
+          </SupplyPanel>
+
+          <SupplyPanel tone="red" title={`Otorisasi habis ≤7 hari · ${soon.length}`}
+            sub={`Minta kreator PERPANJANG dari Ad settings (tanpa kode baru)${expiredCount ? ` · ${expiredCount} sudah EXPIRED — bersihkan via Lepas` : ''}`}
+            action={soon.length > 0 && (
+              <button onClick={() => copyOutreach(soon, 'soon')} className="text-[10px] text-blue-400 hover:text-blue-300">
+                {copied === 'soon' ? '✓ tersalin' : `salin daftar (${soon.length})`}
+              </button>
+            )}>
+            {soon.slice(0, 5).map((it, i) => (
+              <p key={i} className="text-[11px] text-ink-muted truncate">
+                @{it.user_info?.tiktok_name || '?'} · habis <span className="text-red-300 font-mono">{it.auth_info?.auth_end_time?.slice(0, 10)}</span>
+              </p>
+            ))}
+          </SupplyPanel>
+        </div>
+      )}
 
       <div className="bg-surface rounded-2xl border border-line/10 p-4 space-y-3">
         <div className="flex items-start gap-2.5">
