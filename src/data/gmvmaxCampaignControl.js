@@ -165,8 +165,8 @@ export async function requestCreativeExclude({ campaignId, campaignName, videoId
 // tapi Ads Manager memberlakukan minimum lokal yang berbeda per fitur —
 // angka di bawah dikalibrasi dari UI Ads Manager (ubah di sini bila berubah).
 export const SESSION_MIN_BUDGET_IDR = {
-  MAX_DELIVERY: 160000,
-  CREATIVE_BOOST: 160000,
+  MAX_DELIVERY: 100000,   // kalibrasi dari UI Ads Manager (user, 2026-08-26)
+  CREATIVE_BOOST: 50000,  // idem
 }
 const toUtc = (d) => d.toISOString().slice(0, 19).replace('T', ' ')
 
