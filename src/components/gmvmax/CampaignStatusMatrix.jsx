@@ -52,20 +52,48 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     }
     const curM = count(cur), prevM = count(prevRows)
 
-    // PERFORMA per produk dlm campaign — akumulasi seluruh window, SEMUA tipe
-    // creative (video + product card) agar spend/omset utuh.
+    // PERFORMA per produk dlm campaign — video LANGSUNG + product card
+    // DIALOKASIKAN proporsional porsi revenue video per produk (konvensi sama
+    // dgn menu Performa Produk / rollupProductsCard; fallback rata bila tak ada
+    // revenue video). Baris "(tanpa produk)" TIDAK dipisah lagi.
     const mineAll = rows.filter(r => String(r.campaignId) === cid)
-    const perfByPid = new Map()
+    const vidByPid = new Map()
+    const cardAgg = { cost: 0, revenue: 0, orders: 0 }
     for (const r of mineAll) {
-      const pid = r.productId || '(tanpa produk)'
-      if (!perfByPid.has(pid)) perfByPid.set(pid, { cost: 0, revenue: 0, orders: 0 })
-      const e = perfByPid.get(pid)
+      if (r.creativeType === 'Product card' || !r.productId) {
+        cardAgg.cost += r.cost || 0; cardAgg.revenue += r.grossRevenue || 0; cardAgg.orders += r.skuOrders || 0
+        continue
+      }
+      if (!vidByPid.has(r.productId)) vidByPid.set(r.productId, { cost: 0, revenue: 0, orders: 0 })
+      const e = vidByPid.get(r.productId)
       e.cost += r.cost || 0; e.revenue += r.grossRevenue || 0; e.orders += r.skuOrders || 0
     }
+    const vidRevTotal = [...vidByPid.values()].reduce((a, e) => a + e.revenue, 0)
+    const nPid = vidByPid.size
+    const perfByPid = new Map()
+    for (const [pid, v] of vidByPid) {
+      const w = vidRevTotal > 0 ? v.revenue / vidRevTotal : (nPid > 0 ? 1 / nPid : 0)
+      perfByPid.set(pid, {
+        cost: v.cost + cardAgg.cost * w,
+        revenue: v.revenue + cardAgg.revenue * w,
+        orders: v.orders + cardAgg.orders * w,
+      })
+    }
+    // Campaign tanpa produk ber-video sama sekali (mis. LIVE) → card berdiri sendiri.
+    if (nPid === 0 && (cardAgg.cost > 0 || cardAgg.revenue > 0)) {
+      perfByPid.set('(tanpa produk)', { ...cardAgg })
+    }
     const totalSpend = [...perfByPid.values()].reduce((a, e) => a + e.cost, 0)
-    // Pembanding periode: prev.products (sah dipakai per-campaign karena aturan
-    // TikTok 1 produk = maks 1 campaign Product GMV Max).
-    const prevByPid = new Map((prev?.products || []).map(pp => [pp.productId, pp]))
+    // Pembanding periode: prev.products (video) + prev.productsCard (alokasi card)
+    // — apel ke apel dgn angka teralokasi di atas.
+    const prevByPid = new Map()
+    for (const pp of prev?.products || []) prevByPid.set(pp.productId, { cost: pp.cost || 0, revenue: pp.revenue || 0, orders: pp.orders || 0 })
+    for (const pc of prev?.productsCard || []) {
+      const e = prevByPid.get(pc.productId) || { cost: 0, revenue: 0, orders: 0 }
+      e.cost += pc.cost || 0; e.revenue += pc.revenue || 0; e.orders += pc.orders || 0
+      prevByPid.set(pc.productId, e)
+    }
+    for (const [k, e] of prevByPid) prevByPid.set(k, { ...e, roas: e.cost > 0 ? e.revenue / e.cost : null, cpo: e.orders > 0 ? e.cost / e.orders : null })
 
     const revByPid = new Map([...perfByPid.entries()].map(([k, v]) => [k, v.revenue]))
     // Urutan baris SAMA utk kedua tabel: revenue desc (union perf + matriks).
@@ -114,7 +142,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         prev: pp ? { cost: pp.cost, revenue: pp.revenue, orders: pp.orders, roas: pp.roas, cpo: pp.cpo } : null,
       }
     })
-    return { d0, d1, items, insights, totalMateri, cellVideos, perf, totalSpend }
+    return { d0, d1, items, insights, totalMateri, cellVideos, perf, totalSpend, cardCost: cardAgg.cost, cardRevenue: cardAgg.revenue }
   }, [rows, campaign, productNames, cell, prev])
 
   if (!campaign) return null
@@ -193,6 +221,11 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
           </table>
         </div>
 
+        {data.cardCost > 0 && data.perf.length > 0 && !data.perf.some(x => x.pid === '(tanpa produk)') && (
+          <p className="text-[10px] text-ink-faint -mt-3 mb-4">
+            Termasuk alokasi iklan <span className="text-ink-muted">Product card</span> (spend {fmtRpC(data.cardCost)} · omset {fmtRpC(data.cardRevenue)}) — dibagi proporsional porsi revenue video tiap produk (estimasi, konvensi sama dgn menu Performa Produk).
+          </p>
+        )}
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">Matriks status materi</p>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] min-w-[820px]">
