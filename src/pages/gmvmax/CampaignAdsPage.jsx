@@ -22,6 +22,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
   const [err, setErr] = useState(null)
   const [dialog, setDialog] = useState(null) // { action, campaign } | null
   const [queuedMsg, setQueuedMsg] = useState(null)
+  const [tab, setTab] = useState('aktif') // 'aktif' | 'nonaktif'
 
   useEffect(() => {
     let active = true
@@ -78,6 +79,14 @@ export default function CampaignAdsPage({ onOpenUpload }) {
   </div>
 
   const roas = sum.spend > 0 ? sum.revenue / sum.spend : null
+  // Ringkasan periode pembanding (utk delta di kartu atas).
+  const prevSum = (() => {
+    const pc = prev?.campaigns
+    if (!pc || !pc.length) return null
+    const spend = pc.reduce((a, c) => a + (c.total.cost || 0), 0)
+    const revenue = pc.reduce((a, c) => a + (c.total.revenue || 0), 0)
+    return { spend, revenue, roas: spend > 0 ? revenue / spend : null }
+  })()
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
       {periodName && <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· performa periode ini · setting = kondisi terkini</span></p>}
@@ -91,8 +100,10 @@ export default function CampaignAdsPage({ onOpenUpload }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={Megaphone} tone="violet" label="Campaign" value={n(sum.total)} sub={`${n(sum.aktif)} aktif`} />
         <StatCard icon={Wallet} tone="amber" label="Budget harian (aktif)" value={fmtRpC(sum.budget)} sub={`${n(sum.spendingCount)} campaign belanja (spend > 0)`} />
-        <StatCard icon={TrendingUp} tone="green" label="Revenue periode" value={fmtRpC(sum.revenue)} sub={`spend ${fmtRpC(sum.spend)}`} />
-        <StatCard icon={Target} tone="blue" label="ROAS periode" value={fmtRoasX(roas)} />
+        <StatCard icon={TrendingUp} tone="green" label="Revenue periode" value={fmtRpC(sum.revenue)} sub={`spend ${fmtRpC(sum.spend)}`}
+          delta={prevSum && <DeltaBadge cur={sum.revenue} prev={prevSum.revenue} fmt={fmtRpC} />} />
+        <StatCard icon={Target} tone="blue" label="ROAS periode" value={fmtRoasX(roas)}
+          delta={prevSum && roas != null && prevSum.roas != null && <DeltaBadge cur={roas} prev={prevSum.roas} fmt={(v) => v.toFixed(2)} />} />
       </div>
 
       {queuedMsg && (
@@ -101,27 +112,34 @@ export default function CampaignAdsPage({ onOpenUpload }) {
         </p>
       )}
 
-      {/* Dipisah AKTIF vs NONAKTIF supaya yang jalan tak tenggelam di antara yang tidur. */}
+      {/* TAB Aktif / Nonaktif — dipisah total supaya tidak tercampur. */}
       {(() => {
         const open = (action, m) => { setQueuedMsg(null); setDialog({ action, campaign: m.s }) }
         const act = merged.filter(m => isOn(m.s?.operation_status))
         const off = merged.filter(m => !isOn(m.s?.operation_status))
+        const shown = tab === 'aktif' ? act : off
         return (
           <>
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-400">Aktif · {act.length}</p>
-              {act.map(m => <CampaignCard key={m.id} m={m} onAction={(a) => open(a, m)} />)}
-              {act.length === 0 && <p className="text-xs text-ink-faint">Tidak ada campaign aktif.</p>}
+            <div className="flex items-center gap-1.5 border-b border-line/10 pb-0">
+              {[['aktif', `Aktif · ${act.length}`], ['nonaktif', `Nonaktif · ${off.length}`]].map(([id, label]) => (
+                <button key={id} onClick={() => setTab(id)}
+                  className={`px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 -mb-px transition-colors ${tab === id
+                    ? 'text-ink-strong border-blue-500'
+                    : 'text-ink-faint border-transparent hover:text-ink'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint pt-2">Nonaktif · {off.length}</p>
-              {off.map(m => <CampaignCard key={m.id} m={m} onAction={(a) => open(a, m)} />)}
+              {shown.map(m => <CampaignCard key={m.id} m={m} onAction={(a) => open(a, m)} />)}
+              {shown.length === 0 && (
+                <p className="text-sm text-ink-faint text-center py-8">
+                  {merged.length === 0
+                    ? 'Belum ada setting campaign ter-capture. Worker mengambilnya tiap hari — cek lagi setelah run berikutnya.'
+                    : `Tidak ada campaign ${tab}.`}
+                </p>
+              )}
             </div>
-            {merged.length === 0 && (
-              <p className="text-sm text-ink-faint text-center py-10">
-                Belum ada setting campaign ter-capture. Worker mengambilnya tiap hari — cek lagi setelah run berikutnya.
-              </p>
-            )}
           </>
         )
       })()}
