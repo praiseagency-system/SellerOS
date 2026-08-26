@@ -272,6 +272,7 @@ export function GmvMaxProvider({ children }) {
     if (!prevRows || !prevRows.length) return null
     return {
       name: prevLabel,
+      campaigns: rollupCampaigns(prevRows),
       videos: rollupVideos(prevRows, thresholds),
       creators: rollupCreators(prevRows, thresholds),
       products: rollupProducts(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),

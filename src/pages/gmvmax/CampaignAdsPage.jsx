@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Megaphone, TrendingUp, Wallet, Target, Info, History, Loader2 } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { EmptyState, StatCard, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
+import { EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
 import { buildChangeLog } from '../../utils/gmvmaxCampaignDiff'
 import CampaignActionDialog from '../../components/gmvmax/CampaignActionDialog'
@@ -15,7 +15,7 @@ const n = (v) => (v || 0).toLocaleString('id-ID')
 const isOn = (s) => s === 'ENABLE'
 
 export default function CampaignAdsPage({ onOpenUpload }) {
-  const { campaigns, hasData, periodName } = useGmvMax()
+  const { campaigns, hasData, periodName, prev } = useGmvMax()
   const [settings, setSettings] = useState([])
   const [changes, setChanges] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,22 +34,25 @@ export default function CampaignAdsPage({ onOpenUpload }) {
     return () => { active = false }
   }, [])
 
-  // Gabung setting (by campaign_id) + performa (by campaignId).
+  // Gabung setting (by campaign_id) + performa (by campaignId) + pembanding
+  // periode sebelumnya (utk delta naik/turun ala dashboard TikTok).
   const merged = useMemo(() => {
     const perf = new Map((campaigns || []).filter(c => c.campaignId).map(c => [c.campaignId, c]))
+    const prevPerf = new Map((prev?.campaigns || []).filter(c => c.campaignId).map(c => [c.campaignId, c]))
     const out = settings.map(s => ({
       id: s.campaign_id, name: s.campaign_name || s.campaign_id, s,
       p: perf.get(s.campaign_id) || null,
+      pp: prevPerf.get(s.campaign_id) || null,
     }))
     // Campaign yang punya belanja tapi belum ter-capture settingnya.
     for (const c of campaigns || []) {
       if (c.campaignId && !settings.some(s => s.campaign_id === c.campaignId)) {
-        out.push({ id: c.campaignId, name: c.campaign, s: null, p: c })
+        out.push({ id: c.campaignId, name: c.campaign, s: null, p: c, pp: prevPerf.get(c.campaignId) || null })
       }
     }
     return out.sort((a, b) => (b.p?.total.revenue || 0) - (a.p?.total.revenue || 0)
       || (Number(b.s?.budget) || 0) - (Number(a.s?.budget) || 0))
-  }, [settings, campaigns])
+  }, [settings, campaigns, prev])
 
   const sum = useMemo(() => {
     const act = merged.filter(m => isOn(m.s?.operation_status))
@@ -98,15 +101,30 @@ export default function CampaignAdsPage({ onOpenUpload }) {
         </p>
       )}
 
-      <div className="space-y-3">
-        {merged.map(m => <CampaignCard key={m.id} m={m}
-          onAction={(action) => { setQueuedMsg(null); setDialog({ action, campaign: m.s }) }} />)}
-        {merged.length === 0 && (
-          <p className="text-sm text-ink-faint text-center py-10">
-            Belum ada setting campaign ter-capture. Worker mengambilnya tiap hari — cek lagi setelah run berikutnya.
-          </p>
-        )}
-      </div>
+      {/* Dipisah AKTIF vs NONAKTIF supaya yang jalan tak tenggelam di antara yang tidur. */}
+      {(() => {
+        const open = (action, m) => { setQueuedMsg(null); setDialog({ action, campaign: m.s }) }
+        const act = merged.filter(m => isOn(m.s?.operation_status))
+        const off = merged.filter(m => !isOn(m.s?.operation_status))
+        return (
+          <>
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-400">Aktif · {act.length}</p>
+              {act.map(m => <CampaignCard key={m.id} m={m} onAction={(a) => open(a, m)} />)}
+              {act.length === 0 && <p className="text-xs text-ink-faint">Tidak ada campaign aktif.</p>}
+            </div>
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint pt-2">Nonaktif · {off.length}</p>
+              {off.map(m => <CampaignCard key={m.id} m={m} onAction={(a) => open(a, m)} />)}
+            </div>
+            {merged.length === 0 && (
+              <p className="text-sm text-ink-faint text-center py-10">
+                Belum ada setting campaign ter-capture. Worker mengambilnya tiap hari — cek lagi setelah run berikutnya.
+              </p>
+            )}
+          </>
+        )
+      })()}
 
       <ChangeLog changes={changes} />
 
@@ -120,8 +138,9 @@ export default function CampaignAdsPage({ onOpenUpload }) {
 }
 
 function CampaignCard({ m, onAction }) {
-  const { s, p, name } = m
+  const { s, p, pp, name } = m
   const on = isOn(s?.operation_status)
+  const pv = pp?.total || null // performa periode pembanding (delta naik/turun)
   const ab = s?.auto_budget || {}
   const budget = Number(s?.budget) || 0
   const bid = s?.roas_bid != null ? Number(s.roas_bid) : null
@@ -167,12 +186,18 @@ function CampaignCard({ m, onAction }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         <Cell label="Budget harian" value={s ? fmtRp(budget) : '—'} />
         <Cell label="Target ROAS (bid)" value={bid != null ? `${bid}x` : '—'} />
         <Cell label="ROAS aktual" value={fmtRoasX(actual)}
-          tone={gap == null ? 'ink' : gap >= 0 ? 'green' : 'red'} />
-        <Cell label="Spend / Revenue" value={p ? `${fmtRpC(p.total.cost)} / ${fmtRpC(p.total.revenue)}` : 'tanpa belanja'} />
+          tone={gap == null ? 'ink' : gap >= 0 ? 'green' : 'red'}
+          delta={pv && <DeltaBadge cur={actual} prev={pv.roas} fmt={(v) => v.toFixed(2)} />} />
+        <Cell label="Spend / Revenue" value={p ? `${fmtRpC(p.total.cost)} / ${fmtRpC(p.total.revenue)}` : 'tanpa belanja'}
+          delta={pv && p && <DeltaBadge cur={p.total.revenue} prev={pv.revenue} fmt={fmtRpC} />} />
+        <Cell label="Orders" value={p ? n(p.total.orders) : '—'}
+          delta={pv && p && <DeltaBadge cur={p.total.orders} prev={pv.orders} />} />
+        <Cell label="Cost / Order" value={p?.total.cpo != null ? fmtRp(Math.round(p.total.cpo)) : '—'}
+          delta={pv?.cpo != null && p?.total.cpo != null && <DeltaBadge cur={p.total.cpo} prev={pv.cpo} fmt={(v) => fmtRp(Math.round(v))} goodDown />} />
       </div>
 
       {headroom != null && (
@@ -201,12 +226,33 @@ function CampaignCard({ m, onAction }) {
 }
 
 const TONE = { green: 'text-emerald-400', red: 'text-red-400', ink: 'text-ink-strong' }
-function Cell({ label, value, tone = 'ink' }) {
+function Cell({ label, value, tone = 'ink', delta = null }) {
   return (
     <div className="min-w-0">
       <p className="text-[10px] text-ink-faint uppercase tracking-wide truncate">{label}</p>
       <p className={`text-sm font-semibold tabular-nums truncate ${TONE[tone]}`}>{value}</p>
+      {delta && <p className="text-[10px] leading-tight mt-0.5">{delta} <span className="text-ink-faint">vs periode sblm</span></p>}
     </div>
+  )
+}
+
+// Badge delta untuk perubahan numerik: arah + selisih + persen.
+// Naik budget = netral-biru (keputusan scale); turun = amber. Untuk Target ROAS
+// dibalik: turun bid = melonggarkan (biru), naik = mengetatkan (amber).
+function DeltaChange({ c }) {
+  const a = Number(c.from), b = Number(c.to)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a === b || a === 0) return null
+  const diff = b - a
+  const pct = (diff / Math.abs(a)) * 100
+  const up = diff > 0
+  const tone = c.field === 'roas_bid'
+    ? (up ? 'bg-amber-500/15 text-amber-400' : 'bg-blue-500/15 text-blue-400')
+    : (up ? 'bg-blue-500/15 text-blue-400' : 'bg-amber-500/15 text-amber-400')
+  const diffTxt = c.money ? fmtRp(Math.abs(Math.round(diff))) : String(Math.abs(Math.round(diff * 10) / 10))
+  return (
+    <span className={`ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums ${tone}`}>
+      {up ? '▲' : '▼'} {diffTxt} ({pct > 0 ? '+' : ''}{pct.toFixed(pct % 1 === 0 ? 0 : 1)}%)
+    </span>
   )
 }
 
@@ -234,6 +280,7 @@ function ChangeLog({ changes }) {
                   {c.label} <span className="text-ink-faint">{fmtVal(c.from, c.money)}</span>
                   <span className="text-ink-faint"> → </span>
                   <span className="font-semibold text-ink-strong">{fmtVal(c.to, c.money)}</span>
+                  <DeltaChange c={c} />
                   <span className="text-ink-faint"> · {c.campaign_name}</span>
                 </p>
                 <p className="text-[10px] text-ink-faint">{c.date}</p>
