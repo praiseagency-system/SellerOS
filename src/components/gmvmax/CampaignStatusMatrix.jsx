@@ -25,7 +25,7 @@ function Delta({ d }) {
   return <span className={`text-[10px] font-semibold ${up ? 'text-emerald-400' : 'text-red-400'}`}> {up ? '▲' : '▼'}{Math.abs(d)}</span>
 }
 
-export default function CampaignStatusMatrix({ campaign, onClose }) {
+export default function CampaignStatusMatrix({ campaign, onClose, inline = false }) {
   // campaign: { campaign_id, campaign_name }
   const { rows, productNames } = useGmvMax()
   const [cell, setCell] = useState(null) // { productId, status } → daftar video
@@ -89,10 +89,11 @@ export default function CampaignStatusMatrix({ campaign, onClose }) {
 
   if (!campaign) return null
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-auto" onClick={onClose}>
+  const content = (
       <div onClick={(e) => e.stopPropagation()}
-        className="glass-modal w-full max-w-5xl rounded-2xl border border-line/15 shadow-2xl p-5 my-6">
+        className={inline
+          ? 'bg-surface w-full rounded-2xl border border-line/10 shadow-sm p-5'
+          : 'glass-modal w-full max-w-5xl rounded-2xl border border-line/15 shadow-2xl p-5 my-6'}>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
             <button onClick={onClose} className="flex items-center gap-1 text-[11px] text-ink-faint hover:text-ink mb-1">
@@ -173,6 +174,12 @@ export default function CampaignStatusMatrix({ campaign, onClose }) {
           </div>
         )}
       </div>
+  )
+
+  if (inline) return content
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-auto" onClick={onClose}>
+      {content}
     </div>,
     document.body
   )
