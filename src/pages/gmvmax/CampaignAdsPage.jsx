@@ -10,12 +10,13 @@ import { EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../..
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
 import { buildChangeLog } from '../../utils/gmvmaxCampaignDiff'
 import CampaignActionDialog from '../../components/gmvmax/CampaignActionDialog'
+import CampaignProductsDialog from '../../components/gmvmax/CampaignProductsDialog'
 
 const n = (v) => (v || 0).toLocaleString('id-ID')
 const isOn = (s) => s === 'ENABLE'
 
 export default function CampaignAdsPage({ onOpenUpload }) {
-  const { campaigns, hasData, periodName, prev } = useGmvMax()
+  const { campaigns, hasData, periodName, prev, productNames } = useGmvMax()
   const [settings, setSettings] = useState([])
   const [changes, setChanges] = useState([])
   const [loading, setLoading] = useState(true)
@@ -146,10 +147,38 @@ export default function CampaignAdsPage({ onOpenUpload }) {
 
       <ChangeLog changes={changes} />
 
-      {dialog && (
+      {dialog && dialog.action !== 'PRODUCTS' && (
         <CampaignActionDialog action={dialog.action} campaign={dialog.campaign}
           onClose={() => setDialog(null)}
           onQueued={() => setQueuedMsg(`Aksi diajukan untuk ${dialog.campaign?.campaign_name || 'campaign'}`)} />
+      )}
+      {dialog && dialog.action === 'PRODUCTS' && (
+        <CampaignProductsDialog campaign={dialog.campaign} productNames={productNames}
+          onClose={() => setDialog(null)}
+          onQueued={() => setQueuedMsg(`Perubahan produk diajukan untuk ${dialog.campaign?.campaign_name || 'campaign'}`)} />
+      )}
+    </div>
+  )
+}
+
+// Chip produk dalam campaign — nama dari master (menu Produk); fallback SPU id.
+function ProductChips({ ids }) {
+  const { productNames } = useGmvMax()
+  const [showAll, setShowAll] = useState(false)
+  const shown = showAll ? ids : ids.slice(0, 6)
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mb-3">
+      <span className="text-[10px] text-ink-faint uppercase tracking-wide">Produk · {ids.length}</span>
+      {shown.map(id => (
+        <span key={id} title={String(id)}
+          className="px-1.5 py-0.5 rounded bg-fill/8 border border-line/10 text-[10px] text-ink-muted truncate max-w-[180px]">
+          {productNames[id] || `…${String(id).slice(-6)}`}
+        </span>
+      ))}
+      {ids.length > 6 && (
+        <button onClick={() => setShowAll(v => !v)} className="text-[10px] text-blue-400 hover:text-blue-300">
+          {showAll ? 'sembunyikan' : `+${ids.length - 6} lagi`}
+        </button>
       )}
     </div>
   )
@@ -190,6 +219,10 @@ function CampaignCard({ m, onAction }) {
             className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
             Ubah ROI
           </button>
+          <button onClick={() => onAction('PRODUCTS')}
+            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
+            Kelola produk
+          </button>
           {on ? (
             <button onClick={() => onAction('DISABLE')}
               className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 transition-colors">
@@ -202,6 +235,11 @@ function CampaignCard({ m, onAction }) {
             </button>
           )}
         </div>
+      )}
+
+      {/* Produk dalam campaign (item_group_ids dari capture harian) */}
+      {Array.isArray(s?.item_group_ids) && s.item_group_ids.length > 0 && (
+        <ProductChips ids={s.item_group_ids} />
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">

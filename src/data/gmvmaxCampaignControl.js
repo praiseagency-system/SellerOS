@@ -77,6 +77,47 @@ export async function requestRoiChange({ campaignId, campaignName, currentRoi, n
   })
 }
 
+// Katalog produk eligible GMV Max toko ini (utk dialog kelola produk).
+// gmv_max_ads_status: UNOCCUPIED = bisa ditambah; OCCUPIED = dipakai campaign lain.
+export async function fetchStoreProducts() {
+  const conn = await requireConn()
+  if (!conn.store_id) throw new Error('store_id koneksi kosong — cek Pengaturan → Integrasi.')
+  const r = await post('/api/gmvmax/tt-video', {
+    access_token: conn.access_token, advertiser_id: conn.advertiser_id,
+    op: 'store_products', store_id: conn.store_id,
+  })
+  return r.products || []
+}
+
+// Ajukan ubah daftar produk campaign. API menerima daftar LENGKAP baru —
+// delta (± produk) disimpan di approval supaya kartunya bisa menampilkan
+// perubahan, bukan 2 daftar panjang.
+export async function requestProductsChange({ campaignId, campaignName, currentIds = [], newIds = [], addedNames = [], removedNames = [], reason = null }) {
+  const cur = [...new Set(currentIds.map(String))]
+  const next = [...new Set(newIds.map(String))]
+  if (next.length === 0) throw new Error('Minimal 1 produk — untuk mematikan campaign gunakan Pause.')
+  if (next.length > 400) throw new Error('Maksimal 400 produk per campaign (aturan API).')
+  const same = cur.length === next.length && [...cur].sort().every((v, i) => v === [...next].sort()[i])
+  if (same) throw new Error('Tidak ada perubahan produk.')
+  const settings = await getExecutionSettings()
+  await assertCooldown(campaignId, settings)
+  const removed = cur.filter(id => !next.includes(id))
+  return createApproval({
+    actionType: 'PRODUCTS_UPDATE',
+    target: { campaign_id: String(campaignId), campaign_name: campaignName },
+    currentValue: { produk: cur.length },
+    proposedValue: { produk: next.length, item_group_ids: next },
+    reason,
+    evidence: {
+      ditambah: addedNames.length ? addedNames : next.filter(id => !cur.includes(id)),
+      dicabut: removedNames.length ? removedNames : removed,
+    },
+    source: 'MANUAL',
+    // Mencabut produk menghentikan iklan produk itu di campaign — risiko lebih tinggi.
+    risk: removed.length ? 'MEDIUM' : 'LOW',
+  })
+}
+
 // Ajukan pause/aktifkan. DELETE sengaja TIDAK pernah tersedia.
 export async function requestStatusChange({ campaignId, campaignName, currentStatus, newStatus, reason = null }) {
   if (!['ENABLE', 'DISABLE'].includes(newStatus)) throw new Error('Status hanya boleh ENABLE/DISABLE.')
@@ -117,6 +158,7 @@ export async function executeCampaignAction(approvalRow) {
   if (approvalRow.action_type === 'BUDGET_UPDATE') params.budget = approvalRow.proposed_value?.budget
   if (approvalRow.action_type === 'ROI_UPDATE') params.roas_bid = approvalRow.proposed_value?.roas_bid
   if (approvalRow.action_type === 'STATUS_UPDATE') params.operation_status = approvalRow.proposed_value?.operation_status
+  if (approvalRow.action_type === 'PRODUCTS_UPDATE') params.item_group_ids = approvalRow.proposed_value?.item_group_ids
 
   let result = null, failMsg = null
   try {

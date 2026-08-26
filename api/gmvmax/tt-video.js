@@ -77,6 +77,34 @@ export default async function handler(req, res) {
       return
     }
 
+    // Katalog produk eligible GMV Max (utk kelola produk campaign). Paginasi
+    // penuh; bc_id di-resolve dari store_list (tak tersimpan di koneksi).
+    if (op === 'store_products') {
+      const storeId = String(body.store_id || '')
+      if (!storeId) { res.status(400).json({ error: 'invalid_request', error_description: 'store_id wajib untuk op store_products' }); return }
+      let bcId = null
+      const sl = await callBusinessTool(access_token, 'gmv_max_store_list_get', { advertiser_id: String(advertiser_id) })
+      if (!sl.error) {
+        const store = (sl.data?.store_list || []).find(s => String(s.store_id) === storeId)
+        bcId = store?.store_authorized_bc_id || null
+      }
+      const products = []
+      for (let page = 1; page <= 10; page++) {
+        const r = await callBusinessTool(access_token, 'store_product_get', {
+          advertiser_id: String(advertiser_id), store_id: storeId,
+          ...(bcId ? { bc_id: bcId } : {}),
+          filtering: { ad_creation_eligible: 'GMV_MAX' }, page, page_size: 100,
+        })
+        if (r.error) { res.status(r.http).json(r); return }
+        const items = r.data?.store_products || []
+        products.push(...items)
+        const totalPage = r.data?.page_info?.total_page ?? 1
+        if (page >= totalPage || items.length === 0) break
+      }
+      res.status(200).json({ products })
+      return
+    }
+
     res.status(400).json({ error: 'invalid_request', error_description: `op tak dikenal: ${op}` })
   } catch (e) {
     res.status(502).json({ error: 'proxy_error', error_description: String(e?.message || e) })

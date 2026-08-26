@@ -9,10 +9,10 @@
 import { callBusinessTool, sanitizeAuthCode } from './tt-video.js'
 
 const ALLOWED = new Set([
-  'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE',
+  'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'PRODUCTS_UPDATE',
   'STATUS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE',
 ])
-const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE']) // E1 + E3
+const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE']) // E1 + E3
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
@@ -25,6 +25,35 @@ export default async function handler(req, res) {
     if (!approval_id) { res.status(400).json({ error: 'approval_required', error_description: 'Eksekusi hanya menerima aksi ber-approval (approval_id wajib).' }); return }
     if (!ENABLED.has(action_type)) {
       res.status(501).json({ error: 'not_enabled', error_description: `Aksi ${action_type} belum diaktifkan (aktivasi bertahap; kini baru SPARK_BIND).` })
+      return
+    }
+
+    // ── E3.5: PRODUCTS_UPDATE (kelola produk campaign) ──────────────────────
+    if (action_type === 'PRODUCTS_UPDATE') {
+      const advId = String(params?.advertiser_id || '')
+      const campaignId = String(params?.campaign_id || '')
+      const ids = Array.isArray(params?.item_group_ids) ? params.item_group_ids.map(String) : null
+      if (!advId || !campaignId || !ids) { res.status(400).json({ error: 'invalid_request', error_description: 'advertiser_id, campaign_id & item_group_ids[] wajib' }); return }
+      if (ids.length === 0) { res.status(400).json({ error: 'invalid_request', error_description: 'Campaign CUSTOMIZED_PRODUCTS minimal 1 produk — untuk mematikan campaign pakai Pause, bukan mengosongkan produk.' }); return }
+      if (ids.length > 400) { res.status(400).json({ error: 'invalid_request', error_description: 'Maksimal 400 produk per campaign (aturan API).' }); return }
+
+      const applied = await callBusinessTool(access_token, 'campaign_gmv_max_update', {
+        advertiser_id: advId, campaign_id: campaignId, item_group_ids: ids,
+      })
+      if (applied.error) { res.status(applied.http).json({ ...applied, step: 'apply' }); return }
+
+      const info = await callBusinessTool(access_token, 'campaign_gmv_max_info_get', { advertiser_id: advId, campaign_id: campaignId })
+      let verified = null, observed = null
+      if (!info.error) {
+        observed = (info.data?.item_group_ids || []).map(String).sort()
+        const want = [...ids].sort()
+        verified = observed.length === want.length && observed.every((v, i) => v === want[i])
+      }
+      res.status(200).json({
+        executed: true, action_type, approval_id,
+        apply_result: applied.data ?? {},
+        read_back: { observed_count: observed ? observed.length : null, verified, info_error: info.error ? info.error_description : null },
+      })
       return
     }
 

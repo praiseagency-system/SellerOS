@@ -57,6 +57,7 @@ export default function ApprovalBell() {
       const EXEC = {
         SPARK_BIND: executeSparkBind, SPARK_UNBIND: executeSparkUnbind,
         BUDGET_UPDATE: executeCampaignAction, ROI_UPDATE: executeCampaignAction, STATUS_UPDATE: executeCampaignAction,
+        PRODUCTS_UPDATE: executeCampaignAction,
       }
       if (decision === 'APPROVED' && EXEC[row.action_type]) {
         setNotice('Menerapkan ke TikTok…')
@@ -121,6 +122,12 @@ export default function ApprovalBell() {
                     </p>
                   )}
                   {r.reason && <p className="text-[11px] text-ink-muted mt-1 leading-relaxed">Kenapa: {r.reason}</p>}
+                  {(r.evidence?.ditambah?.length > 0 || r.evidence?.dicabut?.length > 0) && (
+                    <div className="text-[11px] mt-1 space-y-0.5">
+                      {r.evidence.ditambah?.length > 0 && <p className="text-green-300 truncate">＋ {r.evidence.ditambah.join(', ')}</p>}
+                      {r.evidence.dicabut?.length > 0 && <p className="text-red-300 truncate">− {r.evidence.dicabut.join(', ')}</p>}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-2.5">
                     <button disabled={busyId === r.id || killed} onClick={() => decide(r.id, 'APPROVED')}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40">

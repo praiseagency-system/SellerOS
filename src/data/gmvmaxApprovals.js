@@ -14,6 +14,7 @@ export const ACTION_LABELS = {
   BUDGET_UPDATE: 'Ubah budget harian',
   ROI_UPDATE: 'Ubah Target ROI',
   STATUS_UPDATE: 'Ubah status campaign',
+  PRODUCTS_UPDATE: 'Ubah produk campaign',
   CREATIVE_EXCLUDE: 'Keluarkan video dari rotasi',
   SESSION_CREATE: 'Mulai sesi boost',
   SESSION_DELETE: 'Hentikan sesi boost',
