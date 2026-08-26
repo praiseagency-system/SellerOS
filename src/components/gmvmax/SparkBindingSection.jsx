@@ -2,7 +2,7 @@
 // Alur aman: tempel kode → PRATINJAU (tt_video_info_get, read-only; kamu lihat
 // video mana yang akan diikat) → Ajukan (masuk antrean 🔔) → Setujui → apply +
 // read-back. Tabel bawah = sumber kebenaran ikatan (tt_video_list_get).
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react'
 import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '../../data/gmvmaxSpark'
 import { listImports, loadCreatives } from '../../data/gmvmaxImports'
@@ -47,12 +47,13 @@ export default function SparkBindingSection() {
   const [creatives, setCreatives] = useState([]) // baris Video snapshot terbaru (panel E2)
   const [snapDate, setSnapDate] = useState(null)
   const [copied, setCopied] = useState(null)
+  const [loadedAt, setLoadedAt] = useState(0) // timestamp muat daftar (utk hitung sisa hari otorisasi)
 
   const loadList = useCallback(async () => {
     setLoadingList(true); setListErr(null)
     try {
       const [spark, imports] = await Promise.all([fetchSparkList({ page: 1 }), listImports()])
-      setList(spark)
+      setList(spark); setLoadedAt(Date.now())
       const latest = imports?.[0]
       if (latest) {
         setSnapDate(latest.snapshot_date || null)
@@ -132,8 +133,6 @@ export default function SparkBindingSection() {
     .sort((a, b) => (b.grossRevenue || 0) - (a.grossRevenue || 0))
   // KEDALUWARSA: otorisasi aktif yang habis ≤7 hari (minta kreator perpanjang
   // dari Ad settings — TANPA kode baru) + hitungan EXPIRED utk bersih-bersih.
-  // "now" diambil saat daftar dimuat (bukan saat render — aturan komponen murni).
-  const loadedAt = useMemo(() => Date.now(), [list])
   const soon = rows.filter(it => {
     if (it.auth_info?.ad_auth_status !== 'AUTHORIZED' || !it.auth_info?.auth_end_time) return false
     const end = new Date(it.auth_info.auth_end_time.replace(' ', 'T'))
