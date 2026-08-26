@@ -9,6 +9,7 @@ import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
 import { requestCreativeExclude, requestBoostSession, requestSessionStop, requestSessionUpdate, fetchSessions, SESSION_MIN_BUDGET_IDR } from '../../data/gmvmaxCampaignControl'
+import { blankAgg, addInto, finalize } from '../../utils/gmvmaxRollup'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
 const COLS = [
@@ -19,6 +20,25 @@ const COLS = [
   { key: 'AUTHORIZATION_NEEDED', label: 'Butuh izin', code: 'AUTH_NEEDED', tone: 'text-amber-400' },
   { key: 'EXCLUDED', label: 'Excluded', code: 'EXCLUDED', tone: 'text-ink-faint' },
 ]
+
+const pct01 = (v, d = 1) => (v == null ? '—' : (v * 100).toFixed(d) + '%')   // pecahan 0–1
+const pctRaw = (v, d = 0) => (v == null ? '—' : v.toFixed(d) + '%')          // persen 0–100
+
+// Bar retensi 25/50/75/100% — pola sama dgn ProductDetailModal.
+function RetentionBars({ funnel }) {
+  const vals = ['vr25', 'vr50', 'vr75', 'vr100'].map(k => funnel?.[k])
+  if (vals.every(v => v == null)) return <span className="text-ink-faint">—</span>
+  const max = Math.max(...vals.map(v => v ?? 0), 0.0001)
+  const tip = `25% ${pctRaw(vals[0], 1)} · 50% ${pctRaw(vals[1], 1)} · 75% ${pctRaw(vals[2], 1)} · 100% ${pctRaw(vals[3], 1)}`
+  return (
+    <span className="inline-flex items-end gap-[2px] h-3.5 align-middle" title={tip}>
+      {vals.map((v, i) => (
+        <i key={i} className="inline-block w-1 rounded-[1px] bg-blue-500/85"
+          style={{ height: `${Math.max(2, Math.round(((v ?? 0) / max) * 14))}px` }} />
+      ))}
+    </span>
+  )
+}
 
 function Delta({ d }) {
   if (!d) return <span className="text-ink-faint text-[10px]"> →</span>
@@ -212,8 +232,19 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     }
 
     const totalMateri = cur.length
+    // Metrik per video = AKUMULASI seluruh periode (sebanding dgn Performa
+    // Produk), memakai helper rollup yang sama (view-rate rata-rata tertimbang
+    // impresi). Status & delta tetap dari snapshot terakhir.
+    const periodByVideo = new Map()
+    for (const r of mine) {
+      if (!periodByVideo.has(r.videoId)) periodByVideo.set(r.videoId, blankAgg())
+      addInto(periodByVideo.get(r.videoId), r)
+    }
     const cellVideos = cell
-      ? cur.filter(r => (r.productId || '(tanpa produk)') === cell.productId && r.status === cell.status)
+      ? cur
+        .filter(r => (r.productId || '(tanpa produk)') === cell.productId && r.status === cell.status)
+        .map(r => ({ ...r, m: finalize(periodByVideo.get(r.videoId) || blankAgg()) }))
+        .sort((a, b) => (b.m.revenue || 0) - (a.m.revenue || 0))
       : []
     const perf = pids.map(pid => {
       const e = perfByPid.get(pid) || { cost: 0, revenue: 0, orders: 0 }
@@ -449,37 +480,65 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               </p>
               <button onClick={() => setCell(null)} className="text-ink-faint hover:text-ink"><X className="w-3.5 h-3.5" /></button>
             </div>
-            <div className="max-h-56 overflow-auto space-y-1">
-              {data.cellVideos.map(v => (
-                <div key={v.videoId} className="flex items-center gap-2">
-                  <a href={tiktokVideoUrl(v.videoId, v.tiktokAccount) || '#'} target="_blank" rel="noreferrer"
-                    className="flex-1 min-w-0 text-[11px] text-ink-muted hover:text-ink truncate">
-                    @{v.tiktokAccount || '?'} · {String(v.videoTitle || v.videoId).slice(0, 80)}
-                    {v.grossRevenue > 0 && <span className="text-emerald-400 font-mono"> · {fmtRpC(v.grossRevenue)}</span>}
-                    {v.cost > 0 && <span className="text-ink-faint font-mono"> · spend {fmtRpC(v.cost)}</span>}
-                  </a>
-                  {['IN_QUEUE', 'NOT_DELIVERING'].includes(cell.status) && cell.productId !== '(tanpa produk)' && (
-                    <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST)); setSessMsg(null) }}
-                      title={campaignOn ? 'Creative Boost — beli data uji utk video ini (via 🔔)' : 'Campaign harus ENABLE'}
-                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 flex-shrink-0">
-                      Boost
-                    </button>
-                  )}
-                  {cell.status === 'EXCLUDED' ? (
-                    <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'ADD')}
-                      title={campaignOn ? 'Pulihkan ke rotasi (via 🔔)' : 'Campaign harus ENABLE'}
-                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 flex-shrink-0">
-                      Pulihkan
-                    </button>
-                  ) : (
-                    <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'REMOVE')}
-                      title={campaignOn ? 'Keluarkan dari rotasi campaign ini (via 🔔)' : 'Campaign harus ENABLE'}
-                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 disabled:opacity-40 flex-shrink-0">
-                      Exclude
-                    </button>
-                  )}
-                </div>
-              ))}
+            <div className="max-h-[420px] overflow-auto">
+              <table className="w-full text-[11.5px]">
+                <thead className="sticky top-0 bg-surface2 z-10">
+                  <tr className="text-left border-b border-line/10">
+                    <th className="py-1.5 pr-2 text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">Creative</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">Cost</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">Revenue</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">ROAS</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">Ord</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">CTR</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">CVR</th>
+                    <th className="py-1.5 px-2 text-right text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">Hook 2s</th>
+                    <th className="py-1.5 px-2 text-center text-[9.5px] uppercase tracking-widest text-ink-faint font-semibold">Retensi</th>
+                    <th className="py-1.5 pl-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.cellVideos.map(v => (
+                    <tr key={v.videoId} className="border-b border-line/5">
+                      <td className="py-1.5 pr-2 min-w-[240px] max-w-[340px]">
+                        <a href={tiktokVideoUrl(v.videoId, v.tiktokAccount) || '#'} target="_blank" rel="noreferrer"
+                          className="block text-ink hover:text-ink-strong truncate">{String(v.videoTitle || v.videoId).slice(0, 70)}</a>
+                        <span className="text-[9.5px] text-ink-faint">@{v.tiktokAccount || '?'} · {v.videoId}</span>
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-ink-muted">{v.m.cost > 0 ? fmtRpC(v.m.cost) : '—'}</td>
+                      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-ink">{v.m.revenue > 0 ? fmtRpC(v.m.revenue) : '—'}</td>
+                      <td className={`py-1.5 px-2 text-right font-mono tabular-nums font-semibold ${v.m.roas == null ? 'text-ink-faint' : v.m.roas >= 4 ? 'text-emerald-400' : v.m.roas >= 1 ? 'text-amber-400' : 'text-red-400'}`}>{fmtRoasX(v.m.roas)}</td>
+                      <td className="py-1.5 px-2 text-right font-mono tabular-nums">{v.m.orders || 0}</td>
+                      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-ink-muted">{pct01(v.m.ctr)}</td>
+                      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-ink-muted">{pct01(v.m.cvr)}</td>
+                      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-ink-muted">{pctRaw(v.m.funnel?.vr2s)}</td>
+                      <td className="py-1.5 px-2 text-center"><RetentionBars funnel={v.m.funnel} /></td>
+                      <td className="py-1.5 pl-2 text-right whitespace-nowrap">
+                        {['IN_QUEUE', 'NOT_DELIVERING'].includes(cell.status) && cell.productId !== '(tanpa produk)' && (
+                          <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST)); setSessMsg(null) }}
+                            title={campaignOn ? 'Creative Boost — beli data uji utk video ini (via 🔔)' : 'Campaign harus ENABLE'}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 mr-1">
+                            Boost
+                          </button>
+                        )}
+                        {cell.status === 'EXCLUDED' ? (
+                          <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'ADD')}
+                            title={campaignOn ? 'Pulihkan ke rotasi (via 🔔)' : 'Campaign harus ENABLE'}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40">
+                            Pulihkan
+                          </button>
+                        ) : (
+                          <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'REMOVE')}
+                            title={campaignOn ? 'Keluarkan dari rotasi campaign ini (via 🔔)' : 'Campaign harus ENABLE'}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 disabled:opacity-40">
+                            Exclude
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-[9.5px] text-ink-faint mt-1.5">Metrik = akumulasi periode terpilih (sebanding menu Performa Produk); status &amp; delta dari snapshot terakhir. Urut revenue.</p>
             </div>
             {exq && <p className={`mt-2 text-[11px] ${exq.startsWith('Gagal') ? 'text-red-300' : 'text-green-300'}`}>{exq}</p>}
 

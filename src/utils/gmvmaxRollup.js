@@ -31,11 +31,11 @@ function tallyDelivery(vidStatus) {
   return c
 }
 
-function blankAgg() {
+export function blankAgg() {
   return { cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
            vr2s: 0, vr6s: 0, vr25: 0, vr50: 0, vr75: 0, vr100: 0, _n: 0 }
 }
-function addInto(a, r) {
+export function addInto(a, r) {
   a.cost += r.cost ?? 0
   a.revenue += r.grossRevenue ?? 0
   a.orders += r.skuOrders ?? 0
@@ -49,7 +49,7 @@ function addInto(a, r) {
   a._n += 1
   a._w = (a._w ?? 0) + (r.impressions != null ? w : 0)
 }
-function finalize(a) {
+export function finalize(a) {
   const roas = a.cost > 0 ? a.revenue / a.cost : null
   const ctr = a.impressions > 0 ? a.clicks / a.impressions : null
   const cvr = a.clicks > 0 ? a.orders / a.clicks : null
