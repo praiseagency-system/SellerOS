@@ -75,7 +75,9 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
       const c = curM.get(pid) || { total: 0 }
       const p = prevM.get(pid) || { total: 0 }
       return {
-        pid, name: productNames[pid] || (pid === '(tanpa produk)' ? pid : `…${String(pid).slice(-8)}`),
+        pid,
+        name: pid === '(tanpa produk)' ? '🛒 Product card — iklan kartu produk (gabungan)' : (productNames[pid] || `…${String(pid).slice(-8)}`),
+        isCard: pid === '(tanpa produk)',
         total: c.total, dTotal: c.total - (p.total || 0),
         cols: COLS.map(col => ({ key: col.key, n: c[col.key] || 0, d: (c[col.key] || 0) - (p[col.key] || 0) })),
         revenue: revByPid.get(pid) || 0,
@@ -102,7 +104,9 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
       const e = perfByPid.get(pid) || { cost: 0, revenue: 0, orders: 0 }
       const pp = prevByPid.get(pid) || null
       return {
-        pid, name: productNames[pid] || (pid === '(tanpa produk)' ? pid : `…${String(pid).slice(-8)}`),
+        pid,
+        name: pid === '(tanpa produk)' ? '🛒 Product card — iklan kartu produk (gabungan)' : (productNames[pid] || `…${String(pid).slice(-8)}`),
+        isCard: pid === '(tanpa produk)',
         cost: e.cost, revenue: e.revenue, orders: e.orders,
         roas: e.cost > 0 ? e.revenue / e.cost : null,
         cpo: e.orders > 0 ? e.cost / e.orders : null,
@@ -207,8 +211,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
             <tbody>
               {data.items.map(it => (
                 <tr key={it.pid} className="border-t border-line/8">
-                  <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[240px] truncate" title={String(it.pid)}>{it.name}</td>
-                  <td className="py-2.5 px-2 text-right font-mono tabular-nums">{it.total}<Delta d={it.dTotal} /></td>
+                  <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[240px] truncate" title={it.isCard ? 'Format iklan kartu produk — TikTok melaporkannya agregat per campaign, tanpa ikatan SPU' : String(it.pid)}>{it.name}</td>
+                  <td className="py-2.5 px-2 text-right font-mono tabular-nums">{it.isCard ? <span className="text-ink-faint">bukan video</span> : <>{it.total}<Delta d={it.dTotal} /></>}</td>
                   {it.cols.map((c, i) => (
                     <td key={c.key} className="py-2.5 px-2 text-right">
                       <button onClick={() => c.n > 0 && setCell({ productId: it.pid, status: c.key, label: COLS[i].label, name: it.name })}
