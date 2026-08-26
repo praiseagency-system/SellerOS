@@ -39,7 +39,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
   const [sessions, setSessions] = useState(null)
   const [sessMsg, setSessMsg] = useState(null)
   const [boostFor, setBoostFor] = useState(null) // { v, spuId } → form mini
-  const [boostBudget, setBoostBudget] = useState(String(SESSION_MIN_BUDGET_IDR))
+  const [boostBudget, setBoostBudget] = useState(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST))
   const [boostHours, setBoostHours] = useState('24')
   const [boostBusy, setBoostBusy] = useState(false)
   useEffect(() => {
@@ -258,9 +258,9 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
           <div className="mt-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-2.5">
             <p className="text-[11px] text-ink-strong font-semibold mb-1.5 truncate">{boostFor.kind === 'MAX_DELIVERY' ? 'Max Delivery · ' : 'Creative Boost · '}{boostFor.kind === 'MAX_DELIVERY' ? boostFor.name : `@${boostFor.v?.tiktokAccount || '?'} · ${String(boostFor.v?.videoTitle || boostFor.v?.videoId || '').slice(0, 50)}`}</p>
             <div className="flex items-center gap-2 flex-wrap text-[11px]">
-              <input type="number" min={SESSION_MIN_BUDGET_IDR} step="10000" value={boostBudget} onChange={e => setBoostBudget(e.target.value)}
+              <input type="number" min={SESSION_MIN_BUDGET_IDR[boostFor.kind]} step="10000" value={boostBudget} onChange={e => setBoostBudget(e.target.value)}
                 className="w-28 bg-surface border border-line/15 rounded-lg px-2 py-1.5 font-mono text-ink" />
-              <span className="text-ink-faint">Rp/hari (min {SESSION_MIN_BUDGET_IDR.toLocaleString('id-ID')})</span>
+              <span className="text-ink-faint">Rp/hari (min {SESSION_MIN_BUDGET_IDR[boostFor.kind].toLocaleString('id-ID')})</span>
               <select value={boostHours} onChange={e => setBoostHours(e.target.value)}
                 className="bg-surface border border-line/15 rounded-lg px-2 py-1.5 text-ink">
                 <option value="24">24 jam</option><option value="48">48 jam</option><option value="72">72 jam</option>
@@ -298,7 +298,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                   <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[260px]" title={String(it.pid)}>
                     <span className="truncate inline-block max-w-[200px] align-middle">{it.name}</span>
                     {!it.isCard && campaignOn && (
-                      <button onClick={() => { setBoostFor({ kind: 'MAX_DELIVERY', spuId: it.pid, name: it.name }); setSessMsg(null) }}
+                      <button onClick={() => { setBoostFor({ kind: 'MAX_DELIVERY', spuId: it.pid, name: it.name }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.MAX_DELIVERY)); setSessMsg(null) }}
                         title="Max Delivery utk produk ini — bakar budget tambahan demi volume (via 🔔)"
                         className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 align-middle">
                         ⚡ Max Delivery
@@ -414,7 +414,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                     {v.cost > 0 && <span className="text-ink-faint font-mono"> · spend {fmtRpC(v.cost)}</span>}
                   </a>
                   {['IN_QUEUE', 'NOT_DELIVERING'].includes(cell.status) && cell.productId !== '(tanpa produk)' && (
-                    <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setSessMsg(null) }}
+                    <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST)); setSessMsg(null) }}
                       title={campaignOn ? 'Creative Boost — beli data uji utk video ini (via 🔔)' : 'Campaign harus ENABLE'}
                       className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 flex-shrink-0">
                       Boost

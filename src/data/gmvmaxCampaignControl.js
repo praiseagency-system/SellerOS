@@ -161,7 +161,13 @@ export async function requestCreativeExclude({ campaignId, campaignName, videoId
 // Pagar best-practice resmi ditegakkan DI SINI: budget min ≈ US$10 (Rp160rb),
 // jendela default 24 jam maks 72 jam, Creative Boost hanya utk video yang
 // eligible (validasi status di UI; API menolak AUTH_NEEDED/EXCLUDED/dll).
-export const SESSION_MIN_BUDGET_IDR = 160000
+// Batas bawah budget sesi per JENIS (IDR). Dok publik: US$10 utk keduanya,
+// tapi Ads Manager memberlakukan minimum lokal yang berbeda per fitur —
+// angka di bawah dikalibrasi dari UI Ads Manager (ubah di sini bila berubah).
+export const SESSION_MIN_BUDGET_IDR = {
+  MAX_DELIVERY: 160000,
+  CREATIVE_BOOST: 160000,
+}
 const toUtc = (d) => d.toISOString().slice(0, 19).replace('T', ' ')
 
 export async function requestBoostSession({ kind, campaignId, campaignName, storeId, spuId, itemId = null, videoTitle = '', budget, hours = 24, reason = null, evidence = null }) {
@@ -170,7 +176,8 @@ export async function requestBoostSession({ kind, campaignId, campaignName, stor
   if (!spuId) throw new Error('SPU produk wajib.')
   if (kind === 'CREATIVE_BOOST' && !itemId) throw new Error('videoId wajib untuk Creative Boost.')
   const b = Number(budget)
-  if (!Number.isFinite(b) || b < SESSION_MIN_BUDGET_IDR) throw new Error(`Budget sesi minimal Rp ${SESSION_MIN_BUDGET_IDR.toLocaleString('id-ID')}/hari (≈ US$10, aturan TikTok).`)
+  const minB = SESSION_MIN_BUDGET_IDR[kind]
+  if (!Number.isFinite(b) || b < minB) throw new Error(`Budget ${kind === 'MAX_DELIVERY' ? 'Max Delivery' : 'Creative Boost'} minimal Rp ${minB.toLocaleString('id-ID')}/hari.`)
   const h = Math.min(Math.max(Number(hours) || 24, 1), 72) // pagar: maks 72 jam
   const end = toUtc(new Date(Date.now() + h * 3600 * 1000))
   const settings = await getExecutionSettings()
