@@ -1,71 +1,106 @@
-// Campaign Ads — setting campaign (budget, target ROAS, auto-budget, status)
-// digabung dengan performa periode terpilih. Setting dari gmvmax_campaign_settings
-// (di-capture worker harian via MCP campaign_gmv_max_info_get); performa dari
-// rollupCampaigns (di-join pakai campaignId). Bagian bawah: log perubahan
-// otomatis hasil diff antar-hari.
+// Campaign Ads — Varian A "Tabel Komparatif" (pilihan user):
+// semua campaign = satu tabel padat ber-sortir + sparkline spend harian +
+// delta vs periode pembanding; klik baris → mengembang (aksi lengkap +
+// auto-budget + sinyal); "Detail produk & status" → CampaignStatusMatrix
+// (matriks status materi per produk, pilihan lapisan detail user).
+// Setting dari gmvmax_campaign_settings (capture harian); performa dari
+// rollupCampaigns; sparkline & matriks dari creatives window (context rows).
 import { useState, useEffect, useMemo } from 'react'
-import { Megaphone, TrendingUp, Wallet, Target, Info, History, Loader2 } from 'lucide-react'
+import { Megaphone, TrendingUp, Wallet, Target, Info, History, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
 import { buildChangeLog } from '../../utils/gmvmaxCampaignDiff'
 import CampaignActionDialog from '../../components/gmvmax/CampaignActionDialog'
 import CampaignProductsDialog from '../../components/gmvmax/CampaignProductsDialog'
+import CampaignStatusMatrix from '../../components/gmvmax/CampaignStatusMatrix'
 
 const n = (v) => (v || 0).toLocaleString('id-ID')
 const isOn = (s) => s === 'ENABLE'
 
+// ── Sparkline mini: batang cost harian (div murni, tanpa lib) ────────────────
+function Spark({ series }) {
+  if (!series || series.length < 2) return <span className="text-[9px] text-ink-faint">—</span>
+  const max = Math.max(...series.map(s => s.v), 1)
+  return (
+    <div className="flex items-end gap-[2px] h-5 w-[88px]" title="spend harian (periode terpilih)">
+      {series.slice(-14).map((s, i) => (
+        <div key={i} className="flex-1 rounded-[1px] bg-blue-500/60" style={{ height: `${Math.max(8, (s.v / max) * 100)}%` }} />
+      ))}
+    </div>
+  )
+}
+
+const SORTS = {
+  budget: (m) => Number(m.s?.budget) || 0,
+  roas: (m) => m.p?.total.roas ?? -1,
+  spend: (m) => m.p?.total.cost || 0,
+  revenue: (m) => m.p?.total.revenue || 0,
+  orders: (m) => m.p?.total.orders || 0,
+  cpo: (m) => m.p?.total.cpo ?? Infinity,
+}
+
 export default function CampaignAdsPage({ onOpenUpload }) {
-  const { campaigns, hasData, periodName, prev, productNames } = useGmvMax()
+  const { campaigns, hasData, periodName, prev, rows, productNames } = useGmvMax()
   const [settings, setSettings] = useState([])
   const [changes, setChanges] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
-  const [dialog, setDialog] = useState(null) // { action, campaign } | null
+  const [dialog, setDialog] = useState(null)     // { action, campaign }
+  const [matrix, setMatrix] = useState(null)     // campaign utk lapisan detail
   const [queuedMsg, setQueuedMsg] = useState(null)
-  const [tab, setTab] = useState('aktif') // 'aktif' | 'nonaktif'
+  const [tab, setTab] = useState('aktif')
+  const [expanded, setExpanded] = useState(null) // campaign id baris mengembang
+  const [sort, setSort] = useState({ key: 'revenue', dir: -1 })
 
   useEffect(() => {
     let active = true
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true); setErr(null)
     loadCampaignSettingsHistory({ days: 30 })
-      .then(rows => { if (!active) return; setSettings(latestPerCampaign(rows)); setChanges(buildChangeLog(rows)) })
+      .then(r => { if (!active) return; setSettings(latestPerCampaign(r)); setChanges(buildChangeLog(r)) })
       .catch(e => { if (active) setErr(e.message || 'Gagal memuat setting campaign.') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
 
-  // Gabung setting (by campaign_id) + performa (by campaignId) + pembanding
-  // periode sebelumnya (utk delta naik/turun ala dashboard TikTok).
+  // Gabung setting + performa + pembanding periode.
   const merged = useMemo(() => {
     const perf = new Map((campaigns || []).filter(c => c.campaignId).map(c => [c.campaignId, c]))
     const prevPerf = new Map((prev?.campaigns || []).filter(c => c.campaignId).map(c => [c.campaignId, c]))
     const out = settings.map(s => ({
       id: s.campaign_id, name: s.campaign_name || s.campaign_id, s,
-      p: perf.get(s.campaign_id) || null,
-      pp: prevPerf.get(s.campaign_id) || null,
+      p: perf.get(s.campaign_id) || null, pp: prevPerf.get(s.campaign_id) || null,
     }))
-    // Campaign yang punya belanja tapi belum ter-capture settingnya.
     for (const c of campaigns || []) {
       if (c.campaignId && !settings.some(s => s.campaign_id === c.campaignId)) {
         out.push({ id: c.campaignId, name: c.campaign, s: null, p: c, pp: prevPerf.get(c.campaignId) || null })
       }
     }
-    return out.sort((a, b) => (b.p?.total.revenue || 0) - (a.p?.total.revenue || 0)
-      || (Number(b.s?.budget) || 0) - (Number(a.s?.budget) || 0))
+    return out
   }, [settings, campaigns, prev])
+
+  // Sparkline: cost harian per campaign dari creatives window.
+  const sparkByCampaign = useMemo(() => {
+    const m = new Map() // campaignId → Map(date → cost)
+    for (const r of rows || []) {
+      if (!r.campaignId || !r.snapshotDate) continue
+      if (!m.has(r.campaignId)) m.set(r.campaignId, new Map())
+      const e = m.get(r.campaignId)
+      e.set(r.snapshotDate, (e.get(r.snapshotDate) || 0) + (r.cost || 0))
+    }
+    const out = new Map()
+    for (const [cid, byDate] of m) {
+      out.set(cid, [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([d, v]) => ({ d, v })))
+    }
+    return out
+  }, [rows])
 
   const sum = useMemo(() => {
     const act = merged.filter(m => isOn(m.s?.operation_status))
-    // Budget "aktif" = HANYA campaign ENABLE yang benar-benar BELANJA (spend > 0).
-    // Campaign ENABLE tapi spend 0 tak menyerap budget → tak dihitung, biar angka
-    // mencerminkan budget yang benar-benar jalan (bukan kapasitas terpasang).
     const spending = act.filter(m => (m.p?.total.cost || 0) > 0)
     return {
-      total: merged.length,
-      aktif: act.length,
-      spendingCount: spending.length,
+      total: merged.length, aktif: act.length, spendingCount: spending.length,
       budget: spending.reduce((a, m) => a + (Number(m.s?.budget) || 0), 0),
       spend: merged.reduce((a, m) => a + (m.p?.total.cost || 0), 0),
       revenue: merged.reduce((a, m) => a + (m.p?.total.revenue || 0), 0),
@@ -74,13 +109,11 @@ export default function CampaignAdsPage({ onOpenUpload }) {
 
   if (!hasData) return <EmptyState title="Belum ada data GMV Max" desc="Upload dulu di Import Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
-
   if (loading) return <div className="flex items-center justify-center py-32 text-ink-faint gap-2">
     <Loader2 className="w-5 h-5 animate-spin" /> Memuat setting campaign…
   </div>
 
   const roas = sum.spend > 0 ? sum.revenue / sum.spend : null
-  // Ringkasan periode pembanding (utk delta di kartu atas).
   const prevSum = (() => {
     const pc = prev?.campaigns
     if (!pc || !pc.length) return null
@@ -88,6 +121,14 @@ export default function CampaignAdsPage({ onOpenUpload }) {
     const revenue = pc.reduce((a, c) => a + (c.total.revenue || 0), 0)
     return { spend, revenue, roas: spend > 0 ? revenue / spend : null }
   })()
+
+  const open = (action, m) => { setQueuedMsg(null); setDialog({ action, campaign: m.s }) }
+  const act = merged.filter(m => isOn(m.s?.operation_status))
+  const off = merged.filter(m => !isOn(m.s?.operation_status))
+  const shown = [...(tab === 'aktif' ? act : off)]
+    .sort((a, b) => (SORTS[sort.key](a) - SORTS[sort.key](b)) * sort.dir)
+  const clickSort = (key) => setSort(s => ({ key, dir: s.key === key ? -s.dir : -1 }))
+
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
       {periodName && <p className="text-sm text-ink-muted -mb-1">{periodName} <span className="text-ink-faint">· performa periode ini · setting = kondisi terkini</span></p>}
@@ -113,37 +154,143 @@ export default function CampaignAdsPage({ onOpenUpload }) {
         </p>
       )}
 
-      {/* TAB Aktif / Nonaktif — dipisah total supaya tidak tercampur. */}
-      {(() => {
-        const open = (action, m) => { setQueuedMsg(null); setDialog({ action, campaign: m.s }) }
-        const act = merged.filter(m => isOn(m.s?.operation_status))
-        const off = merged.filter(m => !isOn(m.s?.operation_status))
-        const shown = tab === 'aktif' ? act : off
-        return (
-          <>
-            <div className="flex items-center gap-1.5 border-b border-line/10 pb-0">
-              {[['aktif', `Aktif · ${act.length}`], ['nonaktif', `Nonaktif · ${off.length}`]].map(([id, label]) => (
-                <button key={id} onClick={() => setTab(id)}
-                  className={`px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 -mb-px transition-colors ${tab === id
-                    ? 'text-ink-strong border-blue-500'
-                    : 'text-ink-faint border-transparent hover:text-ink'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="space-y-3">
-              {shown.map(m => <CampaignCard key={m.id} m={m} onAction={(a) => open(a, m)} />)}
-              {shown.length === 0 && (
-                <p className="text-sm text-ink-faint text-center py-8">
-                  {merged.length === 0
-                    ? 'Belum ada setting campaign ter-capture. Worker mengambilnya tiap hari — cek lagi setelah run berikutnya.'
-                    : `Tidak ada campaign ${tab}.`}
-                </p>
-              )}
-            </div>
-          </>
-        )
-      })()}
+      <div className="flex items-center gap-1.5 border-b border-line/10">
+        {[['aktif', `Aktif · ${act.length}`], ['nonaktif', `Nonaktif · ${off.length}`]].map(([id, label]) => (
+          <button key={id} onClick={() => { setTab(id); setExpanded(null) }}
+            className={`px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 -mb-px transition-colors ${tab === id
+              ? 'text-ink-strong border-blue-500' : 'text-ink-faint border-transparent hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm overflow-x-auto">
+        <table className="w-full text-[12.5px] min-w-[920px]">
+          <thead><tr className="border-b border-line/10">
+            <Th align="left">Campaign</Th>
+            <Th k="budget" sort={sort} onSort={clickSort}>Budget/hari</Th>
+            <Th>Target</Th>
+            <Th k="roas" sort={sort} onSort={clickSort}>ROAS</Th>
+            <Th k="spend" sort={sort} onSort={clickSort}>Spend</Th>
+            <Th k="revenue" sort={sort} onSort={clickSort}>Revenue</Th>
+            <Th k="orders" sort={sort} onSort={clickSort}>Orders</Th>
+            <Th k="cpo" sort={sort} onSort={clickSort}>Cost/Order</Th>
+            <Th>{null}</Th>
+          </tr></thead>
+          <tbody>
+            {shown.map(m => {
+              const { s, p, pp } = m
+              const pv = pp?.total || null
+              const bid = s?.roas_bid != null ? Number(s.roas_bid) : null
+              const actual = p?.total.roas ?? null
+              const below = bid != null && actual != null && actual < bid
+              const scaleHint = bid != null && actual != null && actual >= bid && (p?.total.cost || 0) > 0
+              const ab = s?.auto_budget || {}
+              const isExp = expanded === m.id
+              const prodCount = Array.isArray(s?.item_group_ids) ? s.item_group_ids.length : null
+              return (
+                <FragmentRow key={m.id}>
+                  <tr onClick={() => setExpanded(isExp ? null : m.id)}
+                    className={`border-b border-line/6 cursor-pointer transition-colors ${isExp ? 'bg-fill/5' : 'hover:bg-fill/3'}`}>
+                    <td className="py-2.5 px-2.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isExp ? <ChevronDown className="w-3.5 h-3.5 text-ink-faint flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-ink-faint flex-shrink-0" />}
+                        <div className="min-w-0">
+                          <p className="text-ink-strong font-semibold truncate max-w-[220px]">{m.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <Spark series={sparkByCampaign.get(m.id)} />
+                            {prodCount != null && <span className="text-[10px] text-ink-faint">{prodCount} produk</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono tabular-nums whitespace-nowrap">
+                      {s ? fmtRp(Number(s.budget) || 0) : '—'}
+                      {ab.auto_budget_enabled && <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-blue-500/12 text-blue-400">auto→{fmtRpC(ab.maximum_budget)}</span>}
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono tabular-nums">{bid != null ? `${bid}×` : '—'}</td>
+                    <td className={`py-2.5 px-2.5 text-right font-mono tabular-nums font-semibold ${below ? 'text-amber-400' : actual != null ? 'text-emerald-400' : 'text-ink-faint'}`}>
+                      {fmtRoasX(actual)}
+                      {pv && <div className="text-[9px] font-normal"><DeltaBadge cur={actual} prev={pv.roas} fmt={(v) => v.toFixed(2)} /></div>}
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono tabular-nums">{p ? fmtRpC(p.total.cost) : '—'}</td>
+                    <td className="py-2.5 px-2.5 text-right font-mono tabular-nums">
+                      {p ? fmtRpC(p.total.revenue) : '—'}
+                      {pv && p && <div className="text-[9px]"><DeltaBadge cur={p.total.revenue} prev={pv.revenue} fmt={fmtRpC} /></div>}
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono tabular-nums">
+                      {p ? n(p.total.orders) : '—'}
+                      {pv && p && <div className="text-[9px]"><DeltaBadge cur={p.total.orders} prev={pv.orders} /></div>}
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono tabular-nums">
+                      {p?.total.cpo != null ? fmtRp(Math.round(p.total.cpo)) : '—'}
+                      {pv?.cpo != null && p?.total.cpo != null && <div className="text-[9px]"><DeltaBadge cur={p.total.cpo} prev={pv.cpo} fmt={(v) => fmtRp(Math.round(v))} goodDown /></div>}
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {s?.campaign_id && (
+                        <>
+                          <button onClick={() => open('BUDGET_UPDATE', m)}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-semibold border transition-colors mr-1 ${scaleHint
+                              ? 'bg-blue-600 border-transparent text-white hover:bg-blue-700'
+                              : 'border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40'}`}
+                            title={scaleHint ? 'ROAS di atas target — kandidat naikkan budget' : 'Ubah budget'}>
+                            Budget{scaleHint ? ' 💡' : ''}
+                          </button>
+                          <button onClick={() => open('ROI_UPDATE', m)}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-semibold border transition-colors ${below
+                              ? 'border-amber-500/40 text-amber-300 hover:bg-amber-500/10'
+                              : 'border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40'}`}
+                            title={below ? 'ROAS di bawah target — tinjau bid' : 'Ubah Target ROI'}>
+                            ROI{below ? ' ⚠' : ''}
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                  {isExp && (
+                    <tr className="border-b border-line/6 bg-surface2/60">
+                      <td colSpan={9} className="py-2.5 px-4">
+                        <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                          <button onClick={() => setMatrix(s || { campaign_id: m.id, campaign_name: m.name })}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700">
+                            Detail produk &amp; status materi →
+                          </button>
+                          {s?.campaign_id && (
+                            <>
+                              <button onClick={() => open('PRODUCTS', m)}
+                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40">
+                                Kelola produk
+                              </button>
+                              {isOn(s.operation_status) ? (
+                                <button onClick={() => open('DISABLE', m)}
+                                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10">Pause</button>
+                              ) : (
+                                <button onClick={() => open('ENABLE', m)}
+                                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10">Aktifkan</button>
+                              )}
+                            </>
+                          )}
+                          {ab.auto_budget_enabled && (
+                            <span className="text-ink-muted">Auto-budget ON · +{ab.budget_increase_percentage}%/naik · sisa {ab.remained_times ?? '—'}× · berikutnya {fmtRpC(ab.next_increase)}</span>
+                          )}
+                          {below && <span className="text-amber-300">⚠ ROAS {fmtRoasX(actual)} di bawah target {bid}× — tinjau bid/kreatif</span>}
+                          {scaleHint && <span className="text-emerald-300">💡 ROAS di atas target — kandidat naikkan budget</span>}
+                          {s?.modify_time && <span className="text-ink-faint ml-auto">diubah {new Date(s.modify_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </FragmentRow>
+              )
+            })}
+            {shown.length === 0 && (
+              <tr><td colSpan={9} className="py-10 text-center text-sm text-ink-faint">
+                {merged.length === 0 ? 'Belum ada setting campaign ter-capture — worker mengambilnya tiap hari.' : `Tidak ada campaign ${tab}.`}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <ChangeLog changes={changes} />
 
@@ -157,144 +304,25 @@ export default function CampaignAdsPage({ onOpenUpload }) {
           onClose={() => setDialog(null)}
           onQueued={() => setQueuedMsg(`Perubahan produk diajukan untuk ${dialog.campaign?.campaign_name || 'campaign'}`)} />
       )}
+      {matrix && <CampaignStatusMatrix campaign={matrix} onClose={() => setMatrix(null)} />}
     </div>
   )
 }
 
-// Chip produk dalam campaign — nama dari master (menu Produk); fallback SPU id.
-function ProductChips({ ids }) {
-  const { productNames } = useGmvMax()
-  const [showAll, setShowAll] = useState(false)
-  const shown = showAll ? ids : ids.slice(0, 6)
+// React fragment dgn key utk pasangan baris (baris utama + baris mengembang).
+function FragmentRow({ children }) { return <>{children}</> }
+
+// Header kolom ber-sortir (komponen level atas — aturan static-components).
+function Th({ k, sort, onSort, children, align = 'right' }) {
   return (
-    <div className="flex items-center gap-1.5 flex-wrap mb-3">
-      <span className="text-[10px] text-ink-faint uppercase tracking-wide">Produk · {ids.length}</span>
-      {shown.map(id => (
-        <span key={id} title={String(id)}
-          className="px-1.5 py-0.5 rounded bg-fill/8 border border-line/10 text-[10px] text-ink-muted truncate max-w-[180px]">
-          {productNames[id] || `…${String(id).slice(-6)}`}
-        </span>
-      ))}
-      {ids.length > 6 && (
-        <button onClick={() => setShowAll(v => !v)} className="text-[10px] text-blue-400 hover:text-blue-300">
-          {showAll ? 'sembunyikan' : `+${ids.length - 6} lagi`}
-        </button>
-      )}
-    </div>
+    <th onClick={() => k && onSort && onSort(k)}
+      className={`py-2 px-2.5 text-[10px] uppercase tracking-widest text-ink-faint font-semibold whitespace-nowrap ${align === 'left' ? 'text-left' : 'text-right'} ${k ? 'cursor-pointer hover:text-ink select-none' : ''}`}>
+      {children}{k && sort && sort.key === k && <span className="text-blue-400"> {sort.dir < 0 ? '\u2193' : '\u2191'}</span>}
+    </th>
   )
 }
 
-function CampaignCard({ m, onAction }) {
-  const { s, p, pp, name } = m
-  const on = isOn(s?.operation_status)
-  const pv = pp?.total || null // performa periode pembanding (delta naik/turun)
-  const ab = s?.auto_budget || {}
-  const budget = Number(s?.budget) || 0
-  const bid = s?.roas_bid != null ? Number(s.roas_bid) : null
-  const actual = p?.total.roas ?? null
-  const gap = bid != null && actual != null ? actual - bid : null
-  const headroom = ab.auto_budget_enabled && ab.maximum_budget
-    ? Math.min(100, (Number(ab.current_budget || budget) / Number(ab.maximum_budget)) * 100) : null
-
-  return (
-    <div className={`rounded-xl p-4 border ${on ? 'glass-card border-line/10' : 'bg-surface border-line/8 opacity-75'}`}>
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <span className="text-sm font-semibold text-ink-strong truncate">{name}</span>
-        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${on ? 'bg-emerald-500/15 text-emerald-400' : 'bg-fill/10 text-ink-faint'}`}>
-          {s?.operation_status || '—'}
-        </span>
-        {s?.promotion_type && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{s.promotion_type.replace('_GMV_MAX', '')}</span>}
-        {s?.modify_time && <span className="ml-auto text-[10px] text-ink-faint">diubah {new Date(s.modify_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
-      </div>
-
-      {/* Aksi E3 — hanya untuk campaign dgn setting ter-capture (campaign_id sahih).
-          Semua tombol MENGAJUKAN ke antrean 🔔, bukan eksekusi langsung. */}
-      {s?.campaign_id && onAction && (
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          <button onClick={() => onAction('BUDGET_UPDATE')}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
-            Ubah budget
-          </button>
-          <button onClick={() => onAction('ROI_UPDATE')}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
-            Ubah ROI
-          </button>
-          <button onClick={() => onAction('PRODUCTS')}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink hover:border-blue-500/40 transition-colors">
-            Kelola produk
-          </button>
-          {on ? (
-            <button onClick={() => onAction('DISABLE')}
-              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 transition-colors">
-              Pause
-            </button>
-          ) : (
-            <button onClick={() => onAction('ENABLE')}
-              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 transition-colors">
-              Aktifkan
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Produk dalam campaign (item_group_ids dari capture harian) */}
-      {Array.isArray(s?.item_group_ids) && s.item_group_ids.length > 0 && (
-        <ProductChips ids={s.item_group_ids} />
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
-        <Cell label="Budget harian" value={s ? fmtRp(budget) : '—'} />
-        <Cell label="Target ROAS (bid)" value={bid != null ? `${bid}x` : '—'} />
-        <Cell label="ROAS aktual" value={fmtRoasX(actual)}
-          tone={gap == null ? 'ink' : gap >= 0 ? 'green' : 'red'}
-          delta={pv && <DeltaBadge cur={actual} prev={pv.roas} fmt={(v) => v.toFixed(2)} />} />
-        <Cell label="Spend / Revenue" value={p ? `${fmtRpC(p.total.cost)} / ${fmtRpC(p.total.revenue)}` : 'tanpa belanja'}
-          delta={pv && p && <DeltaBadge cur={p.total.revenue} prev={pv.revenue} fmt={fmtRpC} />} />
-        <Cell label="Orders" value={p ? n(p.total.orders) : '—'}
-          delta={pv && p && <DeltaBadge cur={p.total.orders} prev={pv.orders} />} />
-        <Cell label="Cost / Order" value={p?.total.cpo != null ? fmtRp(Math.round(p.total.cpo)) : '—'}
-          delta={pv?.cpo != null && p?.total.cpo != null && <DeltaBadge cur={p.total.cpo} prev={pv.cpo} fmt={(v) => fmtRp(Math.round(v))} goodDown />} />
-      </div>
-
-      {headroom != null && (
-        <div className="bg-fill/5 rounded-lg p-2.5">
-          <div className="flex justify-between text-[11px] text-ink-muted mb-1.5">
-            <span>Auto-budget ON · +{ab.budget_increase_percentage}%/naik · sisa {ab.remained_times ?? '—'}x</span>
-            <span>{fmtRpC(ab.current_budget)} → maks {fmtRpC(ab.maximum_budget)}</span>
-          </div>
-          <div className="h-1.5 bg-fill/10 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${headroom}%` }} />
-          </div>
-          {ab.next_increase != null && <p className="text-[10px] text-ink-faint mt-1.5">Kenaikan berikutnya: {fmtRp(ab.next_increase)}</p>}
-        </div>
-      )}
-      {s && !ab.auto_budget_enabled && <p className="text-[10px] text-ink-faint">Auto-budget OFF</p>}
-
-      {gap != null && p?.total.cost > 0 && (
-        <p className={`mt-2.5 text-xs rounded-lg px-2.5 py-2 ${gap >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
-          {gap >= 0
-            ? `ROAS aktual ${(actual / bid).toFixed(1)}× di atas target — kandidat naikkan budget.`
-            : `ROAS aktual di bawah target (${fmtRoasX(actual)} vs ${bid}x) — tinjau bid/kreatif.`}
-        </p>
-      )}
-    </div>
-  )
-}
-
-const TONE = { green: 'text-emerald-400', red: 'text-red-400', ink: 'text-ink-strong' }
-function Cell({ label, value, tone = 'ink', delta = null }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[10px] text-ink-faint uppercase tracking-wide truncate">{label}</p>
-      <p className={`text-sm font-semibold tabular-nums truncate ${TONE[tone]}`}>{value}</p>
-      {delta && <p className="text-[10px] leading-tight mt-0.5">{delta} <span className="text-ink-faint">vs periode sblm</span></p>}
-    </div>
-  )
-}
-
-// Badge delta untuk perubahan numerik: arah + selisih + persen.
-// Naik budget = netral-biru (keputusan scale); turun = amber. Untuk Target ROAS
-// dibalik: turun bid = melonggarkan (biru), naik = mengetatkan (amber).
+// Badge delta perubahan setting (riwayat) — arah warna dibedakan per field.
 function DeltaChange({ c }) {
   const a = Number(c.from), b = Number(c.to)
   if (!Number.isFinite(a) || !Number.isFinite(b) || a === b || a === 0) return null
