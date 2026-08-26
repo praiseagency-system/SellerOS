@@ -57,7 +57,7 @@ export default function ApprovalBell() {
       const EXEC = {
         SPARK_BIND: executeSparkBind, SPARK_UNBIND: executeSparkUnbind,
         BUDGET_UPDATE: executeCampaignAction, ROI_UPDATE: executeCampaignAction, STATUS_UPDATE: executeCampaignAction,
-        PRODUCTS_UPDATE: executeCampaignAction,
+        PRODUCTS_UPDATE: executeCampaignAction, CREATIVE_EXCLUDE: executeCampaignAction,
       }
       if (decision === 'APPROVED' && EXEC[row.action_type]) {
         setNotice('Menerapkan ke TikTok…')

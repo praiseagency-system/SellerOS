@@ -133,6 +133,30 @@ export async function requestStatusChange({ campaignId, campaignName, currentSta
   })
 }
 
+// Ajukan exclude (REMOVE) / pulihkan (ADD) satu video dari rotasi campaign.
+// TANPA cooldown campaign (aksi level creative, bukan setting). Evidence angka
+// video ikut kartu 🔔. spuId wajib utk campaign Product (aturan API).
+export async function requestCreativeExclude({ campaignId, campaignName, videoId, videoTitle = '', tiktokAccount = '', spuId = null, mode = 'REMOVE', evidence = null, reason = null }) {
+  if (!videoId) throw new Error('videoId wajib.')
+  if (!['REMOVE', 'ADD'].includes(mode)) throw new Error('mode hanya REMOVE/ADD.')
+  return createApproval({
+    actionType: 'CREATIVE_EXCLUDE',
+    target: { campaign_id: String(campaignId), campaign_name: campaignName, video_id: String(videoId), video_title: videoTitle },
+    currentValue: { rotasi: mode === 'REMOVE' ? 'ikut' : 'excluded' },
+    proposedValue: {
+      rotasi: mode === 'REMOVE' ? 'excluded' : 'ikut',
+      action: mode,
+      items: [{ item_id: String(videoId), spu_id_list: spuId ? [String(spuId)] : [] }],
+    },
+    reason: reason || (mode === 'REMOVE'
+      ? `Keluarkan video @${tiktokAccount || '?'} dari rotasi ${campaignName}.`
+      : `Pulihkan video @${tiktokAccount || '?'} ke rotasi ${campaignName}.`),
+    evidence,
+    source: 'MANUAL',
+    risk: mode === 'REMOVE' ? 'MEDIUM' : 'LOW',
+  })
+}
+
 async function post(url, body) {
   const res = await fetch(url, {
     method: 'POST',
@@ -159,6 +183,10 @@ export async function executeCampaignAction(approvalRow) {
   if (approvalRow.action_type === 'ROI_UPDATE') params.roas_bid = approvalRow.proposed_value?.roas_bid
   if (approvalRow.action_type === 'STATUS_UPDATE') params.operation_status = approvalRow.proposed_value?.operation_status
   if (approvalRow.action_type === 'PRODUCTS_UPDATE') params.item_group_ids = approvalRow.proposed_value?.item_group_ids
+  if (approvalRow.action_type === 'CREATIVE_EXCLUDE') {
+    params.action = approvalRow.proposed_value?.action
+    params.items = approvalRow.proposed_value?.items
+  }
 
   let result = null, failMsg = null
   try {

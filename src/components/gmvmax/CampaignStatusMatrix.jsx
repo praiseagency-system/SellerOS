@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
+import { requestCreativeExclude } from '../../data/gmvmaxCampaignControl'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
 const COLS = [
@@ -29,6 +30,24 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
   // campaign: { campaign_id, campaign_name }
   const { rows, productNames, prev } = useGmvMax()
   const [cell, setCell] = useState(null) // { productId, status } → daftar video
+  const [exq, setExq] = useState(null)   // pesan hasil ajuan exclude/pulihkan
+  const [exBusy, setExBusy] = useState(null)
+
+  const campaignOn = campaign?.operation_status === 'ENABLE'
+  async function submitExclude(v, mode) {
+    setExBusy(v.videoId); setExq(null)
+    try {
+      await requestCreativeExclude({
+        campaignId: campaign.campaign_id, campaignName: campaign.campaign_name,
+        videoId: v.videoId, videoTitle: v.videoTitle, tiktokAccount: v.tiktokAccount,
+        spuId: cell?.productId && cell.productId !== '(tanpa produk)' ? cell.productId : null,
+        mode,
+        evidence: { cost: Math.round(v.cost || 0), revenue: Math.round(v.grossRevenue || 0), roas: v.roas ?? null },
+      })
+      setExq(`${mode === 'REMOVE' ? 'Exclude' : 'Pulihkan'} diajukan — buka 🔔 utk menyetujui.`)
+    } catch (e) { setExq(`Gagal: ${e.message}`) }
+    finally { setExBusy(null) }
+  }
 
   const data = useMemo(() => {
     const cid = String(campaign?.campaign_id || '')
@@ -283,13 +302,30 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
             </div>
             <div className="max-h-56 overflow-auto space-y-1">
               {data.cellVideos.map(v => (
-                <a key={v.videoId} href={tiktokVideoUrl(v.videoId, v.tiktokAccount) || '#'} target="_blank" rel="noreferrer"
-                  className="block text-[11px] text-ink-muted hover:text-ink truncate">
-                  @{v.tiktokAccount || '?'} · {String(v.videoTitle || v.videoId).slice(0, 90)}
-                  {v.grossRevenue > 0 && <span className="text-emerald-400 font-mono"> · {fmtRpC(v.grossRevenue)}</span>}
-                </a>
+                <div key={v.videoId} className="flex items-center gap-2">
+                  <a href={tiktokVideoUrl(v.videoId, v.tiktokAccount) || '#'} target="_blank" rel="noreferrer"
+                    className="flex-1 min-w-0 text-[11px] text-ink-muted hover:text-ink truncate">
+                    @{v.tiktokAccount || '?'} · {String(v.videoTitle || v.videoId).slice(0, 80)}
+                    {v.grossRevenue > 0 && <span className="text-emerald-400 font-mono"> · {fmtRpC(v.grossRevenue)}</span>}
+                    {v.cost > 0 && <span className="text-ink-faint font-mono"> · spend {fmtRpC(v.cost)}</span>}
+                  </a>
+                  {cell.status === 'EXCLUDED' ? (
+                    <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'ADD')}
+                      title={campaignOn ? 'Pulihkan ke rotasi (via 🔔)' : 'Campaign harus ENABLE'}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 flex-shrink-0">
+                      Pulihkan
+                    </button>
+                  ) : (
+                    <button disabled={exBusy === v.videoId || !campaignOn} onClick={() => submitExclude(v, 'REMOVE')}
+                      title={campaignOn ? 'Keluarkan dari rotasi campaign ini (via 🔔)' : 'Campaign harus ENABLE'}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-red-500/25 text-red-400 hover:bg-red-500/10 disabled:opacity-40 flex-shrink-0">
+                      Exclude
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
+            {exq && <p className={`mt-2 text-[11px] ${exq.startsWith('Gagal') ? 'text-red-300' : 'text-green-300'}`}>{exq}</p>}
           </div>
         )}
       </div>

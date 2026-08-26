@@ -12,7 +12,7 @@ const ALLOWED = new Set([
   'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'PRODUCTS_UPDATE',
   'STATUS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_DELETE',
 ])
-const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE']) // E1 + E3
+const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE', 'CREATIVE_EXCLUDE']) // E1 + E3 + E4a
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
@@ -25,6 +25,35 @@ export default async function handler(req, res) {
     if (!approval_id) { res.status(400).json({ error: 'approval_required', error_description: 'Eksekusi hanya menerima aksi ber-approval (approval_id wajib).' }); return }
     if (!ENABLED.has(action_type)) {
       res.status(501).json({ error: 'not_enabled', error_description: `Aksi ${action_type} belum diaktifkan (aktivasi bertahap; kini baru SPARK_BIND).` })
+      return
+    }
+
+    // ── E4a: CREATIVE_EXCLUDE (keluarkan/pulihkan video dari rotasi) ────────
+    if (action_type === 'CREATIVE_EXCLUDE') {
+      const advId = String(params?.advertiser_id || '')
+      const campaignId = String(params?.campaign_id || '')
+      const act = params?.action
+      const items = Array.isArray(params?.items) ? params.items : null
+      if (!advId || !campaignId || !items?.length) { res.status(400).json({ error: 'invalid_request', error_description: 'advertiser_id, campaign_id & items[] wajib' }); return }
+      if (!['REMOVE', 'ADD'].includes(act)) { res.status(400).json({ error: 'invalid_request', error_description: 'action hanya REMOVE (exclude) / ADD (pulihkan).' }); return }
+      if (items.length > 400) { res.status(400).json({ error: 'invalid_request', error_description: 'Maksimal 400 video per permintaan (aturan API).' }); return }
+
+      const applied = await callBusinessTool(access_token, 'gmv_max_creative_update', {
+        advertiser_id: advId, campaign_id: campaignId, action: act,
+        item_list: items.map(it => ({
+          item_id: String(it.item_id),
+          ...(it.spu_id_list?.length ? { spu_id_list: it.spu_id_list.map(String) } : {}),
+        })),
+      })
+      if (applied.error) { res.status(applied.http).json({ ...applied, step: 'apply' }); return }
+
+      // Aturan resmi: status EXCLUDED baru terlihat ±20 menit di report —
+      // read-back langsung TIDAK bisa memverifikasi; kejujuran > kepastian palsu.
+      res.status(200).json({
+        executed: true, action_type, approval_id,
+        apply_result: applied.data ?? {},
+        read_back: { verified: null, note: 'Status berubah ±20 menit di report TikTok; konfirmasi final di snapshot berikutnya.' },
+      })
       return
     }
 
