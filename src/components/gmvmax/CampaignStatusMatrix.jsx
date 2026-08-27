@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
-import { requestCreativeExclude, requestBoostSession, requestSessionStop, requestSessionUpdate, fetchSessions, SESSION_MIN_BUDGET_IDR } from '../../data/gmvmaxCampaignControl'
+import { requestCreativeExclude, requestBoostSession, requestSessionStop, requestSessionUpdate, fetchSessions, SESSION_MIN_BUDGET_IDR, BOOST_BLOCKED_STATUS } from '../../data/gmvmaxCampaignControl'
 import { blankAgg, addInto, finalize } from '../../utils/gmvmaxRollup'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
@@ -561,9 +561,9 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                       <td className="py-1.5 px-2 text-right font-mono tabular-nums text-ink-muted">{pctRaw(v.m.funnel?.vr2s)}</td>
                       <td className="py-1.5 px-2 text-center"><RetentionBars funnel={v.m.funnel} /></td>
                       <td className="py-1.5 pl-2 text-right whitespace-nowrap">
-                        {['IN_QUEUE', 'NOT_DELIVERING'].includes(cell.status) && cell.productId !== '(tanpa produk)' && (
+                        {!BOOST_BLOCKED_STATUS.includes(cell.status) && cell.productId !== '(tanpa produk)' && (
                           <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST)); setSessMsg(null) }}
-                            title={campaignOn ? 'Creative Boost — beli data uji utk video ini (via 🔔)' : 'Campaign harus ENABLE'}
+                            title={campaignOn ? 'Creative Boost — belanja tambahan utk eksplorasi video ini (via 🔔)' : 'Campaign harus ENABLE'}
                             className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 mr-1">
                             Boost
                           </button>

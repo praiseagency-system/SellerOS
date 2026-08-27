@@ -120,11 +120,15 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
         hook: r.hookTag || 'lainnya',
         productId: r.productId || null,
         campaign: r.campaignName || '',
+        // Sasaran default aksi (Boost/Exclude). Diambil dari baris yang SAMA
+        // dengan campaign & productId di atas supaya trio ini selalu konsisten.
+        campaignId: r.campaignId || null,
         timePosted: r.timePosted || null,
         _delRank: -2,               // rank status pengiriman "paling aktif"
         _delRaw: null,              // teks status mentah (mis. "Delivering", "Excluded")
         _life: blankAgg(),
         _periods: new Map(),
+        _places: new Map(),         // "campaignId|productId" -> {campaignId,campaignName,productId}
       }
       byId.set(r.videoId, v)
     }
@@ -133,6 +137,15 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
     if (r.status) {
       const rank = deliveryRank(normDeliveryStatus(r.status))
       if (rank > v._delRank) { v._delRank = rank; v._delRaw = r.status }
+    }
+    // Semua tempat video ini ikut (campaign x produk). 3,5% video ada di >1
+    // campaign dan 6,3% di >1 produk (diukur pada snapshot 27 Agu), jadi aksi
+    // TIDAK boleh menebak satu sasaran — UI menawarkan pilihannya.
+    if (r.campaignId) {
+      const k = `${r.campaignId}|${r.productId || ''}`
+      if (!v._places.has(k)) {
+        v._places.set(k, { campaignId: r.campaignId, campaignName: r.campaignName || '', productId: r.productId || null })
+      }
     }
     addInto(v._life, r)
     const p = periodOf(r)
@@ -150,7 +163,8 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
     const status = videoStatus({ roas: lifetime.roas, cost: lifetime.cost, trend }, thresholds)
     return {
       videoId: v.videoId, title: v.title, account: v.account, hook: v.hook,
-      productId: v.productId, campaign: v.campaign, timePosted: v.timePosted,
+      productId: v.productId, campaign: v.campaign, campaignId: v.campaignId,
+      placements: [...v._places.values()], timePosted: v.timePosted,
       delivery: v._delRaw, deliveryCanon: normDeliveryStatus(v._delRaw),
       lifetime, periods, trend, status,
       tier: qualityTier(lifetime.roas, thresholds),

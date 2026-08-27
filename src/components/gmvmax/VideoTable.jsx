@@ -1,9 +1,11 @@
 // Tabel video GMV Max — dipakai Video Overview & Video Check. Kolom standar +
-// opsi kolom Aksi (rekomendasi) & tombol Catatan.
+// opsi kolom Aksi (teks rekomendasi), kolom EKSEKUSI (Boost/Exclude nyata, lewat
+// prop `exec` — sengaja opt-in supaya modal Creator tetap murni baca), & Catatan.
 import { StickyNote } from 'lucide-react'
 import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp, useSortableRows, SortTh } from './ui'
 import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
+import { VideoExecCell } from './VideoExecActions'
 
 const VIDEO_SORT = {
   cost: (v) => v.lifetime.cost,
@@ -20,7 +22,7 @@ const ACTION_TEXT = {
   inactive: '—',
 }
 
-export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showDelivery = false, showCampaign = false, showProduct = false }) {
+export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showDelivery = false, showCampaign = false, showProduct = false, exec = null }) {
   const { sorted, sort, toggle } = useSortableRows(videos, VIDEO_SORT)
   // Urut dulu atas SELURUH video, baru dipotong per halaman — supaya
   // "ROAS tertinggi" tetap tertinggi dari semua baris, bukan dari yang tampil.
@@ -44,6 +46,7 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
             <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} />
             <SortTh label="ORDERS" sortKey="orders" sort={sort} onSort={toggle} />
             {showAction && <th className="py-2.5 px-3 font-medium">AKSI</th>}
+            {exec && <th className="py-2.5 px-3 font-medium text-right">EKSEKUSI</th>}
             <th className="py-2.5 pl-3 font-medium text-center">CATATAN</th>
           </tr>
         </thead>
@@ -80,6 +83,11 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
                     <span className={`text-xs ${v.status === 'kill' ? 'text-red-500' : v.status === 'scale' ? 'text-emerald-500' : 'text-ink-muted'}`}>
                       {ACTION_TEXT[v.status] || STATUS_META[v.status]?.label}
                     </span>
+                  </td>
+                )}
+                {exec && (
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                    <VideoExecCell video={v} resolve={exec.resolve} onBoost={exec.onBoost} onExclude={exec.onExclude} />
                   </td>
                 )}
                 <td className="py-2.5 pl-3 text-center">

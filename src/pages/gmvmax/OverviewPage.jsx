@@ -1,13 +1,15 @@
 // Halaman Video (gabungan Overview + Check lama) — daftar semua video dengan
 // KPI, filter status + preset diagnostik ("Kandidat Scale"), kolom rekomendasi
 // AKSI, Atur Threshold, dan Export CSV. Satu tempat untuk memantau & memutuskan.
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Download, Search, Sliders, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart, Rocket } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { Pill, EmptyState, StatCard, DeltaBadge, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import VideoTable from '../../components/gmvmax/VideoTable'
 import { NoteModal, ThresholdModal } from '../../components/gmvmax/modals'
 import { exportVideosCsv } from '../../utils/gmvmaxCsv'
+import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
+import { VideoBoostDialog, VideoExcludeDialog } from '../../components/gmvmax/VideoExecActions'
 
 // Segmen menggabungkan tier status (Scale/Watch/Kill) + preset diagnostik unik
 // "Kandidat Scale" (ROAS tinggi tapi spend masih di bawah lantai — layak dites
@@ -46,6 +48,37 @@ export default function OverviewPage({ onOpenUpload }) {
   const [statusFilter, setStatusFilter] = useState('all') // status pengiriman TikTok
   const [noteVideo, setNoteVideo] = useState(null)
   const [showThreshold, setShowThreshold] = useState(false)
+
+  // Eksekusi (Boost/Exclude) butuh store_id + status ENABLE campaign — keduanya
+  // hanya ada di campaign_settings, bukan di rollup video. Dimuat sekali di sini.
+  const [cset, setCset] = useState(null)   // Map campaignId -> setting
+  const [dialog, setDialog] = useState(null)   // { kind, video, placement, storeId }
+  const [queuedMsg, setQueuedMsg] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    loadCampaignSettingsHistory({ days: 30 })
+      .then(rows => { if (alive) setCset(new Map(latestPerCampaign(rows).map(r => [r.campaign_id, r]))) })
+      // Gagal memuat setting = kolom eksekusi tidak muncul sama sekali (cset tetap
+      // null); halaman tetap terbaca sebagai alat pantau.
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  // Sasaran dianggap sah hanya bila settingnya ada, store_id-nya diketahui, dan
+  // campaign-nya ENABLE — API menolak aksi pada campaign nonaktif.
+  const resolve = useCallback((placement) => {
+    const c = cset?.get(placement.campaignId)
+    if (!c || !c.store_id) return null
+    if (String(c.operation_status || '').toUpperCase() !== 'ENABLE') return null
+    return { storeId: c.store_id, campaignName: c.campaign_name || placement.campaignName }
+  }, [cset])
+
+  const exec = useMemo(() => (cset ? {
+    resolve,
+    onBoost: (video, placement) => setDialog({ kind: 'BOOST', video, placement, storeId: resolve(placement)?.storeId }),
+    onExclude: (video, placement) => setDialog({ kind: 'EXCLUDE', video, placement }),
+  } : null), [cset, resolve])
 
   const sum = useMemo(() => sumVideos(videoBase(videos)), [videos])
   const prevSum = useMemo(() => (prev ? sumVideos(videoBase(prev.videos)) : null), [prev])
@@ -141,14 +174,29 @@ export default function OverviewPage({ onOpenUpload }) {
         </select>
       </div>
 
+      {queuedMsg && (
+        <div className="flex items-start gap-2 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2.5">
+          <p className="text-xs text-violet-200 flex-1">{queuedMsg}</p>
+          <button onClick={() => setQueuedMsg(null)} className="text-[11px] text-ink-faint hover:text-ink">tutup</button>
+        </div>
+      )}
+
       <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
         <p className="text-xs text-ink-faint mb-2">{filtered.length} video</p>
         <VideoTable videos={filtered} thresholds={thresholds} notes={notes} productNames={productNames}
-          onNote={setNoteVideo} showDelivery showStatus showCampaign showProduct showAction />
+          onNote={setNoteVideo} showDelivery showStatus showCampaign showProduct showAction exec={exec} />
       </div>
 
       {noteVideo && <NoteModal video={noteVideo} onClose={() => setNoteVideo(null)} />}
       {showThreshold && <ThresholdModal onClose={() => setShowThreshold(false)} />}
+      {dialog?.kind === 'BOOST' && (
+        <VideoBoostDialog video={dialog.video} placement={dialog.placement} storeId={dialog.storeId}
+          onClose={() => setDialog(null)} onQueued={setQueuedMsg} />
+      )}
+      {dialog?.kind === 'EXCLUDE' && (
+        <VideoExcludeDialog video={dialog.video} placement={dialog.placement}
+          onClose={() => setDialog(null)} onQueued={setQueuedMsg} />
+      )}
     </div>
   )
 }

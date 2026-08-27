@@ -164,6 +164,12 @@ export async function requestCreativeExclude({ campaignId, campaignName, videoId
 // Batas bawah budget sesi per JENIS (IDR). Dok publik: US$10 utk keduanya,
 // tapi Ads Manager memberlakukan minimum lokal yang berbeda per fitur —
 // angka di bawah dikalibrasi dari UI Ads Manager (ubah di sini bila berubah).
+// Status materi yang TIDAK bisa di-boost — API menolaknya karena kreatifnya
+// belum/tak lagi bisa dipakai. Ditulis sebagai daftar-TOLAK supaya status baru
+// otomatis boostable kecuali memang masuk sini. Creative Boost SENDIRI berlaku
+// untuk video yang sudah Tayang & Learning, bukan hanya yang belum jalan.
+export const BOOST_BLOCKED_STATUS = ['AUTHORIZATION_NEEDED', 'EXCLUDED', 'REJECTED', 'UNAVAILABLE']
+
 export const SESSION_MIN_BUDGET_IDR = {
   MAX_DELIVERY: 100000,   // kalibrasi dari UI Ads Manager (user, 2026-08-26)
   CREATIVE_BOOST: 50000,  // idem
