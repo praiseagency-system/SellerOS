@@ -56,15 +56,25 @@ export default function App() {
 
 function MainApp() {
   const { t } = useLang()
-  // Deep-link pasca-connect TikTok: `?connected=tiktok` / `?page=integrasi`
-  // membuka Settings → Integrasi. Query dibersihkan di efek di bawah.
-  const wantsIntegrasi = (() => {
+  // Deep-link `?page=<id>`. Dua peran:
+  //   1. Pasca-connect TikTok: `?connected=tiktok` / `?page=integrasi` → Settings→Integrasi.
+  //   2. Halaman yang SENGAJA tak ada di nav (mis. `?page=gmv_features`,
+  //      Feature Registry — diagnostik operator). Navigasi app ini berbasis state,
+  //      bukan URL, jadi tanpa pintu ini halaman tsb mustahil dibuka sama sekali.
+  // Query dibersihkan di efek di bawah.
+  const deepLink = (() => {
     const q = new URLSearchParams(window.location.search)
-    return q.get('connected') === 'tiktok' || q.get('page') === 'integrasi'
+    const wantsIntegrasi = q.get('connected') === 'tiktok' || q.get('page') === 'integrasi'
+    const asked = q.get('page')
+    // Hanya id yang dikenal PAGE_META/PAGE_KEYS yang diterima — query sembarang
+    // tidak boleh mendudukkan app di halaman yang tak ada.
+    const page = !wantsIntegrasi && asked && (PAGE_KEYS.includes(asked) || PAGE_META[asked]) ? asked : null
+    return { wantsIntegrasi, page }
   })()
+  const wantsIntegrasi = deepLink.wantsIntegrasi
   // Landing default: Overview (command center). Data periode tetap di-restore
   // otomatis oleh QuadrantContext di latar belakang, terlepas halaman awal.
-  const [currentPage, setCurrentPage] = useState(wantsIntegrasi ? 'settings' : 'overview')
+  const [currentPage, setCurrentPage] = useState(wantsIntegrasi ? 'settings' : (deepLink.page || 'overview'))
 
   // Produk yang sedang dibuka di kalkulator (null = produk baru/kosong).
   // calcKey membump-remount CalculatorPage agar field ter-reset/terisi sesuai produk.
@@ -87,6 +97,10 @@ function MainApp() {
       let el = e.target
       while (el && el.nodeType === 1 && el !== document.body) {
         if (el.scrollWidth > el.clientWidth + 1) {
+          // Tabel ber-<TableScroll> punya rel geser sendiri; membajak roda di
+          // sana bikin gulir halaman terasa nyangkut. Lewati, jangan berhenti —
+          // induknya masih boleh menangani roda seperti biasa.
+          if (el.hasAttribute('data-no-wheel-x')) { el = el.parentElement; continue }
           const ox = getComputedStyle(el).overflowX
           if (ox === 'auto' || ox === 'scroll') {
             const atStart = el.scrollLeft <= 0

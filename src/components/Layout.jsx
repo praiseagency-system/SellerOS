@@ -4,7 +4,7 @@ import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronsLeft, ChevronsRight, ChevronDown,
   BarChart3, Menu, Package, Megaphone, Home, Activity, Settings, Sparkles,
-  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket, ShieldCheck
+  LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
@@ -33,7 +33,12 @@ const NAV = [
       ] },
       { id: 'gmv_insight',   icon: Sparkles },
       { id: 'gmv_boost',     icon: Rocket },
-      { id: 'gmv_features',  icon: ShieldCheck },
+      // 'gmv_features' (Feature Registry) SENGAJA tidak di nav: isinya kosakata
+      // mesin (SCHEMA_ONLY/NOT_RETURNED/confidence) tanpa aksi bagi pengguna —
+      // konsumen sebenarnya adalah pipeline skill (dailyFacts feature.X.available).
+      // Rutenya tetap hidup di GmvMaxModule → buka via URL saat mendiagnosis.
+      // Sinyal yang memang berguna (eligibility tenant) diangkat ke
+      // Pengaturan → Integrasi lewat <EligibilityAlert>.
       { id: 'gmv_log',       icon: ClipboardList },
       // Stub display-only — belum ada route; TIDAK terhubung ke worker/sync.
       { id: 'ads',           icon: Activity, soon: true },

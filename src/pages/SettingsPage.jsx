@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase'
 import { createPkce, buildAuthorizeUrl, refreshAccessToken, stashOAuthSession, fetchAdvertisers } from '../lib/tiktokOAuth'
 import { getConnection, saveConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
 import { getExecutionSettings, saveExecutionSettings, createApproval } from '../data/gmvmaxApprovals'
+import EligibilityAlert from '../components/gmvmax/EligibilityAlert'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: User },
@@ -356,6 +357,10 @@ function IntegrasiTab({ currentWorkspace }) {
             </button>
           </div>
         </div>
+
+        {/* Eligibility tenant dari Feature Registry — hanya muncul bila TERBLOKIR.
+            Diletakkan tepat di atas pemetaan akun karena itulah kendalinya. */}
+        <EligibilityAlert wsId={wsId} />
 
         {/* Pemetaan advertiser/toko: 1 workspace ↔ 1 advertiser */}
         <AdvertiserSection conn={conn} wsId={wsId} onSaved={async () => applyConn(await getConnection(wsId))} />
