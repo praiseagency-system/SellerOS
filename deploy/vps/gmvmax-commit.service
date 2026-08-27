@@ -1,0 +1,38 @@
+# GMV Max — worker COMMIT (penulis produksi kanonik). systemd oneshot: timer
+# memicu, worker jalan sekali, keluar. TANPA Restart= (hindari restart-storm).
+# Token MCP diambil & di-refresh sendiri dari Supabase (tiktok_connections).
+[Unit]
+Description=GMV Max VPS COMMIT worker (production writer)
+Documentation=file:/opt/selleros/gmvmax/INSTALL.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=selleros-worker
+Group=selleros-worker
+WorkingDirectory=/opt/selleros/gmvmax
+
+EnvironmentFile=/etc/selleros/gmvmax.env
+# Barrier kontrak runtime (sabuk-dan-bretel; redundan dgn env file).
+Environment=GMVMAX_RUNTIME=vps
+Environment=GMVMAX_COMMIT=1
+Environment=TZ=UTC
+
+ExecStart=/usr/bin/env node /opt/selleros/gmvmax/gmvmax-vps-commit.mjs --date yesterday
+
+TimeoutStartSec=1800
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/selleros/gmvmax
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gmvmax-commit
+
+[Install]
+WantedBy=multi-user.target

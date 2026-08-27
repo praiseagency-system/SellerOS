@@ -1,0 +1,13 @@
+# Pemicu harian worker COMMIT — 00:30 UTC = 07:30 WIB (jadwal produksi lama).
+# Persistent=true → run yang terlewat (VPS mati/reboot) dikejar saat menyala.
+[Unit]
+Description=Jalankan GMV Max COMMIT worker harian (07:30 WIB)
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=gmvmax-commit.service
+
+[Install]
+WantedBy=timers.target
