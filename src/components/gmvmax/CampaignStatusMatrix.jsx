@@ -246,6 +246,19 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         .map(r => ({ ...r, m: finalize(periodByVideo.get(r.videoId) || blankAgg()) }))
         .sort((a, b) => (b.m.revenue || 0) - (a.m.revenue || 0))
       : []
+    // Campaign LIVE: TikTok melekatkan omzet pada sesi siaran, bukan video/produk
+    // — di data kita revenue video = 0 dan semua omzet ada di baris agregat.
+    // Alokasi per produk karenanya jatuh ke pembagian rata = MENYESATKAN.
+    const isLive = /\bLIVE\b/i.test(String(campaign?.campaign_name || '')) || vidRevTotal === 0
+    const liveTotals = {
+      cost: mineAll.reduce((a, r) => a + (r.cost || 0), 0),
+      revenue: mineAll.reduce((a, r) => a + (r.grossRevenue || 0), 0),
+      orders: mineAll.reduce((a, r) => a + (r.skuOrders || 0), 0),
+      videoCost: [...vidByPid.values()].reduce((a, e) => a + e.cost, 0),
+      videoCount: new Set(mine.map(r => r.videoId)).size,
+    }
+    liveTotals.roas = liveTotals.cost > 0 ? liveTotals.revenue / liveTotals.cost : null
+
     const perf = pids.map(pid => {
       const e = perfByPid.get(pid) || { cost: 0, revenue: 0, orders: 0 }
       const pp = prevByPid.get(pid) || null
@@ -260,7 +273,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         prev: pp ? { cost: pp.cost, revenue: pp.revenue, orders: pp.orders, roas: pp.roas, cpo: pp.cpo } : null,
       }
     })
-    return { d0, d1, items, insights, totalMateri, cellVideos, perf, totalSpend, cardCost: cardAgg.cost, cardRevenue: cardAgg.revenue }
+    return { d0, d1, items, insights, totalMateri, cellVideos, perf, totalSpend, cardCost: cardAgg.cost, cardRevenue: cardAgg.revenue, isLive, liveTotals }
   }, [rows, campaign, productNames, cell, prev])
 
   if (!campaign) return null
@@ -349,6 +362,26 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
           </div>
         )}
 
+        {/* ── LIVE: omzet tak beratribusi per produk → tampilkan total saja ── */}
+        {data.isLive ? (
+          <div className="mb-5">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 mb-3">
+              <p className="text-[11.5px] font-semibold text-amber-300">⚠ Campaign LIVE — omzet tidak beratribusi per produk</p>
+              <p className="text-[10.5px] text-ink-muted leading-relaxed mt-0.5">
+                TikTok melekatkan omzet LIVE pada sesi siaran, bukan pada video/produk (di data: seluruh baris video ber-omzet nol).
+                Angka per produk karenanya TIDAK ditampilkan agar tidak menyesatkan — yang tampil adalah total campaign.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-6">
+              <div><p className="text-[10px] uppercase tracking-widest text-ink-faint">Spend</p><p className="text-base font-semibold font-mono tabular-nums text-ink-strong">{fmtRpC(data.liveTotals.cost)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-widest text-ink-faint">Omzet</p><p className="text-base font-semibold font-mono tabular-nums text-emerald-400">{fmtRpC(data.liveTotals.revenue)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-widest text-ink-faint">ROAS</p><p className="text-base font-semibold font-mono tabular-nums text-emerald-400">{fmtRoasX(data.liveTotals.roas)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-widest text-ink-faint">Pesanan</p><p className="text-base font-semibold font-mono tabular-nums text-ink-strong">{Math.round(data.liveTotals.orders).toLocaleString('id-ID')}</p></div>
+              <div><p className="text-[10px] uppercase tracking-widest text-ink-faint">Video pendukung</p><p className="text-base font-semibold font-mono tabular-nums text-ink-strong">{data.liveTotals.videoCount} <span className="text-[10px] font-normal text-ink-faint">biaya {fmtRpC(data.liveTotals.videoCost)}</span></p></div>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* ── PERFORMA PRODUK (Opsi 1: tabel bertumpuk, urutan baris = matriks) ── */}
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">
           Performa produk · periode terpilih{campaign.budget ? <> · budget campaign {fmtRp(Number(campaign.budget) || 0)}/hari</> : null}
@@ -418,6 +451,9 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
             Termasuk alokasi iklan <span className="text-ink-muted">Product card</span> (spend {fmtRpC(data.cardCost)} · omset {fmtRpC(data.cardRevenue)}) — dibagi proporsional porsi revenue video tiap produk (estimasi, konvensi sama dgn menu Performa Produk).
           </p>
         )}
+        </>
+        )}
+
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">Matriks status materi</p>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] min-w-[820px]">
