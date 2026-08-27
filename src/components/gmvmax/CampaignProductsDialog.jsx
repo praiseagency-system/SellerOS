@@ -35,7 +35,10 @@ export default function CampaignProductsDialog({ campaign, productNames = {}, on
 
   // Kandidat tambah: eligible GMV Max, belum di daftar. UNOCCUPIED bisa dipilih;
   // OCCUPIED tampil nonaktif (dipakai campaign lain — aturan 1 produk 1 campaign).
+  // Hanya produk AKTIF di toko yang layak jadi kandidat (status AVAILABLE) —
+  // produk nonaktif/habis tak boleh ditawarkan ke campaign.
   const candidates = (catalog || [])
+    .filter(p => p.status === 'AVAILABLE')
     .filter(p => !ids.includes(String(p.item_group_id)))
     .filter(p => !q || (p.title || '').toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (a.gmv_max_ads_status === 'UNOCCUPIED' ? -1 : 1) - (b.gmv_max_ads_status === 'UNOCCUPIED' ? -1 : 1)
@@ -86,7 +89,7 @@ export default function CampaignProductsDialog({ campaign, productNames = {}, on
 
           {/* Kolom kanan: bisa ditambah */}
           <div className="flex flex-col min-h-0">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint mb-2">Katalog eligible GMV Max</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint mb-2">Katalog eligible GMV Max · produk aktif</p>
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari produk…"
               className="bg-surface2 border border-line/15 rounded-lg px-2.5 py-1.5 text-xs text-ink mb-2 focus:outline-none focus:border-blue-500/40" />
             <div className="flex-1 overflow-auto space-y-1.5 pr-1">
