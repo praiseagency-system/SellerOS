@@ -5,6 +5,10 @@
 //   grant_types_supported                  = [authorization_code, refresh_token]
 // client_id di bawah didaftarkan via Dynamic Client Registration (RFC 7591)
 // dengan redirect_uri domain kita (prod + localhost dev).
+// 2026-08-28: didaftarkan ULANG untuk domain baru selleros.praiseagency.id
+// (mencakup juga seller-os-pink.vercel.app lama + localhost) — klien lama
+// 8d6ac659… hanya mengenal domain vercel.app. Daftarkan ulang dgn
+// scripts/tiktok-register-client.mjs bila domain berubah lagi.
 
 const BASE = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer/oauth'
 export const TIKTOK_OAUTH = {
@@ -12,7 +16,7 @@ export const TIKTOK_OAUTH = {
   tokenEndpoint: `${BASE}/token`,
   revocationEndpoint: `${BASE}/revoke`,
   serverUrl: 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer',
-  clientId: '8d6ac659da5fed5e13725951c9d9b749',
+  clientId: '8d21407c43626c21a7c95bab1783b7fa',
   scope: 'mcp:tt4b',
 }
 
