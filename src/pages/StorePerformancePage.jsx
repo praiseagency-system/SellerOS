@@ -1,3 +1,4 @@
+import { TableScroll, usePaged, Pager } from '../components/ui/DataTable'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Upload, FileSpreadsheet, X, TrendingUp, Store, CalendarRange, Sparkles, AlertTriangle,
@@ -496,7 +497,8 @@ function Marketplace({ stats }) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
+        <TableScroll>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -523,6 +525,7 @@ function Marketplace({ stats }) {
             ))}
           </tbody>
         </table>
+        </TableScroll>
       </div>
     </div>
   )
@@ -611,9 +614,11 @@ function Produk({ stats }) {
 }
 
 function RankTable({ title, rows, showAbc }) {
+  const pg = usePaged(rows)
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
       <h3 className="text-sm font-semibold text-ink-strong mb-3">{title}</h3>
+      <TableScroll stickyFirst>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -626,7 +631,7 @@ function RankTable({ title, rows, showAbc }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p, i) => (
+          {pg.paged.map((p, i) => (
             <tr key={i} className="border-b border-line/5">
               <td className="py-2.5 pr-3 text-ink truncate max-w-[220px]">{p.name}</td>
               <td className="py-2.5 px-3 text-right tabular-nums">{fmtNum(p.orders)}</td>
@@ -638,6 +643,8 @@ function RankTable({ title, rows, showAbc }) {
           ))}
         </tbody>
       </table>
+      </TableScroll>
+      <Pager {...pg} unit="produk" />
     </div>
   )
 }
@@ -851,7 +858,8 @@ function LogisticsCard({ lsf }) {
             Pengiriman ke luar zona dominan menambah <span className="font-semibold text-amber-400">+{uplift.toFixed(1)}%</span> di atas tarif dasar {fmtRp(dominant.rate)}.
           </p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="">
+          <TableScroll>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -870,6 +878,7 @@ function LogisticsCard({ lsf }) {
               ))}
             </tbody>
           </table>
+          </TableScroll>
         </div>
       </div>
     </div>
@@ -877,9 +886,11 @@ function LogisticsCard({ lsf }) {
 }
 
 function GeoTable({ title, rows }) {
+  const pg = usePaged(rows)
   return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
+    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
       <h3 className="text-sm font-semibold text-ink-strong mb-3">{title}</h3>
+      <TableScroll stickyFirst>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -890,7 +901,7 @@ function GeoTable({ title, rows }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p, i) => (
+          {pg.paged.map((p, i) => (
             <tr key={i} className="border-b border-line/5">
               <td className="py-2 pr-3 text-ink truncate max-w-[160px]">{p.name}</td>
               <td className="py-2 px-3 text-right tabular-nums">{fmtNum(p.orders)}</td>
@@ -900,6 +911,8 @@ function GeoTable({ title, rows }) {
           ))}
         </tbody>
       </table>
+      </TableScroll>
+      <Pager {...pg} unit="wilayah" />
     </div>
   )
 }

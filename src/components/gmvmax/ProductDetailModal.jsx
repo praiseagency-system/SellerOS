@@ -2,6 +2,7 @@
 // funnel agregat Impressions→Clicks→Orders→Revenue + Cost·ROAS·CPO, tab status
 // urutan In queue → Learning → Delivering, tabel per-video (Cost/Revenue/ROAS/
 // Orders/CTR/CVR/Hook 2s/bar retensi). Baca-saja dari rollup yang sudah ada.
+import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { useState, useMemo, useEffect } from 'react'
 import { X, ChevronDown, Loader2, Radar, Plus } from 'lucide-react'
 import { fmtRpC, fmtRoasX, VideoLabel } from './ui'
@@ -253,6 +254,7 @@ export default function ProductDetailModal({ product, videos, boost = {}, period
     return [...(byTab[tab] || [])].sort((a, b) => sortVal(b, sortKey) - sortVal(a, sortKey))
   }, [tab, byTab, sortKey, excludedRows, kodeRows, boostedRows])
 
+  const pgRows = usePaged(rows)
   const cvrTone = (v) => {
     const cvr = v.lifetime?.cvr, clicks = v.lifetime?.clicks
     if (cvr != null && cvr >= 0.05) return 'text-emerald-500'
@@ -374,7 +376,8 @@ export default function ProductDetailModal({ product, videos, boost = {}, period
             <BoostedTable rows={rows} perf={boostPerf} daysLoading={boostDaily == null}
               boost={boost} onTrackBoost={onTrackBoost} />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="">
+              <TableScroll stickyFirst>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[9px] uppercase tracking-wider text-ink-faint border-b border-line/10">
@@ -390,7 +393,7 @@ export default function ProductDetailModal({ product, videos, boost = {}, period
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(v => (
+                  {pgRows.paged.map(v => (
                     <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">
                       <td className="py-2 pr-2 max-w-[200px]">
                         <VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact linkVideo />
@@ -422,6 +425,8 @@ export default function ProductDetailModal({ product, videos, boost = {}, period
                   ))}
                 </tbody>
               </table>
+              </TableScroll>
+              <Pager {...pgRows} unit="creative" />
             </div>
           )}
 
@@ -443,8 +448,10 @@ export default function ProductDetailModal({ product, videos, boost = {}, period
 // Tabel tab Boosted — metrik = HASIL SELAMA MASA BOOST (bukan window aktif) +
 // kolom Periode boost. Rate sengaja dilepas (kurang bermakna di rentang custom).
 function BoostedTable({ rows, perf, daysLoading, boost, onTrackBoost }) {
+  const pg = usePaged(rows)
   return (
-    <div className="overflow-x-auto">
+    <div className="">
+      <TableScroll stickyFirst>
       <table className="w-full text-xs">
         <thead>
           <tr className="text-[9px] uppercase tracking-wider text-ink-faint border-b border-line/10">
@@ -457,7 +464,7 @@ function BoostedTable({ rows, perf, daysLoading, boost, onTrackBoost }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map(v => {
+          {pg.paged.map(v => {
             const p = perf[v.videoId]   // undefined = daily loading · null = tak ada rentang · obj = hasil
             const cell = (val) => (daysLoading || p === undefined) ? '…' : (p == null ? '—' : val)
             const w = v.win
@@ -500,6 +507,8 @@ function BoostedTable({ rows, perf, daysLoading, boost, onTrackBoost }) {
           })}
         </tbody>
       </table>
+      </TableScroll>
+      <Pager {...pg} unit="creative" />
     </div>
   )
 }

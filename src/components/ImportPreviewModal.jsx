@@ -1,3 +1,4 @@
+import { TableScroll } from './ui/DataTable'
 import { useState } from 'react'
 import { X, FileSpreadsheet, AlertTriangle, ChevronLeft } from 'lucide-react'
 import { CANONICAL } from '../utils/metricSchema'
@@ -76,7 +77,8 @@ export default function ImportPreviewModal({ data, replacing, onConfirm, onBack,
           {/* Mapping field */}
           <div>
             <p className="text-[13px] font-semibold text-ink-strong mb-1.5">Pemetaan kolom</p>
-            <div className="rounded-xl border border-line/10 overflow-x-auto">
+            <div className="rounded-xl border border-line/10">
+              <TableScroll>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-line/8 text-[10px] text-ink-faint">
@@ -113,6 +115,7 @@ export default function ImportPreviewModal({ data, replacing, onConfirm, onBack,
                   ))}
                 </tbody>
               </table>
+              </TableScroll>
             </div>
           </div>
 
@@ -135,7 +138,8 @@ export default function ImportPreviewModal({ data, replacing, onConfirm, onBack,
           {/* Sampel produk */}
           <div>
             <p className="text-[13px] font-semibold text-ink-strong mb-1.5">Sampel produk setelah normalisasi</p>
-            <div className="rounded-xl border border-line/10 overflow-x-auto">
+            <div className="rounded-xl border border-line/10">
+              <TableScroll>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-line/8 text-[10px] text-ink-faint">
@@ -166,6 +170,7 @@ export default function ImportPreviewModal({ data, replacing, onConfirm, onBack,
                   ))}
                 </tbody>
               </table>
+              </TableScroll>
             </div>
           </div>
 

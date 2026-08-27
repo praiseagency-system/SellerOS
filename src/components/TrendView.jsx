@@ -1,3 +1,4 @@
+import { TableScroll, usePaged, Pager } from './ui/DataTable'
 import { useMemo, useState } from 'react'
 import { History, Info } from 'lucide-react'
 import { QUADRANT_CONFIG, fmtNum, fmtCompact } from '../utils/quadrantUtils'
@@ -64,6 +65,8 @@ export default function TrendView({ views, manualBenchmark, onOpenProduct }) {
     () => sortTrendRows(filterTrendRows(trend.rows, filter), sort),
     [trend.rows, filter, sort],
   )
+  // Sebelum early-return di bawah: hook tak boleh dilewati secara kondisional.
+  const pg = usePaged(shown)
 
   if (!views || views.length < 2) {
     return (
@@ -129,7 +132,8 @@ export default function TrendView({ views, manualBenchmark, onOpenProduct }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="">
+        <TableScroll stickyFirst>
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-surface z-10">
             <tr className="border-b border-line/8">
@@ -142,7 +146,7 @@ export default function TrendView({ views, manualBenchmark, onOpenProduct }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-line/5">
-            {shown.map(r => (
+            {pg.paged.map(r => (
               <tr key={r.key} className="hover:bg-fill/5 transition-colors">
                 <td className="px-3 py-2">
                   <button onClick={() => onOpenProduct?.(r)} className="text-left min-w-0" title={r.nama_produk}>
@@ -186,6 +190,8 @@ export default function TrendView({ views, manualBenchmark, onOpenProduct }) {
             )}
           </tbody>
         </table>
+        </TableScroll>
+        <Pager {...pg} unit="produk" />
       </div>
       <p className="px-4 py-2.5 text-[11px] text-ink-muted border-t border-line/8 flex items-start gap-1.5">
         <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />

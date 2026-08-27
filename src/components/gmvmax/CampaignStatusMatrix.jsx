@@ -3,6 +3,7 @@
 // API) dgn ▲/▼ vs snapshot sebelumnya → mendeteksi arus masuk/keluar status.
 // Klik angka sel → daftar video status itu. Data murni dari creatives snapshot
 // harian yang sudah dimuat context (nol panggilan API baru).
+import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, ArrowLeft } from 'lucide-react'
@@ -276,6 +277,11 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     return { d0, d1, items, insights, totalMateri, cellVideos, perf, totalSpend, cardCost: cardAgg.cost, cardRevenue: cardAgg.revenue, isLive, liveTotals }
   }, [rows, campaign, productNames, cell, prev])
 
+  // Hook wajib dipanggil sebelum early-return di bawah; saat campaign null
+  // memo `data` belum tentu terisi, jadi dijaga dengan fallback array kosong.
+  const pgPerf = usePaged(data?.perf || [])
+  const pgItems = usePaged(data?.items || [])
+
   if (!campaign) return null
 
   const content = (
@@ -386,7 +392,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">
           Performa produk · periode terpilih{campaign.budget ? <> · budget campaign {fmtRp(Number(campaign.budget) || 0)}/hari</> : null}
         </p>
-        <div className="overflow-x-auto mb-5">
+        <div className="mb-5">
+          <TableScroll stickyFirst>
           <table className="w-full text-[12px] min-w-[820px]">
             <thead>
               <tr className="text-left">
@@ -400,7 +407,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               </tr>
             </thead>
             <tbody>
-              {data.perf.map(it => (
+              {pgPerf.paged.map(it => (
                 <tr key={it.pid} className="border-t border-line/8">
                   <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[260px]" title={String(it.pid)}>
                     <span className="truncate inline-block max-w-[200px] align-middle">{it.name}</span>
@@ -444,6 +451,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               ))}
             </tbody>
           </table>
+          </TableScroll>
+        <Pager {...pgPerf} unit="produk" />
         </div>
 
         {data.cardCost > 0 && data.perf.length > 0 && !data.perf.some(x => x.pid === '(tanpa produk)') && (
@@ -455,7 +464,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         )}
 
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">Matriks status materi</p>
-        <div className="overflow-x-auto">
+        <div className="">
+          <TableScroll stickyFirst>
           <table className="w-full text-[12px] min-w-[820px]">
             <thead>
               <tr className="text-left">
@@ -471,7 +481,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               </tr>
             </thead>
             <tbody>
-              {data.items.map(it => (
+              {pgItems.paged.map(it => (
                 <tr key={it.pid} className="border-t border-line/8">
                   <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[240px] truncate" title={it.isCard ? 'Format iklan kartu produk — TikTok melaporkannya agregat per campaign, tanpa ikatan SPU' : String(it.pid)}>{it.name}</td>
                   <td className="py-2.5 px-2 text-right font-mono tabular-nums">{it.isCard ? <span className="text-ink-faint">bukan video</span> : <>{it.total}<Delta d={it.dTotal} /></>}</td>
@@ -495,6 +505,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               )}
             </tbody>
           </table>
+          </TableScroll>
+        <Pager {...pgItems} unit="produk" />
         </div>
 
         {data.insights.length > 0 && (

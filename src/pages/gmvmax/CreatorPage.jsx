@@ -8,12 +8,12 @@ import { useState, useMemo } from 'react'
 import { Search, Users, Clapperboard, Wallet, TrendingUp, Target, ShoppingCart } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
+import { TableScroll, usePaged, Pager } from '../../components/ui/DataTable'
 import CreatorVideosModal from '../../components/gmvmax/CreatorVideosModal'
 import { NoteModal } from '../../components/gmvmax/modals'
 
 const n = (v) => v.toLocaleString('id-ID')
 const creatorBase = (arr) => arr.filter(c => c.cost > 0 || c.revenue > 0)
-const PAGE = 25
 
 function sumCreators(arr) {
   const s = { kreator: arr.length, video: 0, cost: 0, revenue: 0, orders: 0, roas: null }
@@ -64,7 +64,6 @@ export default function CreatorPage({ onOpenUpload }) {
   const { creators, videos, notes, productNames, thresholds, hasData, prev, periodName } = useGmvMax()
   const [q, setQ] = useState('')
   const [order, setOrder] = useState('surplus')   // 'surplus' | 'defisit'
-  const [page, setPage] = useState(0)
   const [detailCreator, setDetailCreator] = useState(null)
   const [noteVideo, setNoteVideo] = useState(null)
 
@@ -87,15 +86,13 @@ export default function CreatorPage({ onOpenUpload }) {
     return [...f].sort((a, b) => (order === 'surplus' ? b.surplus - a.surplus : a.surplus - b.surplus))
   }, [base, q, order])
 
+  // Hook harus dipanggil sebelum early-return <EmptyState> di bawah.
+  const pg = usePaged(list)
   const sum = useMemo(() => sumCreators(base), [base])
   const prevSum = useMemo(() => (prev ? sumCreators(creatorBase(prev.creators)) : null), [prev])
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
-
-  const pages = Math.max(1, Math.ceil(list.length / PAGE))
-  const cur = Math.min(page, pages - 1)
-  const shown = list.slice(cur * PAGE, cur * PAGE + PAGE)
 
   return (
     <div className="p-6 space-y-4">
@@ -135,11 +132,11 @@ export default function CreatorPage({ onOpenUpload }) {
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={e => { setQ(e.target.value); setPage(0) }} placeholder="Cari kreator…"
+          <input value={q} onChange={e => { setQ(e.target.value); pg.setPage(0) }} placeholder="Cari kreator…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-line/10 text-sm text-ink" />
         </div>
         {[['surplus', 'Surplus terbesar'], ['defisit', 'Defisit terbesar']].map(([id, label]) => (
-          <button key={id} onClick={() => { setOrder(id); setPage(0) }}
+          <button key={id} onClick={() => { setOrder(id); pg.setPage(0) }}
             className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${order === id
               ? 'bg-blue-600/15 border-blue-500/40 text-blue-300'
               : 'border-line/15 text-ink-muted hover:text-ink'}`}>
@@ -148,7 +145,8 @@ export default function CreatorPage({ onOpenUpload }) {
         ))}
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-3">
+        <TableScroll stickyFirst>
         <table className="w-full text-[12.5px] min-w-[820px]">
           <thead><tr className="border-b border-line/10">
             {['Akun', 'Video', 'Biaya', 'Omzet', 'Pesanan', 'ROI', `Surplus vs target ${targetRoi.toFixed(2)}`].map((h, i) => (
@@ -156,7 +154,7 @@ export default function CreatorPage({ onOpenUpload }) {
             ))}
           </tr></thead>
           <tbody>
-            {shown.map(c => (
+            {pg.paged.map(c => (
               <tr key={c.account || '__store__'} onClick={() => setDetailCreator(c)} title="Lihat video kreator"
                 className="border-b border-line/5 cursor-pointer hover:bg-fill/5 transition-colors">
                 <td className="py-2.5 px-3">
@@ -176,25 +174,13 @@ export default function CreatorPage({ onOpenUpload }) {
                 <td className="py-2.5 px-3 text-right">{(c.cost || 0) > 0 ? <Surplus v={c.surplus} /> : <span className="text-ink-faint">—</span>}</td>
               </tr>
             ))}
-            {shown.length === 0 && (
+            {pg.paged.length === 0 && (
               <tr><td colSpan={7} className="py-10 text-center text-sm text-ink-faint">Tidak ada kreator{q ? ' yang cocok' : ''}.</td></tr>
             )}
           </tbody>
         </table>
-        {list.length > PAGE && (
-          <div className="flex items-center justify-between px-3 py-2.5 border-t border-line/10">
-            <div className="flex items-center gap-1.5">
-              <button disabled={cur === 0} onClick={() => setPage(cur - 1)}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink disabled:opacity-30">‹</button>
-              <span className="text-[11px] text-ink-muted font-mono">{cur + 1} / {pages}</span>
-              <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-line/15 text-ink-muted hover:text-ink disabled:opacity-30">›</button>
-            </div>
-            <p className="text-[11px] text-ink-faint">
-              Menampilkan {cur * PAGE + 1}–{Math.min((cur + 1) * PAGE, list.length)} dari {n(list.length)} kreator
-            </p>
-          </div>
-        )}
+        </TableScroll>
+        <Pager {...pg} unit="kreator" />
       </div>
 
       {detailCreator && (

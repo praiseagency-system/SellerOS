@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { Search, Package, Wallet, TrendingUp, Target, ShoppingCart, PlayCircle, Info } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { RoasBadge, EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX, DeliveryPills, useSortableRows, SortTh } from '../../components/gmvmax/ui'
+import { TableScroll, usePaged, Pager } from '../../components/ui/DataTable'
 import ProductDetailModal from '../../components/gmvmax/ProductDetailModal'
 
 const PRODUCT_SORT = {
@@ -53,6 +54,7 @@ export default function ProductPage({ onOpenUpload }) {
   const sum = useMemo(() => sumProducts(base), [base])
   const prevSum = useMemo(() => (prev ? sumProducts(productBase(prev.productsCard || [])) : null), [prev])
   const { sorted, sort, toggle } = useSortableRows(list, PRODUCT_SORT)
+  const pg = usePaged(sorted)
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -93,7 +95,8 @@ export default function ProductPage({ onOpenUpload }) {
           className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-line/10 text-sm text-ink" />
       </div>
 
-      <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
+        <TableScroll stickyFirst>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/10">
@@ -107,7 +110,7 @@ export default function ProductPage({ onOpenUpload }) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map(p => (
+            {pg.paged.map(p => (
               <tr key={p.productId} onClick={() => setDetail(p)} title="Lihat detail creative"
                 className="border-b border-line/5 hover:bg-fill/5 cursor-pointer">
                 <td className="py-2.5 pr-3 max-w-sm">
@@ -127,7 +130,9 @@ export default function ProductPage({ onOpenUpload }) {
             ))}
           </tbody>
         </table>
+        </TableScroll>
         {list.length === 0 && <p className="text-sm text-ink-faint py-8 text-center">Tidak ada produk.</p>}
+        <Pager {...pg} unit="produk" />
       </div>
 
       {detail && (

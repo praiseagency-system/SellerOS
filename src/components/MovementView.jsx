@@ -1,3 +1,4 @@
+import { TableScroll, usePaged, Pager } from './ui/DataTable'
 import { useMemo, useState } from 'react'
 import { TrendingUp, TrendingDown, Minus, Sparkles, ArrowRight } from 'lucide-react'
 import { QUADRANT_CONFIG, fmtNum, fmtCompact } from '../utils/quadrantUtils'
@@ -65,6 +66,7 @@ export default function MovementView({ products }) {
     })
   }, [products, filter])
 
+  const pg = usePaged(sorted)
   return (
     <div className="space-y-4">
       {/* Summary cards */}
@@ -104,7 +106,8 @@ export default function MovementView({ products }) {
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="">
+          <TableScroll stickyFirst>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line/10">
@@ -125,7 +128,7 @@ export default function MovementView({ products }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-line/5">
-              {sorted.map(p => {
+              {pg.paged.map(p => {
                 const moveCfg = MOVE_CONFIG[p.quadrant_moved]
                 return (
                   <tr key={p.kode_produk} className="hover:bg-fill/5 transition-colors">
@@ -186,6 +189,10 @@ export default function MovementView({ products }) {
               })}
             </tbody>
           </table>
+          </TableScroll>
+          <div className="px-4">
+            <Pager {...pg} unit="produk" />
+          </div>
 
           {sorted.some(p => p.ctr_derived) && (
             <p className="px-4 py-2 text-xs text-ink-muted border-t border-line/5">

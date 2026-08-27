@@ -1,3 +1,4 @@
+import { TableScroll } from '../components/ui/DataTable'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Upload,
@@ -508,6 +509,7 @@ function CompareModal({ products, onClose }) {
           <button onClick={onClose} className="text-ink-muted hover:text-ink"><X className="w-5 h-5" /></button>
         </div>
         <div className="overflow-auto p-5">
+          <TableScroll>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>{[
@@ -528,6 +530,7 @@ function CompareModal({ products, onClose }) {
               ))}
             </tbody>
           </table>
+          </TableScroll>
         </div>
       </div>
     </div>

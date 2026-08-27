@@ -2,6 +2,7 @@
 // Alur aman: tempel kode → PRATINJAU (tt_video_info_get, read-only; kamu lihat
 // video mana yang akan diikat) → Ajukan (masuk antrean 🔔) → Setujui → apply +
 // read-back. Tabel bawah = sumber kebenaran ikatan (tt_video_list_get).
+import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { useState, useEffect, useCallback } from 'react'
 import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react'
 import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '../../data/gmvmaxSpark'
@@ -121,6 +122,7 @@ export default function SparkBindingSection() {
   }
 
   const rows = list?.list || []
+  const pg = usePaged(rows)
 
   // ── Panel strategi supply (E2) — dihitung dari data yang sudah dimuat ──────
   const boundIds = new Set(rows.map(it => String(it.item_info?.item_id ?? it.item_id ?? '')))
@@ -246,7 +248,8 @@ export default function SparkBindingSection() {
             <p className="text-[11px] text-ink-faint">Belum ada Spark post ter-otorisasi (atau daftar belum dimuat).</p>
           )}
           {rows.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="">
+              <TableScroll stickyFirst>
               <table className="w-full text-[11.5px]">
                 <thead><tr className="text-left text-ink-faint">
                   <th className="py-1.5 pr-3 font-semibold">Video</th>
@@ -258,7 +261,7 @@ export default function SparkBindingSection() {
                   <th className="py-1.5 font-semibold"></th>
                 </tr></thead>
                 <tbody>
-                  {rows.map((it, i) => {
+                  {pg.paged.map((it, i) => {
                     // Bentuk nyata respons (diverifikasi runtime): item_info.{item_id,text},
                     // user_info.tiktok_name, auth_info.{ad_auth_status,auth_end_time},
                     // video_info.poster_url (thumbnail).
@@ -327,6 +330,8 @@ export default function SparkBindingSection() {
                   })}
                 </tbody>
               </table>
+              </TableScroll>
+              <Pager {...pg} unit="binding" />
             </div>
           )}
         </div>

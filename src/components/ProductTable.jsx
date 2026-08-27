@@ -3,6 +3,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, ChevronDown }
 import ProductBreakdown from './ProductBreakdown'
 import { QUADRANT_CONFIG, fmtNum, fmtIDR } from '../utils/quadrantUtils'
 import PlatformTag from './PlatformTag'
+import { TableScroll, usePaged, Pager } from './ui/DataTable'
 
 const COLUMNS = [
   { key: 'nama_produk', label: 'Produk', sortable: true },
@@ -45,6 +46,9 @@ export default function ProductTable({ products, activeQuadrant, onReset, traffi
       return sort.dir === 'asc' ? aVal - bVal : bVal - aVal
     })
   }, [products, sort, search])
+
+  // Diurut & disaring dulu atas seluruh produk, baru dipotong per halaman.
+  const pg = usePaged(filtered)
 
   function SortIcon({ col }) {
     if (sort.key !== col) return <ArrowUpDown className="w-3 h-3 opacity-40" />
@@ -91,7 +95,7 @@ export default function ProductTable({ products, activeQuadrant, onReset, traffi
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <TableScroll stickyFirst className="px-0">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line/10">
@@ -117,7 +121,7 @@ export default function ProductTable({ products, activeQuadrant, onReset, traffi
             </tr>
           </thead>
           <tbody className="divide-y divide-line/5">
-            {filtered.map((p, i) => {
+            {pg.paged.map((p, i) => {
               const cfg = QUADRANT_CONFIG[p.quadrant]
               const canOpen = Array.isArray(p.breakdown) && p.breakdown.length > 0
               const isOpen = openRow === p.kode_produk
@@ -189,12 +193,15 @@ export default function ProductTable({ products, activeQuadrant, onReset, traffi
             })}
           </tbody>
         </table>
+      </TableScroll>
 
-        {filtered.length === 0 && (
-          <div className="text-center py-12 text-ink-muted text-sm">
-            Tidak ada produk ditemukan
-          </div>
-        )}
+      {filtered.length === 0 && (
+        <div className="text-center py-12 text-ink-muted text-sm">
+          Tidak ada produk ditemukan
+        </div>
+      )}
+      <div className="px-5 pb-4">
+        <Pager {...pg} unit="produk" />
       </div>
     </div>
   )

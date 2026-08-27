@@ -153,3 +153,25 @@ html.light .hover-lift:hover { box-shadow: 0 8px 28px rgba(0, 0, 0, 0.09); }
 .overflow-x-auto::-webkit-scrollbar { height: 9px; }
 .overflow-x-auto::-webkit-scrollbar-thumb { background: rgb(var(--c-fill) / 0.30); border-radius: 5px; }
 .overflow-x-auto::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-fill) / 0.48); }
+
+/* Tabel yang dibungkus <TableScroll>: scrollbar native disembunyikan karena
+   sudah diganti REL geser yang selalu terlihat di bawah tabel. Tanpa ini
+   keduanya tampil dan terlihat seperti kontrol dobel. */
+.tbl-scroll { scrollbar-width: none; }
+.tbl-scroll::-webkit-scrollbar { height: 0; display: none; }
+
+/* Kolom pertama dipaku di kiri untuk tabel lebar: identitas baris (nama video
+   /produk) tetap terbaca saat kolom metrik digeser. Latar WAJIB solid — sel
+   sticky melayang di atas sel lain, kalau transparan teksnya saling tembus.
+   Latar hover baris ikut disamakan supaya barisnya tidak terbelah dua warna. */
+.tbl-sticky-first thead th:first-child,
+.tbl-sticky-first tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: rgb(var(--c-surface));
+}
+.tbl-sticky-first thead th:first-child { z-index: 2; }
+.tbl-sticky-first tbody tr:hover td:first-child {
+  background: color-mix(in srgb, rgb(var(--c-fill)) 5%, rgb(var(--c-surface)));
+}

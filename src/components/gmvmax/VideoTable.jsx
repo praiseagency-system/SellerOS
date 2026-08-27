@@ -2,6 +2,7 @@
 // opsi kolom Aksi (rekomendasi) & tombol Catatan.
 import { StickyNote } from 'lucide-react'
 import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp, useSortableRows, SortTh } from './ui'
+import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
 
 const VIDEO_SORT = {
@@ -21,9 +22,13 @@ const ACTION_TEXT = {
 
 export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showDelivery = false, showCampaign = false, showProduct = false }) {
   const { sorted, sort, toggle } = useSortableRows(videos, VIDEO_SORT)
+  // Urut dulu atas SELURUH video, baru dipotong per halaman — supaya
+  // "ROAS tertinggi" tetap tertinggi dari semua baris, bukan dari yang tampil.
+  const pg = usePaged(sorted)
   if (!videos.length) return <p className="text-sm text-ink-faint py-10 text-center">Tidak ada video yang cocok.</p>
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <TableScroll stickyFirst>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-ink-faint border-b border-line/10">
@@ -43,7 +48,7 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
           </tr>
         </thead>
         <tbody>
-          {sorted.map(v => {
+          {pg.paged.map(v => {
             const note = notes[v.videoId]
             return (
               <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">
@@ -89,6 +94,8 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
           })}
         </tbody>
       </table>
+      </TableScroll>
+      <Pager {...pg} unit="video" />
     </div>
   )
 }

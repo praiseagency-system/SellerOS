@@ -1,4 +1,5 @@
 ﻿import { useMemo } from 'react'
+import { TableScroll, usePaged, Pager } from './ui/DataTable'
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react'
 import { QUADRANT_CONFIG, fmtNum, fmtCompact } from '../utils/quadrantUtils'
 import PlatformTag from './PlatformTag'
@@ -30,6 +31,7 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
     () => [...products].sort((a, b) => (b.pengunjung ?? 0) - (a.pengunjung ?? 0)),
     [products]
   )
+  const pg = usePaged(sorted)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -45,6 +47,7 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
 
       {/* Table */}
       <div className="overflow-auto flex-1 text-xs">
+        <TableScroll stickyFirst>
         <table className="w-full border-collapse">
           <thead className="sticky top-0 bg-surface2 z-10">
             <tr>
@@ -61,7 +64,7 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
             </tr>
           </thead>
           <tbody>
-            {sorted.map((p, i) => (
+            {pg.paged.map((p, i) => (
               <tr key={p.kode_produk} className="border-b border-line/5 hover:bg-fill/3 transition-colors">
                 <td className="px-2 py-1.5 text-ink-faint">{i + 1}</td>
                 <td className="px-2 py-1.5">
@@ -118,6 +121,8 @@ function QuadrantTable({ quadrant, products, isCompare, trafficLabel = 'Pengunju
             )}
           </tbody>
         </table>
+        </TableScroll>
+        <Pager {...pg} unit="produk" />
       </div>
     </div>
   )

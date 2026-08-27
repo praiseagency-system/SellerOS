@@ -1,9 +1,10 @@
 // Feature Registry (read-only) — menampilkan kapabilitas GMV Max NYATA per
 // workspace: eligibility tenant + fitur campaign/identity yang tersedia/aktif,
 // beserta source & confidence. TIDAK ada tombol yang mengubah setting TikTok.
+import { TableScroll } from '../../components/ui/DataTable'
 import { useEffect, useState, useMemo } from 'react'
 import { Loader2, ShieldCheck, ShieldAlert, Info } from 'lucide-react'
-import { loadFeatureRegistry, tenantStatusFrom } from '../../data/gmvmaxFeatureRegistry'
+import { loadFeatureRegistry, tenantStatusFrom, BLOCKED_TENANT_STATUS } from '../../data/gmvmaxFeatureRegistry'
 import { EmptyState } from '../../components/gmvmax/ui'
 
 const SCOPE_LABEL = { TENANT: 'Tenant', STORE: 'Store', CAMPAIGN: 'Campaign', PRODUCT: 'Produk', CREATIVE: 'Kreatif', IDENTITY: 'Identitas', LIVE: 'LIVE' }
@@ -56,7 +57,7 @@ export default function FeatureRegistryPage() {
     return SCOPE_ORDER.filter(s => by[s]?.length).map(s => ({ scope: s, rows: by[s] }))
   }, [rows])
 
-  const blocked = ['NOT_AVAILABLE', 'AUTHORIZATION_MISMATCH', 'PERMISSION_DENIED', 'STORE_NOT_FOUND'].includes(tenant.status)
+  const blocked = BLOCKED_TENANT_STATUS.includes(tenant.status)
 
   if (loading) return <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-accent animate-spin" /></div>
   if (err) return <div className="p-6"><div className="bg-red-500/10 text-red-500 rounded-xl p-4 text-sm">Gagal memuat registry: {err}</div></div>
@@ -87,7 +88,8 @@ export default function FeatureRegistryPage() {
       {groups.map(g => (
         <section key={g.scope} className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">{SCOPE_LABEL[g.scope] || g.scope}</h3>
-          <div className="overflow-x-auto rounded-2xl border border-line/10 bg-surface">
+          <div className="rounded-2xl border border-line/10 bg-surface">
+            <TableScroll stickyFirst>
             <table className="w-full text-sm min-w-[880px]">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wide text-ink-faint border-b border-line/10">
@@ -124,6 +126,7 @@ export default function FeatureRegistryPage() {
                 ))}
               </tbody>
             </table>
+            </TableScroll>
           </div>
         </section>
       ))}

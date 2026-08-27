@@ -1,3 +1,4 @@
+import { TableScroll } from '../components/ui/DataTable'
 import { useState } from 'react'
 import QuadrantChart from '../components/QuadrantChart'
 import QuadrantTableView from '../components/QuadrantTableView'
@@ -183,6 +184,7 @@ export default function QuadrantPage() {
                 </div>
                 <div>
                   <p className="text-xs text-ink-faint mb-1">Referensi harga</p>
+                  <TableScroll>
                   <table className="text-xs">
                     <tbody>
                       {CONVERSION_BENCHMARKS.map(b => (
@@ -193,6 +195,7 @@ export default function QuadrantPage() {
                       ))}
                     </tbody>
                   </table>
+                  </TableScroll>
                 </div>
               </div>
             </div>

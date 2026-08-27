@@ -2,6 +2,7 @@
 // di Dashboard (digabung, tanpa halaman terpisah). Share bar + 3 kartu + tren
 // harian stacked + tabel rincian. Channel dari rollupChannels (Live dipisah dari
 // Card via sinyal campaign LIVE).
+import { TableScroll } from '../ui/DataTable'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
@@ -91,8 +92,9 @@ export default function ChannelBreakdown() {
       )}
 
       {/* Tabel rincian */}
-      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4 overflow-x-auto">
+      <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
         <h3 className="text-sm font-semibold text-ink-strong mb-3">Rincian per channel</h3>
+        <TableScroll>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-faint border-b border-line/8">
@@ -128,6 +130,7 @@ export default function ChannelBreakdown() {
             </tr>
           </tbody>
         </table>
+        </TableScroll>
         <p className="text-[11px] text-ink-faint mt-3 flex items-start gap-1.5 leading-relaxed">
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           Live dipisah dari Card via sinyal campaign LIVE. Product card &amp; Live level-campaign (tanpa product_id) → tak muncul di Performa Produk; hanya Video yang ter-atribusi per-produk.
