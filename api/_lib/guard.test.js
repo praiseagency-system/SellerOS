@@ -92,10 +92,12 @@ describe('guard', () => {
     expect(res.statusCode).toBe(503)
   })
 
-  it('meloloskan sesi sah dan mengembalikan userId', async () => {
+  it('meloloskan sesi sah; balikkan userId + token', async () => {
     const res = mockRes()
     const out = await guard(req({ headers: { authorization: 'Bearer sah' } }), res, OPTS)
-    expect(out).toEqual({ userId: 'user-1' })
+    // token ikut dikembalikan supaya endpoint bisa bertanya ke PostgREST ATAS
+    // NAMA pemanggil (RLS yang menjaga), tanpa perlu service_role.
+    expect(out).toEqual({ userId: 'user-1', token: 'sah' })
     expect(res.statusCode).toBeNull()
   })
 

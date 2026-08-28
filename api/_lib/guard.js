@@ -101,15 +101,32 @@ export async function requireUser(req, res) {
       res.status(401).json({ error: 'unauthorized', error_description: 'Sesi tidak sah.' })
       return null
     }
-    return { userId: user.id }
+    // Token ikut dikembalikan: endpoint bisa bertanya ke PostgREST ATAS NAMA
+    // pemanggil, sehingga RLS yang menentukan baris mana yang boleh dilihat —
+    // tanpa perlu service_role sama sekali.
+    return { userId: user.id, token }
   } catch (e) {
     res.status(502).json({ error: 'auth_check_failed', error_description: String(e?.message || e) })
     return null
   }
 }
 
+// Baca tabel lewat PostgREST MEMAKAI JWT pemanggil. Kuncinya: RLS dievaluasi
+// dengan `auth.uid()` = pemanggil, jadi baris milik tenant lain tak akan pernah
+// terbaca. Ini yang membuat verifikasi approval bisa dilakukan tanpa
+// service_role — kita tak perlu hak istimewa, cukup bertanya sebagai user itu.
+export async function selectAsUser(token, path) {
+  const { url, anonKey } = supabaseEnv()
+  if (!url || !anonKey) throw new Error('SUPABASE_URL/ANON_KEY tak tersedia')
+  const r = await fetch(`${url}/rest/v1/${path}`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  })
+  if (!r.ok) throw new Error(`PostgREST ${r.status}: ${(await r.text()).slice(0, 120)}`)
+  return r.json()
+}
+
 // Gerbang lengkap: metode → origin → sesi → batas laju.
-// Balik { userId } bila lolos, atau null bila respons sudah dikirim.
+// Balik { userId, token } bila lolos, atau null bila respons sudah dikirim.
 export async function guard(req, res, { limit, windowMs }) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method_not_allowed' })
