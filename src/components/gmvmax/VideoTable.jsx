@@ -1,11 +1,13 @@
 // Tabel video GMV Max — dipakai Video Overview & Video Check. Kolom standar +
 // opsi kolom Aksi (teks rekomendasi), kolom EKSEKUSI (Boost/Exclude nyata, lewat
 // prop `exec` — sengaja opt-in supaya modal Creator tetap murni baca), & Catatan.
+import { useState } from 'react'
 import { StickyNote } from 'lucide-react'
 import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp, useSortableRows, SortTh } from './ui'
 import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
 import { VideoExecCell } from './VideoExecActions'
+import TargetChooserRow from './TargetChooserRow'
 
 const VIDEO_SORT = {
   cost: (v) => v.lifetime.cost,
@@ -24,6 +26,10 @@ const ACTION_TEXT = {
 
 export default function VideoTable({ videos, thresholds, notes = {}, onNote, productNames = {}, showAction = false, showHook = false, showStatus = true, showDelivery = false, showCampaign = false, showProduct = false, exec = null }) {
   const { sorted, sort, toggle } = useSortableRows(videos, VIDEO_SORT)
+  // Pemilih sasaran dirender sebagai BARIS TABEL, bukan dropdown di dalam sel:
+  // tabel ini hidup di dalam TableScroll yang ber-overflow, dan elemen absolut
+  // di sana pasti terpotong. Pelajaran dari bug yang sama di jendela aksi.
+  const [chooser, setChooser] = useState(null)   // { id, kind }
   // Urut dulu atas SELURUH video, baru dipotong per halaman — supaya
   // "ROAS tertinggi" tetap tertinggi dari semua baris, bukan dari yang tampil.
   const pg = usePaged(sorted)
@@ -53,7 +59,7 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
         <tbody>
           {pg.paged.map(v => {
             const note = notes[v.videoId]
-            return (
+            const baris = (
               <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">
                 <td className="py-2.5 pr-3 max-w-xs"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></td>
                 <td className="py-2.5 px-3"><VideoIdLink videoId={v.videoId} account={v.account} /></td>
@@ -88,7 +94,8 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
                 {exec && (
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <VideoExecCell video={v} resolve={exec.resolve} onBoost={exec.onBoost} onExclude={exec.onExclude}
-                      anchorOf={exec.anchorOf} productName={exec.productName} />
+                      anchorOf={exec.anchorOf}
+                      onOpenChange={(k) => setChooser(k ? { id: v.videoId, kind: k } : null)} />
                   </td>
                 )}
                 <td className="py-2.5 pl-3 text-center">
@@ -100,6 +107,18 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
                 </td>
               </tr>
             )
+            // colSpan dihitung dari kolom yang benar-benar dirender.
+            const kolom = 6 + [showDelivery, showStatus, showCampaign, showProduct, showHook, showAction, exec]
+              .filter(Boolean).length - 1
+            return [baris, chooser?.id === v.videoId && exec ? (
+              <TargetChooserRow key={`${v.videoId}-pilih`} video={v} exec={exec} kind={chooser.kind}
+                colSpan={kolom}
+                onPick={(p) => {
+                  setChooser(null)
+                  ;(chooser.kind === 'BOOST' ? exec.onBoost : exec.onExclude)(v, p)
+                }}
+                onCancel={() => setChooser(null)} />
+            ) : null]
           })}
         </tbody>
       </table>

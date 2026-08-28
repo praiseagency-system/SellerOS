@@ -27,8 +27,6 @@ const BLOCK_HINT = {
   UNAVAILABLE: 'Tak tersedia',
 }
 
-const rpS = (n) => Math.round(Number(n) || 0).toLocaleString('id-ID')
-
 // ── Sel aksi ────────────────────────────────────────────────────────────────
 // resolve(placement) → { storeId, campaignName } | null
 // anchorOf(videoId)  → spu_id produk yang tertaut di video (opsional, sinyal terkuat)
@@ -36,15 +34,12 @@ const rpS = (n) => Math.round(Number(n) || 0).toLocaleString('id-ID')
 // layout 'cell'   → hanya tombol (tabel padat)
 //        'inline' → tombol + baris sasaran & alasannya (daftar rekomendasi)
 export function VideoExecCell({
-  video, resolve, onBoost, onExclude, anchorOf, productName,
-  open: openProp, onOpenChange,
+  video, resolve, onBoost, onExclude, anchorOf, onOpenChange,
 }) {
-  // Menu boleh dikendalikan pemanggil (open/onOpenChange) supaya baris sasaran
-  // bisa diletakkan di kolom kiri — di bawah judul video, tempat ia terbaca —
-  // sambil tetap bisa membuka pemilih yang hidup di sel ini.
-  const [openInner, setOpenInner] = useState(null)   // 'BOOST' | 'EXCLUDE'
-  const open = openProp !== undefined ? openProp : openInner
-  const setOpen = onOpenChange || setOpenInner
+  // Sel ini TIDAK menggambar menu pemilih. Elemen ber-posisi absolut di dalam
+  // tabel bergulir pasti dipotong wadahnya (bug nyata yang dilaporkan user),
+  // jadi saat sasaran belum pasti sel hanya MEMINTA pemanggil membukanya —
+  // pemanggil merendernya sebagai baris tabel membentang (TargetChooserRow).
   const withProduct = (video.placements || []).filter(p => p.productId)
   const places = withProduct.filter(p => resolve(p))
   const blocked = BOOST_BLOCKED_STATUS.includes(video.delivery)
@@ -61,28 +56,34 @@ export function VideoExecCell({
   const target = pickBoostTarget({
     video, anchorSpu: anchorOf?.(video.videoId) || null, eligible: (p) => !!resolve(p),
   })
-  const nama = (p) => productName?.(p.productId) || p.productId
 
-  const pick = (kind, p) => { setOpen(null); (kind === 'BOOST' ? onBoost : onExclude)(video, p) }
   const go = (kind) => {
-    if (target.confident && target.placement) pick(kind, target.placement)
-    else setOpen(open === kind ? null : kind)
+    if (target.confident && target.placement) (kind === 'BOOST' ? onBoost : onExclude)(video, target.placement)
+    else onOpenChange?.(kind)
   }
+  // Tanpa pemanggil yang menyediakan pemilih, tombol untuk sasaran ambigu akan
+  // diam saja — lebih baik dinonaktifkan dengan keterangan daripada mengelabui.
+  const perluPemilih = !target.confident && !onOpenChange
 
   const btn = 'px-2 py-0.5 rounded-md text-[10px] font-semibold border disabled:opacity-40 whitespace-nowrap'
 
   return (
-    <div className="relative inline-flex items-center gap-1">
+    <div className="inline-flex items-center gap-1">
       {blocked ? (
         <span className="text-[10px] text-ink-faint whitespace-nowrap">{BLOCK_HINT[video.delivery] || '—'}</span>
       ) : (
-        <button onClick={() => go('BOOST')} title="Creative Boost — belanja tambahan utk eksplorasi video ini (via 🔔)"
+        <button onClick={() => go('BOOST')} disabled={perluPemilih}
+          title={perluPemilih
+            ? 'Video ini ikut di beberapa campaign — layar ini belum menyediakan pemilih sasaran'
+            : 'Creative Boost — belanja tambahan utk eksplorasi video ini (via 🔔)'}
           className={`${btn} border-violet-500/30 text-violet-300 hover:bg-violet-500/10`}>
           Boost{!target.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
         </button>
       )}
-      <button onClick={() => go('EXCLUDE')}
-        title={video.delivery === 'EXCLUDED' ? 'Pulihkan ke rotasi (via 🔔)' : 'Keluarkan dari rotasi campaign (via 🔔)'}
+      <button onClick={() => go('EXCLUDE')} disabled={perluPemilih}
+        title={perluPemilih
+          ? 'Video ini ikut di beberapa campaign — layar ini belum menyediakan pemilih sasaran'
+          : video.delivery === 'EXCLUDED' ? 'Pulihkan ke rotasi (via 🔔)' : 'Keluarkan dari rotasi campaign (via 🔔)'}
         className={video.delivery === 'EXCLUDED'
           ? `${btn} border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10`
           : `${btn} border-red-500/25 text-red-400 hover:bg-red-500/10`}>
@@ -90,28 +91,6 @@ export function VideoExecCell({
         {!target.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
       </button>
 
-      {/* Pemilih sasaran — hanya untuk video yang ikut di lebih dari satu tempat. */}
-      {open && (
-        <>
-          <button className="fixed inset-0 z-40 cursor-default" aria-label="Tutup" onClick={() => setOpen(null)} />
-          <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-surface border border-line/20 rounded-xl shadow-2xl p-1.5">
-            <p className="text-[9.5px] uppercase tracking-widest text-ink-faint px-2 py-1">
-              {open === 'BOOST' ? 'Boost di campaign' : 'Exclude dari campaign'}
-            </p>
-            {(target.options.length ? target.options : places).map(p => (
-              <button key={`${p.campaignId}|${p.productId}`} onClick={() => pick(open, p)}
-                className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-fill/10">
-                <span className="block text-[11px] text-ink truncate">{p.campaignName || p.campaignId}</span>
-                <span className="block text-[10px] text-ink-muted truncate">{nama(p)}</span>
-                <span className="block text-[9.5px] text-ink-faint truncate">
-                  {p.revenue > 0 ? `omzet ${rpS(p.revenue)} · ${p.orders || 0} order` : 'belum ada omzet'}
-                  {p.delivery ? ` · ${p.delivery}` : ''}
-                </span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   )
 }
