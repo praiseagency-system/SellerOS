@@ -119,3 +119,40 @@ describe('resolveConnection', () => {
       (e) => isTokenError(e) && e.http === 503 && e.error === 'server_unconfigured')
   })
 })
+
+describe('pesan saat kunci server tak terbaca', () => {
+  beforeEach(() => {
+    process.env.SUPABASE_URL = 'https://x.supabase.co'
+    process.env.SUPABASE_ANON_KEY = 'anon'
+    stub({ conn: baseConn })
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('menyebut apa yang harus dicek saat kunci tak ada sama sekali', async () => {
+    delete process.env.SUPABASE_SECRET_KEY
+    await expect(resolveConnection(JWT, MINE)).rejects.toSatisfy(
+      (e) => e.http === 503 && /Production/.test(e.description) && /Redeploy/.test(e.description))
+  })
+
+  it('meneriakkan bahaya bila kunci diberi awalan VITE_', async () => {
+    delete process.env.SUPABASE_SECRET_KEY
+    process.env.VITE_SUPABASE_SECRET_KEY = 'salah-taruh'
+    await expect(resolveConnection(JWT, MINE)).rejects.toSatisfy(
+      (e) => e.http === 503 && /BAHAYA/.test(e.description) && /browser/.test(e.description))
+    delete process.env.VITE_SUPABASE_SECRET_KEY
+  })
+
+  it('membedakan "ada tapi kosong"', async () => {
+    process.env.SUPABASE_SECRET_KEY = '   '
+    await expect(resolveConnection(JWT, MINE)).rejects.toSatisfy(
+      (e) => e.http === 503 && /kosong/.test(e.description))
+  })
+
+  it('menerima nama alternatif SUPABASE_SERVICE_ROLE_KEY', async () => {
+    delete process.env.SUPABASE_SECRET_KEY
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_alt'
+    const out = await resolveConnection(JWT, MINE)
+    expect(out.access_token).toBe('token-lama')
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY
+  })
+})
