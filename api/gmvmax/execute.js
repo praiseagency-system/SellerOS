@@ -7,7 +7,43 @@
 // Setelah apply sukses, endpoint langsung READ-BACK: tt_video_list_get dengan
 // keyword item_id (bila info tersedia) → bukti ikatan benar-benar terjadi.
 import { callBusinessTool, sanitizeAuthCode } from './tt-video.js'
-import { guard, parseBody } from '../_lib/guard.js'
+import { guard, parseBody, selectAsUser } from '../_lib/guard.js'
+
+// Verifikasi baris approval ATAS NAMA pemanggil (RLS yang menjaga kepemilikan).
+// Sebelum ini `approval_id` hanya dicek "tidak kosong" — string apa pun lolos,
+// sehingga user yang login bisa mengeksekusi aksi tanpa pernah melewati antrean
+// persetujuan. Padahal seluruh pagar bisnis (bounds kenaikan budget, cooldown,
+// kill switch) ada di jalur pembuatan/persetujuan approval, bukan di sini.
+//
+// Tidak butuh service_role: query dijalankan dengan JWT pemanggil, jadi baris
+// milik workspace lain tak akan terbaca sama sekali — "tak ditemukan" dan
+// "bukan milikmu" sengaja menghasilkan jawaban yang sama agar tak membocorkan
+// keberadaan approval orang lain.
+async function verifyApproval(token, approvalId, actionType) {
+  if (!/^[0-9a-f-]{36}$/i.test(approvalId)) {
+    return { http: 400, body: { error: 'invalid_request', error_description: 'approval_id bukan UUID.' } }
+  }
+  let rows
+  try {
+    rows = await selectAsUser(
+      token,
+      `gmvmax_approvals?id=eq.${encodeURIComponent(approvalId)}&select=id,action_type,status&limit=1`
+    )
+  } catch (e) {
+    return { http: 502, body: { error: 'approval_lookup_failed', error_description: String(e?.message || e) } }
+  }
+  const row = Array.isArray(rows) ? rows[0] : null
+  if (!row) {
+    return { http: 403, body: { error: 'approval_not_found', error_description: 'Approval tak ditemukan untuk akun ini.' } }
+  }
+  if (row.status !== 'APPROVED') {
+    return { http: 409, body: { error: 'approval_not_approved', error_description: `Approval berstatus ${row.status}, bukan APPROVED.` } }
+  }
+  if (row.action_type !== actionType) {
+    return { http: 400, body: { error: 'approval_action_mismatch', error_description: `Approval ini untuk ${row.action_type}, bukan ${actionType}.` } }
+  }
+  return null
+}
 
 const ALLOWED = new Set([
   'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'PRODUCTS_UPDATE',
@@ -33,6 +69,10 @@ export default async function handler(req, res) {
       res.status(501).json({ error: 'not_enabled', error_description: `Aksi ${action_type} belum diaktifkan (aktivasi bertahap; kini baru SPARK_BIND).` })
       return
     }
+
+    // Approval diperiksa SEBELUM aksi apa pun menyentuh TikTok.
+    const bad = await verifyApproval(auth.token, approval_id, action_type)
+    if (bad) { res.status(bad.http).json(bad.body); return }
 
     // ── E4b: SESSION_CREATE (Max Delivery / Creative Boost) ─────────────────
     if (action_type === 'SESSION_CREATE') {

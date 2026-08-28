@@ -64,11 +64,22 @@ Keempatnya kini lewat `api/_lib/guard.js`: wajib `Authorization: Bearer <JWT
 Supabase>` (diverifikasi ke `/auth/v1/user`), allowlist Origin, batas laju
 per user+IP, dan **gagal tertutup** bila env auth tak tersedia.
 
-**SISA yang belum ditutup (bukan lagi lubang internet, tapi tetap celah):**
-`execute` menerima `approval_id` apa adanya — tak pernah dicek ke DB apakah
-baris approval itu ada, milik workspace pemanggil, dan berstatus APPROVED.
-Artinya user login bisa mengeksekusi aksi tanpa melewati alur persetujuan.
-Menutupnya butuh baca DB di sisi server → digabung dengan 1.2.
+**1.1b Verifikasi `approval_id` — SELESAI, dan ternyata TIDAK butuh service_role.**
+Sebelumnya `execute` menerima `approval_id` apa adanya (hanya dicek tak kosong),
+sehingga user login bisa mengeksekusi aksi tanpa melewati antrean persetujuan —
+padahal SEMUA pagar bisnis (batas kenaikan budget, cooldown, kill switch) ada di
+jalur pembuatan/persetujuan approval, bukan di endpoint ini.
+
+Asumsi awal "butuh baca DB sisi server, jadi butuh `SUPABASE_SECRET_KEY`" **salah**.
+Gerbang sudah memverifikasi JWT pemanggil, jadi endpoint cukup bertanya ke
+PostgREST **memakai JWT itu** (`selectAsUser`): RLS `gmvmax_approvals_owner_all`
+mengevaluasi `auth.uid()` sebagai pemanggil, sehingga baris milik tenant lain
+tak pernah terbaca. Hak istimewa tak diperlukan — cukup bertanya sebagai user itu.
+
+Kini ditolak: approval milik akun lain / tak ada (403), belum APPROVED (409),
+untuk jenis aksi berbeda (400), `approval_id` bukan UUID (400). "Tak ditemukan"
+dan "bukan milikmu" sengaja berjawaban sama agar keberadaan approval orang lain
+tak bocor. Semua penolakan terjadi SEBELUM TikTok tersentuh.
 
 **1.2 Token TikTok tidak lagi terbaca client — BELUM, asumsi awal SALAH.**
 Rencana awal menyebut "client tak butuh membaca isi token". Setelah dibaca,
@@ -76,10 +87,13 @@ ternyata **butuh**: `renew` memanggil `refreshAccessToken(conn.refresh_token)`
 dan keempat endpoint di atas dipanggil dengan `access_token` dari browser.
 Jadi mencabut SELECT kolom token akan mematikan Integrasi TikTok.
 
-Urutan yang benar (butuh `SUPABASE_SECRET_KEY` di env Vercel — keputusan user):
-1. Pindahkan `renew` + pengambilan token ke sisi server: endpoint membaca
-   token via service_role berdasarkan workspace milik pemanggil, jadi token
-   tak pernah menyentuh browser. Sekalian verifikasi `approval_id` (sisa 1.1).
+Urutan yang benar (ini yang MEMANG butuh `SUPABASE_SECRET_KEY` di env Vercel —
+keputusan user; berbeda dari verifikasi approval di 1.1b yang ternyata cukup
+dengan JWT pemanggil):
+1. Pindahkan `renew` + pengambilan token ke sisi server: endpoint membaca token
+   via service_role berdasarkan workspace milik pemanggil, jadi token tak pernah
+   menyentuh browser. Di sini service_role tak terhindarkan — justru tujuannya
+   adalah membaca yang TIDAK boleh dibaca pemanggil.
 2. Baru cabut SELECT kolom token dari `authenticated`.
 3. Enkripsi at-rest (pgsodium) menyusul.
 
