@@ -1,16 +1,24 @@
-// AI Insight — rule-based (bukan model AI eksternal). 3 sub-tab:
-// Insight (kartu Scale/Watch/Kill), Action Plan, Winning Framework.
-import { useState } from 'react'
+// AI Insight — rule-based (bukan model AI eksternal).
+// Tab "Rekomendasi Aksi" berisi pekerjaan NYATA yang bisa diantre ke 🔔 (Opsi B:
+// kartu per jenis pekerjaan). Bedanya dgn keluaran Skills yang bertanda
+// DESCRIPTIVE_ONLY: di sini tiap butir punya tombol dan membawa sidik kondisi
+// sebagai kait untuk loop belajar.
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, fmtRpC, fmtRoasX, tiktokVideoUrl, VideoIdLink } from '../../components/gmvmax/ui'
 import DecisionPanel from '../../components/gmvmax/DecisionPanel'
 import ExperimentPanel from '../../components/gmvmax/ExperimentPanel'
+import ActionCards from '../../components/gmvmax/ActionCards'
+import { VideoBoostDialog, VideoExcludeDialog } from '../../components/gmvmax/VideoExecActions'
+import { buildRecommendations, totalActions } from '../../utils/gmvmaxRecommendations'
+import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
+import { loadLatestSparkAuth } from '../../data/gmvmaxSparkAuth'
 
 const TABS = [
   { id: 'di', label: 'Decision Intelligence' },
   { id: 'exp', label: 'Eksperimen' },
   { id: 'insight', label: 'Insight' },
-  { id: 'plan', label: 'Action Plan' },
+  { id: 'plan', label: 'Rekomendasi Aksi' },
   { id: 'framework', label: 'Winning Framework' },
 ]
 
@@ -22,9 +30,48 @@ const ACTION_BADGE = {
 }
 
 export default function InsightPage({ onOpenUpload }) {
-  const { insights, hasData } = useGmvMax()
+  const { insights, hasData, videos, thresholds, periodName } = useGmvMax()
   const [tab, setTab] = useState('insight')
   const [expDraft, setExpDraft] = useState(null)   // draft eksperimen dari DecisionPanel
+
+  // Bahan rekomendasi yang TIDAK ada di context: setelan campaign (utk campaign
+  // mati ber-budget + store_id/status eksekusi) & potret otorisasi spark.
+  const [settings, setSettings] = useState(null)
+  const [sparkAuth, setSparkAuth] = useState([])
+  const [dialog, setDialog] = useState(null)
+  const [queuedMsg, setQueuedMsg] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    loadCampaignSettingsHistory({ days: 30 })
+      .then(rows => { if (alive) setSettings(latestPerCampaign(rows)) })
+      .catch(() => {})
+    // Tabel otorisasi baru ada sejak migrasi 0048; loadernya mengembalikan []
+    // bila belum ada, jadi kartunya cukup bilang "menunggu sync harian".
+    loadLatestSparkAuth().then(r => { if (alive) setSparkAuth(r) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  const cset = useMemo(
+    () => (settings ? new Map(settings.map(r => [r.campaign_id, r])) : null),
+    [settings])
+
+  const resolve = useCallback((placement) => {
+    const c = cset?.get(placement.campaignId)
+    if (!c || !c.store_id) return null
+    if (String(c.operation_status || '').toUpperCase() !== 'ENABLE') return null
+    return { storeId: c.store_id, campaignName: c.campaign_name || placement.campaignName }
+  }, [cset])
+
+  const exec = useMemo(() => (cset ? {
+    resolve,
+    onBoost: (video, placement) => setDialog({ kind: 'BOOST', video, placement, storeId: resolve(placement)?.storeId }),
+    onExclude: (video, placement) => setDialog({ kind: 'EXCLUDE', video, placement }),
+  } : null), [cset, resolve])
+
+  const groups = useMemo(
+    () => buildRecommendations({ videos, thresholds, settings: settings || [], sparkAuth }),
+    [videos, thresholds, settings, sparkAuth])
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
@@ -46,8 +93,30 @@ export default function InsightPage({ onOpenUpload }) {
       {tab === 'di' && <DecisionPanel onExperiment={startExperiment} />}
       {tab === 'exp' && <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} />}
       {tab === 'insight' && <InsightCards cards={insights.cards} />}
-      {tab === 'plan' && <ActionPlan steps={insights.plan} />}
+      {tab === 'plan' && (
+        <div className="space-y-6">
+          {queuedMsg && (
+            <div className="flex items-start gap-2 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2.5">
+              <p className="text-xs text-violet-200 flex-1">{queuedMsg}</p>
+              <button onClick={() => setQueuedMsg(null)} className="text-[11px] text-ink-faint hover:text-ink">tutup</button>
+            </div>
+          )}
+          <ActionCards groups={groups} total={totalActions(groups)} snapshotDate={periodName} exec={exec} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint mb-2">Panduan umum</p>
+            <ActionPlan steps={insights.plan} />
+          </div>
+        </div>
+      )}
       {tab === 'framework' && <Framework items={insights.framework} />}
+      {dialog?.kind === 'BOOST' && (
+        <VideoBoostDialog video={dialog.video} placement={dialog.placement} storeId={dialog.storeId}
+          onClose={() => setDialog(null)} onQueued={setQueuedMsg} />
+      )}
+      {dialog?.kind === 'EXCLUDE' && (
+        <VideoExcludeDialog video={dialog.video} placement={dialog.placement}
+          onClose={() => setDialog(null)} onQueued={setQueuedMsg} />
+      )}
     </div>
   )
 }
