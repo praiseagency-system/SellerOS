@@ -8,8 +8,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { useIdentity } from '../contexts/IdentityContext'
 import { fileToAvatarDataUrl } from '../data/localIdentity'
 import { supabase } from '../lib/supabase'
-import { createPkce, buildAuthorizeUrl, refreshAccessToken, stashOAuthSession, fetchAdvertisers } from '../lib/tiktokOAuth'
-import { getConnection, saveConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
+import { createPkce, buildAuthorizeUrl, stashOAuthSession, fetchAdvertisers } from '../lib/tiktokOAuth'
+import { postJson } from '../lib/apiClient'
+import { getConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
 import { getExecutionSettings, saveExecutionSettings, createApproval } from '../data/gmvmaxApprovals'
 import EligibilityAlert from '../components/gmvmax/EligibilityAlert'
 
@@ -279,11 +280,11 @@ function IntegrasiTab({ currentWorkspace }) {
   }
 
   async function renew() {
-    if (!conn?.refresh_token) return
     setBusy(true); setError(null); setOkMsg(null)
     try {
-      const tok = await refreshAccessToken(conn.refresh_token)
-      await saveConnection(tok, wsId)
+      // Perpanjangan dikerjakan server: browser tak lagi memegang refresh_token,
+      // cukup menyebut workspace-nya (api/tiktok/renew).
+      await postJson('/api/tiktok/renew', { workspace_id: wsId })
       applyConn(await getConnection(wsId))
       setOkMsg('Token diperbarui.')
     } catch (e) {
@@ -339,7 +340,7 @@ function IntegrasiTab({ currentWorkspace }) {
             </div>
           </div>
           <div className="flex items-center gap-2 mt-4">
-            <button onClick={renew} disabled={busy || !conn.refresh_token}
+            <button onClick={renew} disabled={busy}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Perbarui token
             </button>
@@ -396,7 +397,7 @@ function AdvertiserSection({ conn, wsId, onSaved }) {
 
   async function load() {
     setPicking(true); setErr(null); setBusy(true)
-    try { setList(await fetchAdvertisers(conn.access_token)) }
+    try { setList(await fetchAdvertisers(conn.workspace_id)) }
     catch (e) { setErr(e.message || 'Gagal memuat daftar akun.') }
     finally { setBusy(false) }
   }

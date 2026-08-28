@@ -14,9 +14,12 @@
 // Dibaca SAAT DIPANGGIL, bukan saat modul dimuat: di serverless env baru
 // tersedia pada waktu jalan, dan pembacaan lazy membuat perilaku fungsi ini
 // tidak bergantung pada urutan import saat diuji.
-const supabaseEnv = () => ({
+export const supabaseEnv = () => ({
   url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
   anonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
+  // JANGAN pernah diberi awalan VITE_ — apa pun yang berawalan itu ikut
+  // dikompilasi ke bundel browser, dan kunci ini menembus semua RLS.
+  secretKey: process.env.SUPABASE_SECRET_KEY || '',
 })
 
 // Origin yang boleh memanggil. Bisa ditimpa lewat env ALLOWED_ORIGINS

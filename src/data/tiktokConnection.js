@@ -5,12 +5,21 @@ import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
 import { TIKTOK_OAUTH } from '../lib/tiktokOAuth'
 
+// Kolom yang boleh dibaca browser — SENGAJA tanpa access_token & refresh_token.
+// Token kini diselesaikan di sisi server (api/_lib/tiktokToken.js); browser
+// cukup menyebut workspace_id. `select('*')` TIDAK boleh dipakai lagi: begitu
+// privilege kolom token dicabut dari `authenticated`, bintang akan gagal total
+// dengan "permission denied" dan mematikan seluruh tab Integrasi.
+const SAFE_COLS =
+  'workspace_id, client_id, scope, token_type, expires_at, advertiser_id, ' +
+  'advertiser_name, store_id, store_name, connected_by, created_at, updated_at'
+
 // Ambil koneksi workspace aktif (atau null bila belum connect).
 export async function getConnection(wsId = getCurrentWorkspaceId()) {
   if (!wsId) return null
   const { data, error } = await supabase
     .from('tiktok_connections')
-    .select('*')
+    .select(SAFE_COLS)
     .eq('workspace_id', wsId)
     .maybeSingle()
   if (error) throw error

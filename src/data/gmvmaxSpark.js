@@ -12,7 +12,9 @@ import { createApproval, decideApproval } from './gmvmaxApprovals'
 // Koneksi + advertiser aktif workspace (token dibaca via RLS owner).
 async function requireConn() {
   const conn = await getConnection()
-  if (!conn?.access_token) throw new Error('TikTok Ads belum tersambung untuk workspace ini.')
+  // Token tak lagi terbaca browser (diselesaikan server) — keberadaan
+  // BARIS koneksi yang menandakan tersambung, bukan ada-tidaknya token.
+  if (!conn?.workspace_id) throw new Error('TikTok Ads belum tersambung untuk workspace ini.')
   if (!conn?.advertiser_id) throw new Error('Advertiser belum dipilih (Pengaturan → Integrasi).')
   return conn
 }
@@ -21,7 +23,7 @@ async function requireConn() {
 export async function fetchSparkInfo(authCode) {
   const conn = await requireConn()
   const { info } = await post('/api/gmvmax/tt-video', {
-    access_token: conn.access_token, advertiser_id: conn.advertiser_id, op: 'info', auth_code: authCode,
+    workspace_id: conn.workspace_id, advertiser_id: conn.advertiser_id, op: 'info', auth_code: authCode,
   })
   return info // { item_id?, item_info?/video_info?, ... } — bentuk penuh dari TikTok
 }
@@ -30,7 +32,7 @@ export async function fetchSparkInfo(authCode) {
 export async function fetchSparkList({ page = 1, keyword = null } = {}) {
   const conn = await requireConn()
   const { list } = await post('/api/gmvmax/tt-video', {
-    access_token: conn.access_token, advertiser_id: conn.advertiser_id, op: 'list', page,
+    workspace_id: conn.workspace_id, advertiser_id: conn.advertiser_id, op: 'list', page,
     ...(keyword ? { keyword } : {}),
   })
   return list // { list: [...], page_info: {...} }
@@ -48,7 +50,7 @@ export async function executeSparkBind(approvalRow) {
   let result = null, failMsg = null
   try {
     result = await post('/api/gmvmax/execute', {
-      access_token: conn.access_token,
+      workspace_id: conn.workspace_id,
       action_type: 'SPARK_BIND',
       approval_id: approvalRow.id,
       params: {
@@ -128,7 +130,7 @@ export async function executeSparkUnbind(approvalRow) {
   let result = null, failMsg = null
   try {
     result = await post('/api/gmvmax/execute', {
-      access_token: conn.access_token,
+      workspace_id: conn.workspace_id,
       action_type: 'SPARK_UNBIND',
       approval_id: approvalRow.id,
       params: { advertiser_id: conn.advertiser_id, item_id: itemId },

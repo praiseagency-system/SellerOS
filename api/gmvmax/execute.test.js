@@ -29,6 +29,9 @@ const ROWS = {
 // Dipakai untuk membuktikan panggilan TikTok TIDAK pernah terjadi saat ditolak.
 const TIKTOK_REACHED = 'TIKTOK_REACHED'
 
+const WS_MINE = '44444444-4444-4444-4444-444444444444'
+const WS_NOT_MINE = '55555555-5555-5555-5555-555555555555'
+
 function stubFetch() {
   vi.stubGlobal('fetch', vi.fn(async (u) => {
     const url = String(u)
@@ -36,6 +39,20 @@ function stubFetch() {
     if (url.includes('gmvmax_approvals')) {
       const id = Object.keys(ROWS).find(k => url.includes(k))
       return { ok: true, json: async () => (id ? ROWS[id] : []) }
+    }
+    // Meniru RLS: hanya workspace milik pemanggil yang terlihat.
+    if (url.includes('/rest/v1/workspaces')) {
+      return { ok: true, json: async () => (url.includes(WS_MINE) ? [{ id: WS_MINE }] : []) }
+    }
+    if (url.includes('tiktok_connections')) {
+      return {
+        ok: true,
+        json: async () => [{
+          workspace_id: WS_MINE, client_id: 'c', access_token: 'tok', refresh_token: 'r',
+          expires_at: new Date(Date.now() + 3600_000 * 5).toISOString(),
+          advertiser_id: 'adv-1', advertiser_name: 'Toko A',
+        }],
+      }
     }
     throw new Error(TIKTOK_REACHED)
   }))
@@ -46,7 +63,7 @@ const call = (body) => {
   return handler({ method: 'POST', headers: { authorization: 'Bearer sah' }, body }, res).then(() => res)
 }
 const spark = (approval_id, extra = {}) => ({
-  access_token: 't', action_type: 'SPARK_BIND', approval_id,
+  action_type: 'SPARK_BIND', approval_id, workspace_id: WS_MINE,
   params: { advertiser_id: '123', auth_code: 'abc' }, ...extra,
 })
 
@@ -54,6 +71,7 @@ describe('execute — gerbang approval', () => {
   beforeEach(() => {
     process.env.SUPABASE_URL = 'https://x.supabase.co'
     process.env.SUPABASE_ANON_KEY = 'k'
+    process.env.SUPABASE_SECRET_KEY = 'sb_secret_palsu'
     stubFetch()
   })
   afterEach(() => { vi.unstubAllGlobals() })
@@ -92,6 +110,18 @@ describe('execute — gerbang approval', () => {
   it('approval sah diteruskan ke TikTok', async () => {
     const res = await call(spark(APPROVED))
     // Mock melempar saat MCP dipanggil → bukti permintaan lolos gerbang.
+    expect(res.body.error_description).toContain(TIKTOK_REACHED)
+  })
+
+  it('menolak eksekusi atas workspace milik akun lain', async () => {
+    const res = await call(spark(APPROVED, { workspace_id: WS_NOT_MINE }))
+    expect(res.statusCode).toBe(403)
+    expect(res.body.error).toBe('forbidden_workspace')
+  })
+
+  it('browser tak lagi bisa menyuntikkan access_token sendiri', async () => {
+    // Token dari body diabaikan total; server memakai token dari koneksi.
+    const res = await call(spark(APPROVED, { access_token: 'token-suntikan' }))
     expect(res.body.error_description).toContain(TIKTOK_REACHED)
   })
 
