@@ -7,6 +7,7 @@
 // Setelah apply sukses, endpoint langsung READ-BACK: tt_video_list_get dengan
 // keyword item_id (bila info tersedia) → bukti ikatan benar-benar terjadi.
 import { callBusinessTool, sanitizeAuthCode } from './tt-video.js'
+import { guard, parseBody } from '../_lib/guard.js'
 
 const ALLOWED = new Set([
   'SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'PRODUCTS_UPDATE',
@@ -15,10 +16,15 @@ const ALLOWED = new Set([
 const ENABLED = new Set(['SPARK_BIND', 'SPARK_UNBIND', 'BUDGET_UPDATE', 'ROI_UPDATE', 'STATUS_UPDATE', 'PRODUCTS_UPDATE', 'CREATIVE_EXCLUDE', 'SESSION_CREATE', 'SESSION_UPDATE', 'SESSION_DELETE']) // E1..E4
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
+  // Ini pintu TULIS ke TikTok (ikat spark, ubah budget/ROI, buat sesi boost) —
+  // aksi yang membelanjakan uang. Sebelum ini endpoint terbuka untuk siapa pun
+  // di internet. Sekarang wajib sesi Supabase + origin dikenal + batas laju.
+  // Batas 60/menit dipilih agar "Rekomendasi Aksi Harian" (puluhan aksi dalam
+  // satu jalan) tetap lolos, tapi eksekusi massal tak terbatas tertutup.
+  const auth = await guard(req, res, { limit: 60, windowMs: 60_000 })
+  if (!auth) return
   try {
-    let body = req.body
-    if (typeof body === 'string') body = JSON.parse(body || '{}')
+    const body = parseBody(req)
     const { access_token, action_type, approval_id, params } = body || {}
     if (!access_token) { res.status(400).json({ error: 'invalid_request', error_description: 'access_token wajib' }); return }
     if (!ALLOWED.has(action_type)) { res.status(400).json({ error: 'invalid_action', error_description: `action_type tak dikenal: ${action_type}` }); return }
