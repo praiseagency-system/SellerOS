@@ -29,6 +29,8 @@ import { findAdvertiser, eligibleAdvertisers, groupByWorkspace } from './adverti
 import { advertiserTargetsForDate } from './sourceModel.mjs'
 import { loadEligibleConnections } from './connections.mjs'
 import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
+import { fetchBoostSessions, persistBoostSessions, fetchSparkAuth, persistSparkAuth } from './outOfBandCapture.mjs'
+import { openExperimentsFromApprovals, markContamination } from './experimentOpener.mjs'
 import { fetchRegistryInputs, fetchAuthorizedAdvertiserIds } from './featureRegistryFetch.mjs'
 import { persistRegistry, resolveWorkspaceOwner } from './featureRegistryWriter.mjs'
 import { generateAndPersistDecisions } from './decisions.mjs'
@@ -128,6 +130,28 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       }
     }
 
+    // 4b) POTRET AKSI DI LUAR SELLEROS (NON-FATAL). Sesi boost & otorisasi spark
+    //     yang dijalankan lewat Ads Manager/Seller Centre tak pernah masuk
+    //     gmvmax_approvals. Keduanya hanya bisa dibaca sebagai keadaan SEKARANG
+    //     (session_list cuma memberi sesi yang sedang berjalan), jadi tanpa potret
+    //     harian ia lenyap tanpa bekas — dan loop belajar menilai boost hanya dari
+    //     separuh kejadian. Panggilan sesi praktis gratis: featureRegistryFetch
+    //     sudah memanggilnya tiap pagi, selama ini jawabannya dibuang.
+    if (!dryRun) {
+      for (const en of entries) {
+        try {
+          const rows = await fetchBoostSessions(provider, { advertiserId: en.advertiserId, storeId: en.storeId })
+          const { written } = await persistBoostSessions(sb, { workspaceId, date, rows })
+          safeLog({ event: 'BOOST_SESSIONS_CAPTURED', workspace_id: workspaceId, advertiser_id: en.advertiserId, count: written, snapshot_date: date })
+        } catch (e) { safeLog({ event: 'BOOST_SESSIONS_FAILED', level: 'warn', workspace_id: workspaceId, advertiser_id: en.advertiserId, message: e.message }, console.error) }
+        try {
+          const rows = await fetchSparkAuth(provider, { advertiserId: en.advertiserId })
+          const { written } = await persistSparkAuth(sb, { workspaceId, date, rows })
+          safeLog({ event: 'SPARK_AUTH_CAPTURED', workspace_id: workspaceId, advertiser_id: en.advertiserId, count: written, snapshot_date: date })
+        } catch (e) { safeLog({ event: 'SPARK_AUTH_FAILED', level: 'warn', workspace_id: workspaceId, advertiser_id: en.advertiserId, message: e.message }, console.error) }
+      }
+    }
+
     // 5) Decision Intelligence (NON-FATAL, di balik flag). Generate + persist
     //    output Skills 1/2/3/4/9 utk snapshot yang BARU ditulis. Gagal generate
     //    TIDAK menjatuhkan commit (kanonik sudah aman). Default OFF sampai
@@ -140,6 +164,22 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       } catch (e) {
         safeLog({ event: 'GEN_DECISIONS_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
       }
+    }
+
+    // 5b) JEMBATAN 1 (NON-FATAL, ikut flag evaluasi). Buka eksperimen untuk tiap
+    //     approval EXECUTED yang belum punya, lalu tandai yang jendelanya kemasukan
+    //     perubahan lain. WAJIB sebelum langkah 6 supaya eksperimen yang baru dibuka
+    //     langsung ikut terukur pada run yang sama. Idempoten (unique
+    //     source_approval_id) → aman diulang, dan menyapu aksi lama secara surut.
+    if (!dryRun && process.env.GMVMAX_EVAL_EXPERIMENTS === '1') {
+      try {
+        const o = await openExperimentsFromApprovals({ sb, workspaceId, storeId: entries[0]?.storeId, now })
+        safeLog({ event: 'EXP_OPENED', workspace_id: workspaceId, snapshot_date: date, opened: o.opened, skipped: o.skipped ?? 0, absent: o.absent === true })
+      } catch (e) { safeLog({ event: 'EXP_OPEN_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
+      try {
+        const m = await markContamination({ sb, workspaceId, now })
+        safeLog({ event: 'EXP_CONTAMINATION_MARKED', workspace_id: workspaceId, snapshot_date: date, marked: m.marked, absent: m.absent === true })
+      } catch (e) { safeLog({ event: 'EXP_CONTAMINATION_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
     }
 
     // 6) Evaluasi eksperimen (#3b-server, NON-FATAL, flag). Hitung checkpoint

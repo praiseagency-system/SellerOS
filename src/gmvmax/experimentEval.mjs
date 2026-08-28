@@ -40,9 +40,18 @@ async function loadSeries(sb, { workspaceId, from, to, subject }) {
 // null/absent → classifyOutcome tetap konservatif (jangan isi TBD).
 async function loadRuleConfig(sb, workspaceId) {
   const { data } = await sb.from('gmvmax_settings')
-    .select('experiment_roi_floor').eq('workspace_id', workspaceId).maybeSingle()
+    .select('experiment_roi_floor,experiment_spike_drop_pct,experiment_winner_persistence')
+    .eq('workspace_id', workspaceId).maybeSingle()
+  const cfg = {}
   const rf = data?.experiment_roi_floor
-  return rf != null && Number.isFinite(Number(rf)) ? { roiFloor: Number(rf) } : {}
+  if (rf != null && Number.isFinite(Number(rf))) cfg.roiFloor = Number(rf)
+  // Tanpa spikeDropPct, classifyOutcome TIDAK PERNAH bisa memvonis
+  // TEMPORARY_SPIKE — padahal itu pola kegagalan paling khas sesi boost.
+  const sd = data?.experiment_spike_drop_pct
+  if (sd != null && Number.isFinite(Number(sd))) cfg.spikeDropPct = Number(sd)
+  const wp = data?.experiment_winner_persistence
+  if (wp != null && Number.isInteger(Number(wp))) cfg.winnerPersistence = Number(wp)
+  return cfg
 }
 
 // Evaluasi semua eksperimen RUNNING satu workspace. Update checkpoints + conclusion
@@ -59,7 +68,13 @@ export async function evaluateExperiments({ sb, workspaceId, ruleConfig }) {
     const subject = { video_id: exp.creative_video_id, product_id: exp.product_id, campaign_id: exp.campaign_id }
     const series = await loadSeries(sb, { workspaceId, from, to: today, subject })
     const computed = computeCheckpoints({ experiment: exp, series })
-    const outcome = classifyOutcome({ computed, ruleConfig, status: exp.status })
+    // TERCAMPUR = ada perubahan lain mendarat di jendela pengukuran, jadi sebab
+    // hasilnya tak bisa dipisahkan. Checkpoint tetap dihitung (angkanya masih
+    // berguna dilihat manusia) tetapi TIDAK boleh jadi vonis — kalau dipaksa
+    // menyimpulkan, buku pelajaran akan menyerap sebab yang keliru.
+    const outcome = exp.contaminated
+      ? { conclusion: 'DATA_INSUFFICIENT', confidence: 'DATA_INSUFFICIENT' }
+      : classifyOutcome({ computed, ruleConfig, status: exp.status })
     const { error: ue } = await sb.from('gmvmax_experiments').update({
       checkpoints: computed.checkpoints,
       conclusion: outcome.conclusion, confidence: outcome.confidence,

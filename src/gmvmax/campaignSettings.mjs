@@ -107,6 +107,18 @@ export function diffSettings(prev = [], cur = []) {
         changes.push({ campaign_id: c.campaign_id, campaign_name: c.campaign_name, field: key, label, from: a, to: b, modify_time: c.modify_time })
       }
     }
+    // Produk di campaign (item_group_ids) — array, jadi dibandingkan sebagai
+    // HIMPUNAN. Datanya sudah lama ikut terpotret tapi tak pernah dibandingkan,
+    // sehingga tambah/cabut produk lewat Ads Manager selama ini tak terlihat.
+    const pi = Array.isArray(p.item_group_ids) ? p.item_group_ids.map(String) : []
+    const ci = Array.isArray(c.item_group_ids) ? c.item_group_ids.map(String) : []
+    const added = ci.filter(x => !pi.includes(x))
+    const removed = pi.filter(x => !ci.includes(x))
+    if (added.length || removed.length) {
+      changes.push({ campaign_id: c.campaign_id, campaign_name: c.campaign_name, field: 'item_group_ids', label: 'Produk',
+        from: `${pi.length} produk`, to: `${ci.length} produk (${added.length ? `+${added.length}` : ''}${added.length && removed.length ? ' ' : ''}${removed.length ? `-${removed.length}` : ''})`,
+        added, removed, modify_time: c.modify_time })
+    }
     // auto-budget: bandingkan current_budget & enabled saja (sisanya turunan)
     const pa = p.auto_budget || {}, ca = c.auto_budget || {}
     if (String(pa.auto_budget_enabled) !== String(ca.auto_budget_enabled)) {
