@@ -10,6 +10,8 @@ import { X, ArrowLeft } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { fmtRp, fmtRpC, fmtRoasX, DeltaBadge, tiktokVideoUrl } from './ui'
 import { requestCreativeExclude, requestBoostSession, requestSessionStop, requestSessionUpdate, fetchSessions, SESSION_MIN_BUDGET_IDR, BOOST_BLOCKED_STATUS } from '../../data/gmvmaxCampaignControl'
+import SessionSchedule from './SessionSchedule'
+import { defaultSchedule } from '../../utils/gmvmaxSchedule'
 import { blankAgg, addInto, finalize } from '../../utils/gmvmaxRollup'
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
@@ -81,7 +83,12 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     finally { setBoostBusy(false) }
   }
   const [boostBudget, setBoostBudget] = useState(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST))
-  const [boostHours, setBoostHours] = useState('24')
+  // Jadwal dibekukan saat form dibuka (lihat setBoostFor) supaya durasinya tidak
+  // merayap turun sementara pengguna masih mengetik.
+  const [boostSched, setBoostSched] = useState(null)
+  // "Sekarang" dibekukan sekali; Date.now() di badan render adalah fungsi
+  // tak-murni (aturan lint React yang sudah pernah menggigit di repo ini).
+  const [nowMs] = useState(() => Date.now())
   const [boostBusy, setBoostBusy] = useState(false)
   useEffect(() => {
     if (!campaign?.campaign_id) return
@@ -99,7 +106,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         campaignId: campaign.campaign_id, campaignName: campaign.campaign_name,
         storeId: campaign.store_id, spuId,
         itemId: v?.videoId || null, videoTitle: v?.videoTitle || boostFor.name || '',
-        budget: Number(boostBudget), hours: Number(boostHours),
+        budget: Number(boostBudget),
+        startAt: boostSched?.startAt || null, endAt: boostSched?.endAt || null,
         evidence: v
           ? { status: cell?.status || null, cost: Math.round(v.cost || 0), revenue: Math.round(v.grossRevenue || 0) }
           : { produk: boostFor.name || spuId },
@@ -354,16 +362,18 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
               <input type="number" min={SESSION_MIN_BUDGET_IDR[boostFor.kind]} step="10000" value={boostBudget} onChange={e => setBoostBudget(e.target.value)}
                 className="w-28 bg-surface border border-line/15 rounded-lg px-2 py-1.5 font-mono text-ink" />
               <span className="text-ink-faint">Rp/hari (min {SESSION_MIN_BUDGET_IDR[boostFor.kind].toLocaleString('id-ID')})</span>
-              <select value={boostHours} onChange={e => setBoostHours(e.target.value)}
-                className="bg-surface border border-line/15 rounded-lg px-2 py-1.5 text-ink">
-                <option value="24">24 jam</option><option value="48">48 jam</option><option value="72">72 jam</option>
-              </select>
               <button disabled={boostBusy} onClick={submitBoost}
                 className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40">
                 Ajukan boost
               </button>
               <button onClick={() => setBoostFor(null)} className="text-ink-faint hover:text-ink text-[11px]">batal</button>
             </div>
+            {boostSched && (
+              <div className="mt-2.5">
+                <SessionSchedule kind={boostFor.kind} startAt={boostSched.startAt} endAt={boostSched.endAt}
+                  onChange={setBoostSched} nowMs={nowMs} />
+              </div>
+            )}
             <p className="text-[10px] text-ink-faint mt-1.5">Tanpa jaring ROI & di luar ROI Protection — jendela pendek, nilai hasil di H+3–H+7 dari nasib video pasca-boost.</p>
           </div>
         )}
@@ -562,7 +572,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                       <td className="py-1.5 px-2 text-center"><RetentionBars funnel={v.m.funnel} /></td>
                       <td className="py-1.5 pl-2 text-right whitespace-nowrap">
                         {!BOOST_BLOCKED_STATUS.includes(cell.status) && cell.productId !== '(tanpa produk)' && (
-                          <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST)); setSessMsg(null) }}
+                          <button disabled={!campaignOn} onClick={() => { setBoostFor({ kind: 'CREATIVE_BOOST', v, spuId: cell.productId }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST)); setBoostSched(defaultSchedule(24)); setSessMsg(null) }}
                             title={campaignOn ? 'Creative Boost — belanja tambahan utk eksplorasi video ini (via 🔔)' : 'Campaign harus ENABLE'}
                             className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 mr-1">
                             Boost

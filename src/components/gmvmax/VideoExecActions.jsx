@@ -13,6 +13,8 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Rocket, Ban, X, ChevronDown } from 'lucide-react'
 import { requestBoostSession, requestCreativeExclude, SESSION_MIN_BUDGET_IDR, BOOST_BLOCKED_STATUS } from '../../data/gmvmaxCampaignControl'
+import SessionSchedule from './SessionSchedule'
+import { defaultSchedule } from '../../utils/gmvmaxSchedule'
 
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 
@@ -90,7 +92,10 @@ export function VideoExecCell({ video, resolve, onBoost, onExclude }) {
 export function VideoBoostDialog({ video, placement, storeId, onClose, onQueued }) {
   const MIN = SESSION_MIN_BUDGET_IDR.CREATIVE_BOOST
   const [budget, setBudget] = useState(String(MIN))
-  const [hours, setHours] = useState('24')
+  // Jadwal & "sekarang" dibekukan saat dialog dibuka: dihitung ulang tiap render
+  // akan membuat durasi merayap turun sementara pengguna mengetik.
+  const [sched, setSched] = useState(() => defaultSchedule(24))
+  const [nowMs] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -102,7 +107,7 @@ export function VideoBoostDialog({ video, placement, storeId, onClose, onQueued 
         campaignId: placement.campaignId, campaignName: placement.campaignName,
         storeId, spuId: placement.productId,
         itemId: video.videoId, videoTitle: video.title || '',
-        budget: Number(budget), hours: Number(hours),
+        budget: Number(budget), endAt: sched.endAt,
         evidence: {
           dari: 'Performa Video',
           akun: video.account ? `@${video.account}` : null,
@@ -135,20 +140,15 @@ export function VideoBoostDialog({ video, placement, storeId, onClose, onQueued 
           <button onClick={onClose} className="text-ink-faint hover:text-ink p-1"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-[11px] text-ink-muted">Budget / hari</span>
-            <input type="number" value={budget} min={MIN} step={10000} onChange={e => setBudget(e.target.value)}
-              className="mt-1 w-full bg-surface2 border border-line/15 rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-violet-500/40" />
-            <span className="text-[10px] text-ink-faint">minimal {rp(MIN)}</span>
-          </label>
-          <label className="block">
-            <span className="text-[11px] text-ink-muted">Jendela (jam)</span>
-            <input type="number" value={hours} min={1} max={72} onChange={e => setHours(e.target.value)}
-              className="mt-1 w-full bg-surface2 border border-line/15 rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-violet-500/40" />
-            <span className="text-[10px] text-ink-faint">maksimal 72 jam</span>
-          </label>
-        </div>
+        <label className="block mb-3">
+          <span className="text-[11px] text-ink-muted">Budget / hari</span>
+          <input type="number" value={budget} min={MIN} step={10000} onChange={e => setBudget(e.target.value)}
+            className="mt-1 w-full bg-surface2 border border-line/15 rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-violet-500/40" />
+          <span className="text-[10px] text-ink-faint">minimal {rp(MIN)}</span>
+        </label>
+
+        <SessionSchedule kind="CREATIVE_BOOST" startAt={sched.startAt} endAt={sched.endAt}
+          onChange={setSched} nowMs={nowMs} />
 
         <p className="mt-3 text-[11px] text-amber-400/90 leading-relaxed">
           Sesi boost punya budget terpisah dan tidak dilindungi ROI Protection. Vonisnya baru sahih di H+3–H+7.

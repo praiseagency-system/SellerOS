@@ -174,9 +174,22 @@ export const SESSION_MIN_BUDGET_IDR = {
   MAX_DELIVERY: 100000,   // kalibrasi dari UI Ads Manager (user, 2026-08-26)
   CREATIVE_BOOST: 50000,  // idem
 }
+// API menerima "YYYY-MM-DD HH:MM:SS" dalam UTC+0 (tertulis eksplisit di skema
+// session_create). Pengguna memilih waktu lokal; konversi terjadi di sini.
 const toUtc = (d) => d.toISOString().slice(0, 19).replace('T', ' ')
+export const MAX_SESSION_HOURS = 72
 
-export async function requestBoostSession({ kind, campaignId, campaignName, storeId, spuId, itemId = null, videoTitle = '', budget, hours = 24, reason = null, evidence = null }) {
+// Batas jadwal sesi. ASIMETRIS, dan bukan pilihan kita:
+//   Max Delivery  (NO_BID)          → schedule_start_time DIDUKUNG, boleh mulai nanti.
+//   Creative Boost (CREATIVE_NO_BID) → skema menyebut SCHEDULE_START_END berarti
+//     "antara WAKTU SEKARANG dan schedule_end_time". Start tak bisa dimundurkan;
+//     hanya akhirnya yang bisa ditentukan.
+export const SUPPORTS_START_TIME = { MAX_DELIVERY: true, CREATIVE_BOOST: false }
+
+export async function requestBoostSession({
+  kind, campaignId, campaignName, storeId, spuId, itemId = null, videoTitle = '',
+  budget, hours = 24, startAt = null, endAt = null, reason = null, evidence = null,
+}) {
   // kind: 'MAX_DELIVERY' | 'CREATIVE_BOOST'
   if (!['MAX_DELIVERY', 'CREATIVE_BOOST'].includes(kind)) throw new Error('kind tidak dikenal.')
   if (!spuId) throw new Error('SPU produk wajib.')
@@ -184,8 +197,36 @@ export async function requestBoostSession({ kind, campaignId, campaignName, stor
   const b = Number(budget)
   const minB = SESSION_MIN_BUDGET_IDR[kind]
   if (!Number.isFinite(b) || b < minB) throw new Error(`Budget ${kind === 'MAX_DELIVERY' ? 'Max Delivery' : 'Creative Boost'} minimal Rp ${minB.toLocaleString('id-ID')}/hari.`)
-  const h = Math.min(Math.max(Number(hours) || 24, 1), 72) // pagar: maks 72 jam
-  const end = toUtc(new Date(Date.now() + h * 3600 * 1000))
+
+  const now = Date.now()
+
+  // Waktu MULAI — hanya Max Delivery. Skema: "start time cannot be earlier than
+  // the current time". Beri kelonggaran 2 menit supaya waktu yang dipilih tepat
+  // "sekarang" tidak keburu basi saat approval disetujui.
+  let startMs = null
+  if (startAt != null && SUPPORTS_START_TIME[kind]) {
+    startMs = startAt instanceof Date ? startAt.getTime() : Date.parse(startAt)
+    if (!Number.isFinite(startMs)) throw new Error('Waktu mulai tidak terbaca.')
+    if (startMs < now - 2 * 60 * 1000) throw new Error('Waktu mulai tidak boleh di masa lalu.')
+    if (startMs <= now) startMs = null   // "sekarang" → biarkan API memakai default
+  }
+
+  // Waktu SELESAI — eksplisit bila diberikan, kalau tidak dihitung dari `hours`.
+  const anchor = startMs ?? now
+  let endMs
+  if (endAt != null) {
+    endMs = endAt instanceof Date ? endAt.getTime() : Date.parse(endAt)
+    if (!Number.isFinite(endMs)) throw new Error('Waktu selesai tidak terbaca.')
+  } else {
+    endMs = anchor + Math.min(Math.max(Number(hours) || 24, 1), MAX_SESSION_HOURS) * 3600 * 1000
+  }
+  if (endMs <= anchor) throw new Error('Waktu selesai harus setelah waktu mulai.')
+  const durasiJam = (endMs - anchor) / 3600000
+  if (durasiJam > MAX_SESSION_HOURS) {
+    throw new Error(`Jendela sesi maksimal ${MAX_SESSION_HOURS} jam (dipilih ${Math.round(durasiJam)} jam). Pagar ini milik kita sendiri, bukan TikTok — vonis eksperimen dinilai di H+3.`)
+  }
+  const h = Math.round(durasiJam * 10) / 10
+  const end = toUtc(new Date(endMs))
   const settings = await getExecutionSettings()
   await assertCooldown(campaignId, settings)
   return createApproval({
@@ -194,6 +235,8 @@ export async function requestBoostSession({ kind, campaignId, campaignName, stor
     currentValue: { sesi: 'tidak ada' },
     proposedValue: {
       sesi: kind, budget: b, jam: h,
+      mulai: startMs ? new Date(startMs).toISOString() : 'sekarang',
+      selesai: new Date(endMs).toISOString(),
       store_id: String(storeId),
       session: {
         bid_type: kind === 'MAX_DELIVERY' ? 'NO_BID' : 'CREATIVE_NO_BID',
@@ -201,6 +244,8 @@ export async function requestBoostSession({ kind, campaignId, campaignName, stor
         product_list: [{ spu_id: String(spuId) }],
         schedule_type: 'SCHEDULE_START_END',
         schedule_end_time: end,
+        // Hanya Max Delivery yang menerima start di masa depan (lihat SUPPORTS_START_TIME).
+        ...(startMs ? { schedule_start_time: toUtc(new Date(startMs)) } : {}),
         ...(itemId ? { item_id: String(itemId) } : {}),
       },
     },
