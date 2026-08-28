@@ -45,7 +45,7 @@ function TargetCell({ video, exec, onGanti }) {
   if (!t.options.length) return null
   if (!t.confident) {
     return (
-      <span className="block text-[10px] text-ink-faint mt-1">
+      <span className="block text-[10px] text-ink-faint mt-1 break-words">
         Sasaran belum pasti — {undecidedReason(t.options)} ·{' '}
         <button onClick={onGanti} className="text-blue-300 hover:underline">pilih sasaran</button>
       </span>
@@ -53,7 +53,7 @@ function TargetCell({ video, exec, onGanti }) {
   }
   const nama = exec.productName?.(t.placement.productId) || t.placement.productId
   return (
-    <span className="block text-[10px] mt-1">
+    <span className="block text-[10px] mt-1 break-words">
       <span className="text-blue-300">→ {t.placement.campaignName || t.placement.campaignId}</span>
       <span className="text-ink-muted"> · {nama}</span>
       <span className="text-ink-faint"> — {t.reason}</span>
@@ -103,15 +103,23 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-3">
-          <table className="w-full text-sm">
+          {/* table-fixed WAJIB: pada tata letak otomatis, max-width sel diabaikan
+              dan baris sasaran yang panjang membuat kolom melar sampai tabelnya
+              melampaui jendela (judul video ikut terdorong keluar layar).
+              Kolom VIDEO sengaja TANPA lebar: pada table-fixed ia menyerap sisa
+              ruang. Memberinya persentase berbahaya — persentase + jumlah kolom
+              tetap bisa melebihi lebar tabel dan meluber lagi.
+              min-w menjaga angka tetap terbaca di layar sempit: biar wadahnya
+              yang menggeser, bukan kolomnya yang gepeng. */}
+          <table className="w-full text-sm table-fixed min-w-[740px]">
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/10">
                 <th className="py-2.5 pr-3 font-medium">{group.key === 'CAMPAIGN_IDLE_BUDGET' ? 'CAMPAIGN' : 'VIDEO'}</th>
                 {isVideo && <>
-                  <SortTh label="ORDER" sortKey="orders" sort={sort} onSort={toggle} />
-                  <SortTh label="OMZET" sortKey="revenue" sort={sort} onSort={toggle} />
-                  <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} />
-                  <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} />
+                  <SortTh label="ORDER" sortKey="orders" sort={sort} onSort={toggle} className="w-16" />
+                  <SortTh label="OMZET" sortKey="revenue" sort={sort} onSort={toggle} className="w-28" />
+                  <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} className="w-32" />
+                  <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} className="w-20" />
                 </>}
                 {group.key === 'AUTH_EXPIRED' && <>
                   <th className="py-2.5 px-3 font-medium">AKUN</th>
@@ -121,7 +129,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                   <SortTh label="BUDGET" sortKey="budget" sort={sort} onSort={toggle} />
                   <th className="py-2.5 px-3 font-medium">STATUS</th>
                 </>}
-                {isVideo && <th className="py-2.5 pl-3 font-medium text-right">AKSI</th>}
+                {isVideo && <th className="py-2.5 pl-3 font-medium text-right w-36">AKSI</th>}
               </tr>
             </thead>
             <tbody>
@@ -129,7 +137,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                 const m = it.video?.lifetime
                 return (
                   <tr key={it.id} className="border-b border-line/5 align-top">
-                    <td className="py-3 pr-3 max-w-sm">
+                    <td className="py-3 pr-3 align-top">
                       <a href={tiktokVideoUrl(it.id, it.akun) || '#'} target="_blank" rel="noreferrer"
                         title={it.judul}
                         className="block text-xs text-ink hover:text-ink-strong truncate">{it.judul}</a>
