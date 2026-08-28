@@ -14,13 +14,37 @@
 // Dibaca SAAT DIPANGGIL, bukan saat modul dimuat: di serverless env baru
 // tersedia pada waktu jalan, dan pembacaan lazy membuat perilaku fungsi ini
 // tidak bergantung pada urutan import saat diuji.
+// Di-trim: nilai berisi spasi saja itu truthy di JS, jadi tanpa ini kunci yang
+// salah-tempel (" ") lolos sebagai "ada" lalu ditolak Supabase dengan 401 yang
+// membingungkan — bukan pesan konfigurasi yang jelas.
+const env = (...names) => {
+  for (const n of names) { const v = String(process.env[n] ?? '').trim(); if (v) return v }
+  return ''
+}
 export const supabaseEnv = () => ({
-  url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
-  anonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
+  url: env('SUPABASE_URL', 'VITE_SUPABASE_URL'),
+  anonKey: env('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY'),
   // JANGAN pernah diberi awalan VITE_ — apa pun yang berawalan itu ikut
   // dikompilasi ke bundel browser, dan kunci ini menembus semua RLS.
-  secretKey: process.env.SUPABASE_SECRET_KEY || '',
+  // Nama alternatif diterima karena konvensi Supabase berubah (kunci lama
+  // bernama service_role, yang baru "secret key") dan salah-nama itu wajar.
+  secretKey: env('SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY'),
 })
+
+// Diagnosa "kenapa kunci tak terbaca" TANPA membocorkan nilainya: hanya nama
+// yang dilaporkan, itu pun dari daftar tertutup. Tanpa ini, salah scope
+// (Preview vs Production), salah nama, dan salah project tampak identik dari
+// luar — dan menebaknya berarti satu siklus deploy per tebakan.
+export function secretKeyDiagnosis() {
+  const names = ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY']
+  const found = names.filter(n => process.env[n] != null)
+  const kosong = found.filter(n => !String(process.env[n]).trim())
+  // Kesalahan paling berbahaya: kunci ini diberi awalan VITE_ → ikut terkirim
+  // ke setiap pengunjung lewat bundel browser. Harus diteriakkan, bukan diam.
+  const bocor = Object.keys(process.env).filter(
+    k => k.startsWith('VITE_') && /SECRET|SERVICE_ROLE/i.test(k))
+  return { dicari: names, ditemukan: found, ditemukanTapiKosong: kosong, awalanViteBerbahaya: bocor }
+}
 
 // Origin yang boleh memanggil. Bisa ditimpa lewat env ALLOWED_ORIGINS
 // (dipisah koma) tanpa mengubah kode saat domain berubah.

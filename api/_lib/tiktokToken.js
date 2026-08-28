@@ -15,7 +15,7 @@
 //      sengaja disembunyikan darinya.
 // Urutan itu penting: service_role menembus semua RLS, jadi ia tak boleh
 // dipakai sebelum kepemilikan terbukti.
-import { selectAsUser, supabaseEnv } from './guard.js'
+import { selectAsUser, supabaseEnv, secretKeyDiagnosis } from './guard.js'
 
 const TOKEN_ENDPOINT = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer/oauth/token'
 // Segarkan lebih awal: permintaan yang dimulai tepat sebelum kedaluwarsa bisa
@@ -33,8 +33,20 @@ export const isTokenError = (e) => e instanceof TokenError
 async function serviceRequest(path, init = {}) {
   const { url, secretKey } = supabaseEnv()
   if (!url || !secretKey) {
-    throw new TokenError(503, 'server_unconfigured',
-      'SUPABASE_SECRET_KEY belum tersedia di runtime fungsi.')
+    const d = secretKeyDiagnosis()
+    // Pesan dibuat menunjuk penyebabnya, bukan sekadar "belum tersedia":
+    // salah scope, salah nama, dan salah project tampak sama dari luar.
+    let sebab
+    if (d.awalanViteBerbahaya.length) {
+      sebab = `BAHAYA: ${d.awalanViteBerbahaya.join(', ')} berawalan VITE_ sehingga ikut terkirim ke browser. Hapus, lalu tambahkan tanpa awalan VITE_.`
+    } else if (d.ditemukanTapiKosong.length) {
+      sebab = `${d.ditemukanTapiKosong.join(', ')} ada tapi nilainya kosong.`
+    } else if (!url) {
+      sebab = 'Bahkan SUPABASE_URL tak terbaca — env tak sampai ke fungsi sama sekali.'
+    } else {
+      sebab = `Tak satu pun dari ${d.dicari.join(' / ')} terbaca. Cek: (1) Environment "Production" tercentang, (2) ejaan namanya, (3) project Vercel yang benar — lalu Redeploy.`
+    }
+    throw new TokenError(503, 'server_unconfigured', `Kunci server belum terbaca. ${sebab}`)
   }
   const r = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
