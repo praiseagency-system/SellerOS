@@ -4,8 +4,10 @@ import { useAuth } from '../contexts/AuthContext'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 export default function LoginPage() {
-  const { signInWithPassword, signUp, signInWithGoogle } = useAuth()
-  const [mode, setMode] = useState('login')      // 'login' | 'signup'
+  const { signInWithPassword, signUp, signInWithGoogle, resetPassword, updatePassword, recovery } = useAuth()
+  // 'login' | 'signup' | 'forgot'; saat `recovery` aktif, layar diambil alih
+  // form "atur sandi baru" (user datang dari link email).
+  const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -15,6 +17,20 @@ export default function LoginPage() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null); setInfo(null)
+    if (mode === 'forgot') {
+      if (!email.trim()) { setError('Email wajib diisi.'); return }
+      setBusy(true)
+      try {
+        const { error } = await resetPassword(email.trim())
+        if (error) throw error
+        // Sengaja tak membedakan email terdaftar / tidak — mencegah orang
+        // memakai form ini untuk menebak siapa saja yang punya akun.
+        setInfo('Kalau email itu terdaftar, link untuk mengatur ulang sandi sudah dikirim. Cek kotak masuk (dan folder spam).')
+      } catch (err) {
+        setError(translateAuthError(err?.message))
+      } finally { setBusy(false) }
+      return
+    }
     if (!email.trim() || !password) { setError('Email dan kata sandi wajib diisi.'); return }
     if (mode === 'signup' && password.length < 6) {
       setError('Kata sandi minimal 6 karakter.'); return
@@ -39,6 +55,45 @@ export default function LoginPage() {
     }
   }
 
+  async function handleSetNewPassword(e) {
+    e.preventDefault()
+    setError(null); setInfo(null)
+    if (password.length < 6) { setError('Kata sandi minimal 6 karakter.'); return }
+    setBusy(true)
+    try {
+      const { error } = await updatePassword(password)
+      if (error) throw error
+      // updatePassword melepas penanda recovery → App membuka halaman utama.
+    } catch (err) {
+      setError(translateAuthError(err?.message))
+    } finally { setBusy(false) }
+  }
+
+  if (recovery) {
+    return (
+      <AuthShell title="Atur sandi baru" subtitle="Masukkan kata sandi baru untuk akunmu">
+        <form onSubmit={handleSetNewPassword} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">Kata Sandi Baru</label>
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3 w-4 h-4 text-ink-faint" />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                autoComplete="new-password" placeholder="minimal 6 karakter"
+                className="w-full bg-fill/5 border border-line/10 rounded-xl pl-10 pr-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+            </div>
+          </div>
+          <Banner error={error} info={info} />
+          <button type="submit" disabled={busy}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            {busy
+              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</>
+              : 'Simpan sandi baru'}
+          </button>
+        </form>
+      </AuthShell>
+    )
+  }
+
   async function handleGoogle() {
     setError(null); setBusy(true)
     try {
@@ -52,70 +107,74 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-app">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-600/15 mb-3">
-            <BarChart3 className="w-6 h-6 text-blue-500" />
-          </div>
-          <h1 className="text-xl font-bold text-ink-strong">SellerOS</h1>
-          <p className="text-ink-muted mt-1 text-sm">
-            {mode === 'login' ? 'Masuk untuk melanjutkan' : 'Buat akun baru'}
+    <AuthShell
+      title="SellerOS"
+      subtitle={
+        mode === 'login' ? 'Masuk untuk melanjutkan'
+          : mode === 'signup' ? 'Buat akun baru'
+            : 'Kami kirim link untuk mengatur ulang sandi'
+      }
+    >
+      {!isSupabaseConfigured && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/25 rounded-xl p-3">
+          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-300">
+            Supabase belum dikonfigurasi. Set <code>VITE_SUPABASE_URL</code> dan{' '}
+            <code>VITE_SUPABASE_ANON_KEY</code> di <code>.env.local</code>.
           </p>
         </div>
+      )}
 
-        <div className="bg-surface rounded-2xl border border-line/8 shadow-xl p-5 space-y-4">
-          {!isSupabaseConfigured && (
-            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/25 rounded-xl p-3">
-              <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-300">
-                Supabase belum dikonfigurasi. Set <code>VITE_SUPABASE_URL</code> dan{' '}
-                <code>VITE_SUPABASE_ANON_KEY</code> di <code>.env.local</code>.
-              </p>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Email</label>
+          <div className="relative flex items-center">
+            <Mail className="absolute left-3 w-4 h-4 text-ink-faint" />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              autoComplete="email" placeholder="kamu@contoh.com"
+              className="w-full bg-fill/5 border border-line/10 rounded-xl pl-10 pr-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+          </div>
+        </div>
+        {mode !== 'forgot' && (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-ink-muted">Kata Sandi</label>
+              {mode === 'login' && (
+                <button type="button"
+                  onClick={() => { setMode('forgot'); setPassword(''); setError(null); setInfo(null) }}
+                  className="text-xs text-blue-400 font-medium hover:underline">
+                  Lupa sandi?
+                </button>
+              )}
             </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-ink-muted mb-1.5">Email</label>
-              <div className="relative flex items-center">
-                <Mail className="absolute left-3 w-4 h-4 text-ink-faint" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  autoComplete="email" placeholder="kamu@contoh.com"
-                  className="w-full bg-fill/5 border border-line/10 rounded-xl pl-10 pr-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
-              </div>
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3 w-4 h-4 text-ink-faint" />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="••••••••"
+                className="w-full bg-fill/5 border border-line/10 rounded-xl pl-10 pr-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-muted mb-1.5">Kata Sandi</label>
-              <div className="relative flex items-center">
-                <Lock className="absolute left-3 w-4 h-4 text-ink-faint" />
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="••••••••"
-                  className="w-full bg-fill/5 border border-line/10 rounded-xl pl-10 pr-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
-              </div>
-            </div>
+          </div>
+        )}
 
-            {error && (
-              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl p-3">
-                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-red-300">{error}</p>
-              </div>
-            )}
-            {info && (
-              <div className="flex items-start gap-2 bg-green-500/10 border border-green-500/25 rounded-xl p-3">
-                <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-green-300">{info}</p>
-              </div>
-            )}
+        <Banner error={error} info={info} />
 
-            <button type="submit" disabled={busy}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {busy
-                ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Memproses...</>
-                : (mode === 'login' ? 'Masuk' : 'Daftar')}
-            </button>
-          </form>
+        <button type="submit" disabled={busy}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          {busy
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Memproses...</>
+            : (mode === 'login' ? 'Masuk' : mode === 'signup' ? 'Daftar' : 'Kirim link reset')}
+        </button>
+      </form>
 
+      {mode === 'forgot' ? (
+        <p className="text-center text-xs text-ink-muted">
+          <button onClick={() => { setMode('login'); setError(null); setInfo(null) }}
+            className="text-blue-400 font-semibold hover:underline">
+            Kembali ke halaman masuk
+          </button>
+        </p>
+      ) : (
+        <>
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-line/10" />
             <span className="text-xs text-ink-faint">atau</span>
@@ -126,17 +185,56 @@ export default function LoginPage() {
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm border border-line/15 text-ink hover:bg-fill/5 disabled:opacity-50 transition-colors">
             <GoogleIcon />Lanjut dengan Google
           </button>
-        </div>
 
-        <p className="text-center text-xs text-ink-muted mt-4">
-          {mode === 'login' ? 'Belum punya akun? ' : 'Sudah punya akun? '}
-          <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setInfo(null) }}
-            className="text-blue-400 font-semibold hover:underline">
-            {mode === 'login' ? 'Daftar' : 'Masuk'}
-          </button>
-        </p>
+          <p className="text-center text-xs text-ink-muted">
+            {mode === 'login' ? 'Belum punya akun? ' : 'Sudah punya akun? '}
+            <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setInfo(null) }}
+              className="text-blue-400 font-semibold hover:underline">
+              {mode === 'login' ? 'Daftar' : 'Masuk'}
+            </button>
+          </p>
+        </>
+      )}
+    </AuthShell>
+  )
+}
+
+// Kerangka kartu auth (dipakai login/daftar/lupa sandi/atur sandi baru).
+function AuthShell({ title, subtitle, children }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 bg-app">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-600/15 mb-3">
+            <BarChart3 className="w-6 h-6 text-blue-500" />
+          </div>
+          <h1 className="text-xl font-bold text-ink-strong">{title}</h1>
+          <p className="text-ink-muted mt-1 text-sm">{subtitle}</p>
+        </div>
+        <div className="bg-surface rounded-2xl border border-line/8 shadow-xl p-5 space-y-4">
+          {children}
+        </div>
       </div>
     </div>
+  )
+}
+
+function Banner({ error, info }) {
+  return (
+    <>
+      {error && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl p-3">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-300">{error}</p>
+        </div>
+      )}
+      {info && (
+        <div className="flex items-start gap-2 bg-green-500/10 border border-green-500/25 rounded-xl p-3">
+          <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-green-300">{info}</p>
+        </div>
+      )}
+    </>
   )
 }
 
