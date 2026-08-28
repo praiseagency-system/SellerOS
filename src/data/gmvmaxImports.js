@@ -5,8 +5,7 @@
 // per pemilik.
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
-
-const CHUNK = 500 // batasi ukuran payload insert per batch
+import { contentSignature } from '../utils/contentSignature'
 
 // Semua import di workspace aktif, terbaru dulu (tanpa creatives). HANYA versi
 // current: sejak versioning (migrasi 0029) satu (workspace, snapshot_date) bisa
@@ -223,6 +222,15 @@ export async function loadVideosDaily(videoIds) {
 }
 
 // Simpan hasil parser. parsed = { meta, rows } dari parseGmvMaxFile.
+//
+// ATOMIK sejak migrasi 0049: satu panggilan RPC gmvmax_upload_snapshot →
+// validasi, supersede versi lama, insert versi baru, catat lineage, semuanya
+// dalam SATU transaksi. Kalau gagal di tengah, seluruhnya di-rollback dan
+// snapshot lama tetap utuh. (Pola lama delete-lalu-insert tanpa transaksi bisa
+// MENGHILANGKAN snapshot hari itu bila insert gagal setelah delete.)
+//
+// Konten identik dengan versi current → RPC mengembalikan noop:true dan TIDAK
+// membuat versi baru, jadi unggah ulang file yang sama tidak mengotori riwayat.
 export async function saveImport(parsed, settings = null) {
   const wsId = getCurrentWorkspaceId()
   if (!wsId) throw new Error('Workspace tidak aktif.')
@@ -230,37 +238,58 @@ export async function saveImport(parsed, settings = null) {
   const name = meta.name || meta.filename || 'Import'
   const snapshotDate = meta.snapshotDate || meta.endDate || null
 
-  // Ganti snapshot tanggal sama (creatives ikut via CASCADE). Kalau tanggal tak
-  // terbaca dari nama file, jatuh ke identitas lama (name) agar tetap idempoten.
-  const del = supabase.from('gmvmax_imports').delete().eq('workspace_id', wsId)
-  await (snapshotDate ? del.eq('snapshot_date', snapshotDate) : del.eq('name', name))
-
-  const { data: imp, error } = await supabase
-    .from('gmvmax_imports')
-    .insert({
-      workspace_id: wsId,
-      name,
-      period_month: meta.periodMonth,
-      snapshot_date: snapshotDate,
-      start_date: meta.startDate,
-      end_date: meta.endDate,
-      currency: meta.currency || 'IDR',
-      source_filename: meta.filename,
-      totals: meta.totals,
-      settings,
-    })
-    .select('*')
-    .single()
-  if (error) throw error
-
-  const payload = rows.map(r => creativeToRow(imp.id, r))
-  for (let i = 0; i < payload.length; i += CHUNK) {
-    const { error: ce } = await supabase
-      .from('gmvmax_creatives')
-      .insert(payload.slice(i, i + CHUNK))
-    if (ce) throw ce
+  // Identitas snapshot = (workspace, snapshot_date). Tanpa tanggal, versioning
+  // tak punya kunci (NULL tak pernah bertabrakan di unique index → tiap unggah
+  // jadi baris baru, tren dobel). Lebih baik tolak dengan jelas di sini.
+  if (!snapshotDate) {
+    throw new Error(
+      'Tanggal snapshot tidak terbaca dari nama file. Pastikan nama file memuat tanggal (contoh: "GMV Max 2026-08-28.xlsx").'
+    )
   }
-  return imp.id
+
+  const importPayload = {
+    name,
+    period_month: meta.periodMonth,
+    start_date: meta.startDate,
+    end_date: meta.endDate,
+    currency: meta.currency || 'IDR',
+    source_filename: meta.filename,
+    totals: meta.totals ?? null,
+    settings,
+  }
+  const creatives = rows.map(r => creativeToRow(null, r))
+  const signature = await contentSignature({
+    workspaceId: wsId, date: snapshotDate, rows, totals: meta.totals || {},
+  })
+
+  const { data, error } = await supabase.rpc('gmvmax_upload_snapshot', {
+    p_workspace_id: wsId,
+    p_snapshot_date: snapshotDate,
+    p_content_signature: signature,
+    p_import: importPayload,
+    p_creatives: creatives,
+    // File kosong TIDAK boleh menghapus snapshot lama — RPC menolaknya.
+    p_allow_empty: false,
+  })
+  if (error) throw new Error(translateUploadError(error.message))
+  return data?.import_id ?? null
+}
+
+// Pesan RPC (kode teknis) → Bahasa Indonesia yang bisa ditindaklanjuti.
+function translateUploadError(msg) {
+  const m = String(msg || '')
+  if (m.includes('GMVMAX_EMPTY_PAYLOAD_NOT_ALLOWED')) {
+    return 'File tidak berisi satu baris pun. Snapshot lama dipertahankan (tidak ditimpa).'
+  }
+  if (m.includes('GMVMAX_FORBIDDEN_WORKSPACE')) return 'Workspace ini bukan milik akunmu.'
+  if (m.includes('GMVMAX_NOT_AUTHENTICATED')) return 'Sesi berakhir. Silakan masuk lagi.'
+  if (m.includes('GMVMAX_INVALID_CREATIVE_ROW')) {
+    return 'Ada baris tanpa Campaign ID di file ini. Periksa hasil ekspor lalu unggah ulang.'
+  }
+  if (m.includes('Could not find the function')) {
+    return 'Migrasi 0049 belum diterapkan di database (fungsi gmvmax_upload_snapshot belum ada).'
+  }
+  return m || 'Gagal menyimpan import.'
 }
 
 export async function deleteImport(id) {
