@@ -1,0 +1,47 @@
+# GMV Max VPS SHADOW — systemd oneshot (SHADOW-ONLY; OLD LLM workflow tetap penulis
+# kanonik). Bukan daemon: timer memicu, worker jalan sekali, keluar. TANPA Restart=
+# → tak ada restart-storm saat AUTH_REQUIRED/FAILED. Exit code terlihat via journald.
+#
+# Pasang: /etc/systemd/system/gmvmax-shadow.service  (lihat INSTALL.md)
+[Unit]
+Description=GMV Max VPS SHADOW worker (deterministic, shadow-only)
+Documentation=file:/opt/selleros/gmvmax-shadow/INSTALL.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=selleros-worker
+Group=selleros-worker
+WorkingDirectory=/opt/selleros/gmvmax-shadow
+
+# Rahasia + endpoint dari file 0600 (bukan di unit ini).
+EnvironmentFile=/etc/selleros/gmvmax-shadow.env
+# Barrier kontrak runtime (redundan dgn env file; sabuk-dan-bretel).
+Environment=GMVMAX_RUNTIME=vps
+Environment=GMVMAX_SHADOW_ONLY=1
+Environment=TZ=UTC
+Environment=GMVMAX_SHADOW_DIR=/var/lib/selleros/gmvmax-shadow
+
+# Artefak self-contained (dist/gmvmax-vps-shadow.mjs). --date yesterday → semantik Jakarta.
+ExecStart=/usr/bin/env node /opt/selleros/gmvmax-shadow/gmvmax-vps-shadow.mjs --date yesterday
+
+# Runtime berbatas + terminasi anggun.
+TimeoutStartSec=900
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# SENGAJA tanpa Restart= → hindari restart-storm.
+
+# Pengerasan (least-privilege). Hanya state dir yang boleh ditulis.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/selleros/gmvmax-shadow
+# journald menangkap stdout/stderr (RUN_SUMMARY + event alert, sudah ter-redaksi).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gmvmax-shadow
+
+[Install]
+WantedBy=multi-user.target
