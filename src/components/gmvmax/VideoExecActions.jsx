@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Rocket, Ban, X, ChevronDown } from 'lucide-react'
 import { requestBoostSession, requestCreativeExclude, SESSION_MIN_BUDGET_IDR, BOOST_BLOCKED_STATUS } from '../../data/gmvmaxCampaignControl'
+import { pickBoostTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
 import SessionSchedule from './SessionSchedule'
 import { defaultSchedule } from '../../utils/gmvmaxSchedule'
 
@@ -26,9 +27,17 @@ const BLOCK_HINT = {
   UNAVAILABLE: 'Tak tersedia',
 }
 
-// ── Sel aksi (dipakai VideoTable) ───────────────────────────────────────────
-// resolve(placement) → { storeId, campaignOn, campaignName } | null
-export function VideoExecCell({ video, resolve, onBoost, onExclude }) {
+const rpS = (n) => Math.round(Number(n) || 0).toLocaleString('id-ID')
+
+// ── Sel aksi ────────────────────────────────────────────────────────────────
+// resolve(placement) → { storeId, campaignName } | null
+// anchorOf(videoId)  → spu_id produk yang tertaut di video (opsional, sinyal terkuat)
+// productName(spuId) → nama produk (ID telanjang tak berarti apa-apa bagi manusia)
+// layout 'cell'   → hanya tombol (tabel padat)
+//        'inline' → tombol + baris sasaran & alasannya (daftar rekomendasi)
+export function VideoExecCell({
+  video, resolve, onBoost, onExclude, anchorOf, productName, layout = 'cell',
+}) {
   const [open, setOpen] = useState(null)   // 'BOOST' | 'EXCLUDE' → daftar sasaran
   const withProduct = (video.placements || []).filter(p => p.productId)
   const places = withProduct.filter(p => resolve(p))
@@ -41,18 +50,51 @@ export function VideoExecCell({ video, resolve, onBoost, onExclude }) {
       : <span className="text-[10px] text-ink-faint" title="Baris ini tak terikat SPU produk — aksi butuh spu_id">tanpa produk</span>
   }
 
+  // Sasaran ditentukan sistem lewat tangga bukti; menu hanya muncul kalau
+  // buktinya memang tak ada. Lihat gmvmaxBoostTarget.js.
+  const target = pickBoostTarget({
+    video, anchorSpu: anchorOf?.(video.videoId) || null, eligible: (p) => !!resolve(p),
+  })
+  const nama = (p) => productName?.(p.productId) || p.productId
+
   const pick = (kind, p) => { setOpen(null); (kind === 'BOOST' ? onBoost : onExclude)(video, p) }
-  const go = (kind) => { if (places.length === 1) pick(kind, places[0]); else setOpen(open === kind ? null : kind) }
+  const go = (kind) => {
+    if (target.confident && target.placement) pick(kind, target.placement)
+    else setOpen(open === kind ? null : kind)
+  }
 
   const btn = 'px-2 py-0.5 rounded-md text-[10px] font-semibold border disabled:opacity-40 whitespace-nowrap'
-  return (
+
+  // Baris sasaran: apa yang dipilih sistem DAN kenapa. Alasannya ditampilkan
+  // supaya bisa kamu bantah — kalau keliru, tekan "ganti". Tanpa alasan, ini
+  // cuma kotak hitam yang membelanjakan uangmu entah di mana.
+  const targetLine = layout !== 'inline' ? null : target.confident && target.placement ? (
+    <div className="text-[10px] leading-snug text-right max-w-[15rem]">
+      <p className="text-blue-300 truncate">
+        → {target.placement.campaignName || target.placement.campaignId}
+        <span className="text-ink"> · {nama(target.placement)}</span>
+      </p>
+      <p className="text-ink-faint">
+        {target.reason}
+        {target.options.length > 1 && (
+          <> · <button onClick={() => setOpen('BOOST')} className="text-blue-300 hover:underline">ganti</button></>
+        )}
+      </p>
+    </div>
+  ) : (
+    <p className="text-[10px] text-ink-faint text-right max-w-[15rem] leading-snug">
+      Sasaran belum pasti — {undecidedReason(target.options)}
+    </p>
+  )
+
+  const inti = (
     <div className="relative inline-flex items-center gap-1">
       {blocked ? (
         <span className="text-[10px] text-ink-faint whitespace-nowrap">{BLOCK_HINT[video.delivery] || '—'}</span>
       ) : (
         <button onClick={() => go('BOOST')} title="Creative Boost — belanja tambahan utk eksplorasi video ini (via 🔔)"
           className={`${btn} border-violet-500/30 text-violet-300 hover:bg-violet-500/10`}>
-          Boost{places.length > 1 && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
+          Boost{!target.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
         </button>
       )}
       <button onClick={() => go('EXCLUDE')}
@@ -61,7 +103,7 @@ export function VideoExecCell({ video, resolve, onBoost, onExclude }) {
           ? `${btn} border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10`
           : `${btn} border-red-500/25 text-red-400 hover:bg-red-500/10`}>
         {video.delivery === 'EXCLUDED' ? 'Pulihkan' : 'Exclude'}
-        {places.length > 1 && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
+        {!target.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
       </button>
 
       {/* Pemilih sasaran — hanya untuk video yang ikut di lebih dari satu tempat. */}
@@ -72,16 +114,28 @@ export function VideoExecCell({ video, resolve, onBoost, onExclude }) {
             <p className="text-[9.5px] uppercase tracking-widest text-ink-faint px-2 py-1">
               {open === 'BOOST' ? 'Boost di campaign' : 'Exclude dari campaign'}
             </p>
-            {places.map(p => (
+            {(target.options.length ? target.options : places).map(p => (
               <button key={`${p.campaignId}|${p.productId}`} onClick={() => pick(open, p)}
                 className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-fill/10">
                 <span className="block text-[11px] text-ink truncate">{p.campaignName || p.campaignId}</span>
-                <span className="block text-[9.5px] text-ink-faint truncate font-mono">{p.productId}</span>
+                <span className="block text-[10px] text-ink-muted truncate">{nama(p)}</span>
+                <span className="block text-[9.5px] text-ink-faint truncate">
+                  {p.revenue > 0 ? `omzet ${rpS(p.revenue)} · ${p.orders || 0} order` : 'belum ada omzet'}
+                  {p.delivery ? ` · ${p.delivery}` : ''}
+                </span>
               </button>
             ))}
           </div>
         </>
       )}
+    </div>
+  )
+
+  if (layout !== 'inline') return inti
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {inti}
+      {targetLine}
     </div>
   )
 }

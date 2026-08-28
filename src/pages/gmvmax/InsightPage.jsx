@@ -30,7 +30,7 @@ const ACTION_BADGE = {
 }
 
 export default function InsightPage({ onOpenUpload }) {
-  const { insights, hasData, videos, thresholds, periodName } = useGmvMax()
+  const { insights, hasData, videos, thresholds, periodName, productNames } = useGmvMax()
   const [tab, setTab] = useState('insight')
   const [expDraft, setExpDraft] = useState(null)   // draft eksperimen dari DecisionPanel
 
@@ -63,11 +63,20 @@ export default function InsightPage({ onOpenUpload }) {
     return { storeId: c.store_id, campaignName: c.campaign_name || placement.campaignName }
   }, [cset])
 
+  // Produk yang tertaut di video (keranjang kuning) — sinyal terkuat penentu
+  // sasaran boost. Hanya dimiliki video ber-kode spark, jadi sering kosong;
+  // tangga bukti berikutnya yang mengambil alih.
+  const anchor = useMemo(
+    () => new Map((sparkAuth || []).filter(r => r.spu_id).map(r => [r.item_id, r.spu_id])),
+    [sparkAuth])
+
   const exec = useMemo(() => (cset ? {
     resolve,
+    anchorOf: (videoId) => anchor.get(videoId) || null,
+    productName: (spuId) => productNames?.[spuId] || spuId,
     onBoost: (video, placement) => setDialog({ kind: 'BOOST', video, placement, storeId: resolve(placement)?.storeId }),
     onExclude: (video, placement) => setDialog({ kind: 'EXCLUDE', video, placement }),
-  } : null), [cset, resolve])
+  } : null), [cset, resolve, anchor, productNames])
 
   const groups = useMemo(
     () => buildRecommendations({ videos, thresholds, settings: settings || [], sparkAuth }),

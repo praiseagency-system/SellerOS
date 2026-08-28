@@ -91,7 +91,8 @@ function ActionCard({ group, exec }) {
                   ulang, bukan ditiru, supaya perilakunya tak bercabang. */}
               {it.video && exec && (
                 <VideoExecCell video={it.video} resolve={exec.resolve}
-                  onBoost={exec.onBoost} onExclude={exec.onExclude} />
+                  onBoost={exec.onBoost} onExclude={exec.onExclude}
+                  anchorOf={exec.anchorOf} productName={exec.productName} layout="inline" />
               )}
             </div>
           ))}

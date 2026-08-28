@@ -144,7 +144,19 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
     if (r.campaignId) {
       const k = `${r.campaignId}|${r.productId || ''}`
       if (!v._places.has(k)) {
-        v._places.set(k, { campaignId: r.campaignId, campaignName: r.campaignName || '', productId: r.productId || null })
+        v._places.set(k, {
+          campaignId: r.campaignId, campaignName: r.campaignName || '', productId: r.productId || null,
+          _agg: blankAgg(), _delRank: -2, _delRaw: null,
+        })
+      }
+      // Tiap pasangan memikul angkanya SENDIRI. Tanpa ini tak ada bukti untuk
+      // memutuskan sasaran boost — video yang ikut di beberapa campaign hanya
+      // bisa ditebak, dan menebak berarti membakar uang di tempat yang salah.
+      const pl = v._places.get(k)
+      addInto(pl._agg, r)
+      if (r.status) {
+        const rk = deliveryRank(normDeliveryStatus(r.status))
+        if (rk > pl._delRank) { pl._delRank = rk; pl._delRaw = r.status }
       }
     }
     addInto(v._life, r)
@@ -164,7 +176,10 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
     return {
       videoId: v.videoId, title: v.title, account: v.account, hook: v.hook,
       productId: v.productId, campaign: v.campaign, campaignId: v.campaignId,
-      placements: [...v._places.values()], timePosted: v.timePosted,
+      placements: [...v._places.values()].map(pl => ({
+        campaignId: pl.campaignId, campaignName: pl.campaignName, productId: pl.productId,
+        delivery: pl._delRaw, ...finalize(pl._agg),
+      })), timePosted: v.timePosted,
       delivery: v._delRaw, deliveryCanon: normDeliveryStatus(v._delRaw),
       lifetime, periods, trend, status,
       tier: qualityTier(lifetime.roas, thresholds),

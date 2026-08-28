@@ -76,9 +76,10 @@ export default function OverviewPage({ onOpenUpload }) {
 
   const exec = useMemo(() => (cset ? {
     resolve,
+    productName: (spuId) => productNames?.[spuId] || spuId,
     onBoost: (video, placement) => setDialog({ kind: 'BOOST', video, placement, storeId: resolve(placement)?.storeId }),
     onExclude: (video, placement) => setDialog({ kind: 'EXCLUDE', video, placement }),
-  } : null), [cset, resolve])
+  } : null), [cset, resolve, productNames])
 
   const sum = useMemo(() => sumVideos(videoBase(videos)), [videos])
   const prevSum = useMemo(() => (prev ? sumVideos(videoBase(prev.videos)) : null), [prev])

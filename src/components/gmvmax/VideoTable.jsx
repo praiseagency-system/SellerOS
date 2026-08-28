@@ -87,7 +87,8 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
                 )}
                 {exec && (
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    <VideoExecCell video={v} resolve={exec.resolve} onBoost={exec.onBoost} onExclude={exec.onExclude} />
+                    <VideoExecCell video={v} resolve={exec.resolve} onBoost={exec.onBoost} onExclude={exec.onExclude}
+                      anchorOf={exec.anchorOf} productName={exec.productName} />
                   </td>
                 )}
                 <td className="py-2.5 pl-3 text-center">
