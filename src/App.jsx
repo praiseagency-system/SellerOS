@@ -36,7 +36,7 @@ const PAGE_META = {
 
 // Gate auth: cek sesi dulu, tampilkan login bila belum masuk.
 export default function App() {
-  const { loading, user } = useAuth()
+  const { loading, user, recovery } = useAuth()
   // Callback OAuth TikTok — tangani sebelum gate biasa (sesi Supabase persist).
   // Path 1 segmen ('/tiktok-callback') agar aset relative-base tetap resolve.
   if (window.location.pathname === '/tiktok-callback') return <TiktokCallback />
@@ -51,6 +51,9 @@ export default function App() {
     )
   }
   if (!user) return <LoginPage />
+  // Datang dari link "lupa sandi": sesi sudah aktif, tapi tahan di layar atur
+  // sandi baru — jangan biarkan link pemulihan jadi jalan masuk tanpa ganti sandi.
+  if (recovery) return <LoginPage />
   return <MainApp />
 }
 
