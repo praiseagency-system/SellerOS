@@ -24,7 +24,13 @@
 -- — di luar cakupan Fase 1.
 --
 -- Idempoten (drop policy if exists). Terapkan di Supabase SQL Editor.
+--
+-- DIBUNGKUS SATU TRANSAKSI (konvensi yang sama dengan migrasi 0017): migrasi ini
+-- MENGHAPUS policy lama sebelum membuat penggantinya. Tanpa BEGIN/COMMIT, gagal
+-- di tengah akan meninggalkan tabel TANPA policy tulis sama sekali → enrichment
+-- mati diam-diam. All-or-nothing.
 -- ============================================================================
+begin;
 
 -- Policy lama yang serba-boleh.
 drop policy if exists gmvmax_video_meta_rw on public.gmvmax_video_meta;
@@ -46,3 +52,5 @@ create policy gmvmax_video_meta_update on public.gmvmax_video_meta
   for update to authenticated
   using (status is distinct from 'ok')
   with check (video_id ~ '^[0-9]{5,25}$');
+
+commit;
