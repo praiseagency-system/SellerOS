@@ -135,7 +135,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
             <tbody>
               {sorted.map(it => {
                 const m = it.video?.lifetime
-                return (
+                const baris = (
                   <tr key={it.id} className="border-b border-line/5 align-top">
                     <td className="py-3 pr-3 align-top">
                       <a href={tiktokVideoUrl(it.id, it.akun) || '#'} target="_blank" rel="noreferrer"
@@ -168,7 +168,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                           <VideoExecCell video={it.video} resolve={exec.resolve}
                             onBoost={exec.onBoost} onExclude={exec.onExclude}
                             anchorOf={exec.anchorOf} productName={exec.productName}
-                            open={chooser?.id === it.id ? chooser.kind : null}
+                            open={null}
                             onOpenChange={(k) => setChooser(k ? { id: it.id, kind: k } : null)} />
                         )}
                       </td>
@@ -185,6 +185,42 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                     </>}
                   </tr>
                 )
+                // Pemilih sasaran sebagai BARIS TABEL, bukan dropdown melayang.
+                // Dropdown ber-posisi absolut di dalam wadah bergulir PASTI
+                // terpotong wadahnya dan bisa tembus keluar jendela — itu bug
+                // yang dilaporkan user. Baris membentang tak punya masalah itu,
+                // sekaligus memberi ruang menampilkan nama produk & buktinya.
+                const pilih = chooser?.id === it.id && it.video && exec
+                  ? pickBoostTarget({ video: it.video, anchorSpu: exec.anchorOf?.(it.id) || null, eligible: (pp) => !!exec.resolve(pp) }).options
+                  : null
+                return [baris, pilih?.length ? (
+                  <tr key={`${it.id}-pilih`} className="border-b border-line/5 bg-fill/[0.03]">
+                    <td colSpan={isVideo ? 6 : 3} className="px-3 py-3">
+                      <p className="text-[10px] uppercase tracking-widest text-ink-faint mb-2">
+                        {chooser.kind === 'BOOST' ? 'Boost di campaign mana?' : 'Keluarkan dari campaign mana?'}
+                      </p>
+                      <div className="space-y-1.5">
+                        {pilih.map(pp => (
+                          <button key={`${pp.campaignId}|${pp.productId}`}
+                            onClick={() => {
+                              setChooser(null)
+                              ;(chooser.kind === 'BOOST' ? exec.onBoost : exec.onExclude)(it.video, pp)
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-lg bg-surface2 border border-line/10 hover:border-blue-500/40 hover:bg-fill/10">
+                            <span className="block text-xs text-ink">{pp.campaignName || pp.campaignId}</span>
+                            <span className="block text-[11px] text-ink-muted">{exec.productName?.(pp.productId) || pp.productId}</span>
+                            <span className="block text-[10px] text-ink-faint mt-0.5">
+                              {pp.revenue > 0 ? `omzet ${n(pp.revenue)} · ${pp.orders || 0} order` : 'belum ada omzet'}
+                              {pp.delivery ? ` · ${pp.delivery}` : ''}
+                            </span>
+                          </button>
+                        ))}
+                        <button onClick={() => setChooser(null)}
+                          className="text-[11px] text-ink-faint hover:text-ink px-1">batal</button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null]
               })}
             </tbody>
           </table>
