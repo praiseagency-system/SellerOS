@@ -54,7 +54,7 @@ export function buildRecommendations({
   //
   // GERBANG BUKTI. ROAS adalah rasio, dan rasio dengan penyebut nyaris nol tidak
   // membuktikan apa pun: pada data 27 Agu, 16 dari 18 "kandidat" ternyata
-  // berbelanja di bawah Rp5.000 — satu di antaranya ROAS 2445x dari belanja Rp34
+  // ber-cost di bawah Rp5.000 — satu di antaranya ROAS 2445x dari belanja Rp34
   // dengan 1 order. Omzetnya nyata, tapi datangnya bukan dari belanja itu.
   // Menyarankan boost atas dasar rasio semacam itu = menyuruh bertaruh pada
   // kebetulan. Jadi butuh SALAH SATU: belanja cukup besar untuk dipercaya, atau
@@ -70,11 +70,15 @@ export function buildRecommendations({
     .map(v => ({
       id: v.videoId, judul: v.title || v.videoId, akun: v.account,
       video: v,
+      // Cost terlalu kecil untuk membuat ROAS bisa dipercaya. Bukan larangan —
+      // order yang berulang tetap membuatnya layak — tapi angkanya perlu diberi
+      // peringatan halus di tabel.
+      thin: v.lifetime.cost < minSpend,
       // Urutan angka disengaja: order & omzet dulu (fakta yang kokoh), belanja
       // lalu ROAS terakhir. Memimpin dengan "ROAS 1124x" membuat rasio
       // berpenyebut Rp389 terbaca sebagai janji, padahal yang layak dipercaya
       // adalah konversi berulangnya.
-      detail: `${v.lifetime.orders || 0} order · omzet ${Math.round(v.lifetime.revenue).toLocaleString('id-ID')} · belanja ${Math.round(v.lifetime.cost).toLocaleString('id-ID')} · ROAS ${(v.lifetime.roas).toFixed(1)}×`,
+      detail: `${v.lifetime.orders || 0} order · omzet ${Math.round(v.lifetime.revenue).toLocaleString('id-ID')} · cost ${Math.round(v.lifetime.cost).toLocaleString('id-ID')} · ROAS ${(v.lifetime.roas).toFixed(1)}×`,
       signature: sig({
         aksi: 'CREATIVE_BOOST', status: v.delivery || null,
         roas_bucket: roasBucket(v.lifetime.roas), spend_bucket: spendBucket(v.lifetime.cost, floor),
@@ -92,6 +96,7 @@ export function buildRecommendations({
     .sort((a, b) => a.t - b.t)
     .map(({ r, t }) => ({
       id: r.item_id, judul: r.video_text || r.item_id, akun: r.tiktok_name,
+      rawEnd: r.auth_end_time,
       detail: `izin habis ${new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} · ${Math.floor((now - t) / DAY)} hari lalu`,
       signature: sig({ aksi: 'REFRESH_AUTH', umur_kedaluwarsa_hari: Math.floor((now - t) / DAY) }),
     }))
@@ -103,6 +108,7 @@ export function buildRecommendations({
     .sort((a, b) => Number(b.budget) - Number(a.budget))
     .map(s => ({
       id: s.campaign_id, judul: s.campaign_name || s.campaign_id,
+      budget: Number(s.budget), status: s.operation_status,
       detail: `budget ${Math.round(Number(s.budget)).toLocaleString('id-ID')} · status ${s.operation_status}`,
       signature: sig({ aksi: 'REVIEW_IDLE_BUDGET', budget: Number(s.budget) }),
     }))
@@ -127,7 +133,7 @@ export function buildRecommendations({
     .sort((a, b) => b.lifetime.cost - a.lifetime.cost)
     .map(v => ({
       id: v.videoId, judul: v.title || v.videoId, akun: v.account, video: v,
-      detail: `belanja ${Math.round(v.lifetime.cost).toLocaleString('id-ID')} · ROAS ${v.lifetime.roas == null ? '—' : v.lifetime.roas.toFixed(1) + '×'}`,
+      detail: `cost ${Math.round(v.lifetime.cost).toLocaleString('id-ID')} · ROAS ${v.lifetime.roas == null ? '—' : v.lifetime.roas.toFixed(1) + '×'}`,
       signature: sig({
         aksi: 'CREATIVE_EXCLUDE', status: v.delivery || null,
         roas_bucket: roasBucket(v.lifetime.roas), spend_bucket: spendBucket(v.lifetime.cost, floor),
@@ -137,27 +143,27 @@ export function buildRecommendations({
 
   const rp = (n) => Math.round(n).toLocaleString('id-ID')
   const omzetBoost = boost.reduce((s, x) => s + (x.video?.lifetime?.revenue || 0), 0)
-  const belanjaBoros = wasteful.reduce((s, x) => s + (x.video?.lifetime?.cost || 0), 0)
+  const costBoros = wasteful.reduce((s, x) => s + (x.video?.lifetime?.cost || 0), 0)
 
   // Urutan kartu = urutan pekerjaan yang masuk akal: peluang dulu (uang yang
   // belum diambil), lalu pemborosan, lalu perawatan, lalu kerapian.
   return [
     { key: 'BOOST_CANDIDATE', tone: 'green', items: boost,
       title: 'Kandidat dinaikkan belanjanya',
-      subtitle: `ROAS ≥${good} tapi belanja masih di bawah lantai${boost.length ? ` · omzet berjalan ${rp(omzetBoost)}` : ''}`,
-      actionLabel: 'Buka daftar',
+      subtitle: `ROAS ≥${good} tapi cost masih di bawah lantai${boost.length ? ` · omzet berjalan ${rp(omzetBoost)}` : ''}`,
+      actionLabel: 'Buka daftar', minSpend,
       // Yang tersaring DIUNGKAP, bukan disembunyikan: kalau daftarnya pendek,
       // pengguna berhak tahu bahwa ada kandidat yang sengaja ditahan dan kenapa.
       footnote: boostThin.length
-        ? `${boostThin.length} kandidat lain ditahan: belanjanya di bawah ${rp(minSpend)} dan ordernya belum berulang, jadi ROAS-nya belum membuktikan apa pun.`
+        ? `${boostThin.length} kandidat lain ditahan: cost-nya di bawah ${rp(minSpend)} dan ordernya belum berulang, jadi ROAS-nya belum membuktikan apa pun.`
         : null,
-      emptyNote: 'Tak ada video berperforma tinggi yang belanjanya masih tertahan.' },
+      emptyNote: 'Tak ada video berperforma tinggi yang cost-nya masih tertahan.' },
 
     { key: 'WASTEFUL', tone: 'red', items: wasteful,
       title: 'Video boros yang perlu dihentikan',
-      subtitle: wasteful.length ? `belanja ≥${rp(floor)} tapi ROAS di bawah ${bad} · total ${rp(belanjaBoros)}` : `belanja ≥${rp(floor)} tapi ROAS di bawah ${bad}`,
+      subtitle: wasteful.length ? `cost ≥${rp(floor)} tapi ROAS di bawah ${bad} · total ${rp(costBoros)}` : `cost ≥${rp(floor)} tapi ROAS di bawah ${bad}`,
       actionLabel: 'Buka daftar',
-      emptyNote: 'Tidak ada — belanja besar semuanya masih menghasilkan.' },
+      emptyNote: 'Tidak ada — cost besar semuanya masih menghasilkan.' },
 
     { key: 'AUTH_NEEDED_EARNING', tone: 'amber', items: earning,
       title: 'Butuh izin, tapi sudah menghasilkan omzet',

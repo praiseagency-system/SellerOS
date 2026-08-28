@@ -110,7 +110,8 @@ export default function InsightPage({ onOpenUpload }) {
               <button onClick={() => setQueuedMsg(null)} className="text-[11px] text-ink-faint hover:text-ink">tutup</button>
             </div>
           )}
-          <ActionCards groups={groups} total={totalActions(groups)} snapshotDate={periodName} exec={exec} />
+          <ActionCards groups={groups} total={totalActions(groups)} snapshotDate={periodName}
+            exec={exec} thresholds={thresholds} />
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint mb-2">Panduan umum</p>
             <ActionPlan steps={insights.plan} />
