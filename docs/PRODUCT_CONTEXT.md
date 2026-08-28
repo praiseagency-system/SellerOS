@@ -461,9 +461,10 @@ gemini|llm|completion` di `src` → hanya komentar tentang token store Keychain 
 - **Runtime:** browser (SPA) + Node.js (worker `src/gmvmax/*`, ESM `.mjs`).
 - **Database:** Postgres (Supabase) dengan RLS + 1 RPC atomik. **VERIFIED**.
 - **Hosting/Deploy:** **Vercel** (static `dist/` + `api/`), rewrite SPA di
-  `vercel.json`. Ada **juga** workflow **GitHub Pages** (`.github/workflows/`)
-  yang **tak kompatibel** dengan `api/` — kemungkinan usang (§16). `vite.config.js`
-  `base:'./'`. **VERIFIED**.
+  `vercel.json` — **satu-satunya** target deploy sejak **2026-08-28**. Workflow
+  **GitHub Pages** (`.github/workflows/deploy.yml`) sudah **dihapus** dan situs
+  Pages **dimatikan** (§16). `vite.config.js` `base:'./'` (relatif — tak
+  bergantung host). **VERIFIED**.
 - **API architecture:** PostgREST (auto) + 2 endpoint proxy REST. **VERIFIED**.
 - **Folder structure:** `src/{pages,components,contexts,data,utils,lib,gmvmax}` +
   `api/` + `supabase/migrations/` + `scripts/` + `deploy/`. **VERIFIED**.
@@ -624,12 +625,23 @@ TZ Jakarta offset. **VERIFIED**.
    - Bukti: kedua file (tak ada cek sesi/origin/rate-limit).
    - Arah: batasi origin + rate-limit + verifikasi sesi Supabase. **VERIFIED.**
 
-5. **Konflik target deploy (Vercel vs GitHub Pages).**
-   - `vercel.json` + folder `api/` mengharuskan Vercel; namun ada
-     `.github/workflows/*` GitHub Pages yang **tak bisa** menjalankan `api/`.
-   - Dampak: bila Pages ter-deploy, fitur Connect TikTok mati (proxy hilang).
-   - Bukti: `vercel.json`, `.github/workflows/deploy.yml`, `vite.config.js`.
-   - Arah: pilih Vercel, hapus/arsipkan workflow Pages. **VERIFIED.**
+5. **Konflik target deploy (Vercel vs GitHub Pages).** — **RESOLVED
+   2026-08-28.**
+   - Riwayat: `vercel.json` + folder `api/` mengharuskan Vercel, namun
+     `.github/workflows/deploy.yml` menerbitkan salinan statis ke GitHub Pages
+     **setiap push ke `main`**. Terverifikasi hidup (HTTP 200) di
+     `https://praiseagency-system.github.io/SellerOS/`, dengan run sukses
+     terakhir 2026-08-28. Repo `PUBLIC`, jadi salinan itu terbuka.
+   - Dampak nyata: **bukan** kebocoran data — bundel Pages dibangun tanpa env
+     Supabase, jadi tak memuat URL/anon key dan aplikasinya cangkang mati
+     ("Supabase belum dikonfigurasi"). Masalahnya salinan publik membingungkan,
+     ikut ter-update tiap push, dan menambah permukaan tak terkelola.
+   - Tindakan: `.github/workflows/deploy.yml` **dihapus**; situs Pages
+     **dihapus** via `gh api -X DELETE repos/praiseagency-system/SellerOS/pages`
+     (Source: None). URL Pages tak lagi melayani 200.
+   - Sisa: `.github/workflows/validate.yml` **tetap** (CI validasi, tak terkait
+     deploy). Vercel tak terpengaruh — `vite.config.js` `base:'./'` relatif.
+   - **VERIFIED.**
 
 6. **Identitas & brand user hanya di localStorage.**
    - Tak sinkron antar device; hilang bila cache dibersihkan.
@@ -704,7 +716,7 @@ TZ Jakarta offset. **VERIFIED**.
 | Scalability | **6** | Serverless + Postgres cukup untuk skala agency; belum queue/monitoring; paginasi PostgREST sudah ditangani. |
 | Observability | **4** | Log worker + redaksi bagus; app hampir tanpa monitoring/error tracking. |
 | Testing | **4** | Worker teruji (26 test); parser/kalkulator/UI tanpa test; tak ada CI test. |
-| Deployment readiness | **6** | Vercel siap (`vercel.json`+`api/`), **tapi** workflow Pages usang & banyak file untracked. |
+| Deployment readiness | **6** | Vercel siap (`vercel.json`+`api/`); konflik Pages **sudah dibereskan** 2026-08-28 (workflow + situs dihapus), tapi masih banyak file untracked. |
 | Documentation | **5** | README/HANDOFF ada tapi **usang** (pra-GMV Max); DESIGN.md worker bagus; dokumen ini menutup sebagian. |
 
 ---
@@ -740,8 +752,8 @@ TZ Jakarta offset. **VERIFIED**.
     **VERIFIED.**
 15. **Kualitas**: worker teruji (26 test) tapi parser/kalkulator (jalur uang) &
     UI tanpa test; tanpa TypeScript. **VERIFIED.**
-16. **Deploy**: Vercel benar (butuh `api/`); workflow **GitHub Pages usang &
-    tidak kompatibel**. **VERIFIED.**
+16. **Deploy**: Vercel satu-satunya target (butuh `api/`); workflow & situs
+    **GitHub Pages dihapus 2026-08-28**. **VERIFIED.**
 17. **Git**: seluruh `src/gmvmax/` + migrasi 0017–0020 + skrip **belum
     di-commit** (untracked). **VERIFIED.**
 18. **Dokumentasi resmi (README/HANDOFF) usang** — mendeskripsikan data bisnis
@@ -770,15 +782,15 @@ TZ Jakarta offset. **VERIFIED**.
 | OAuth | `src/lib/tiktokOAuth.js`, `src/components/TiktokCallback.jsx` | PKCE flow, redirect, proxy |
 | Proxy | `api/tiktok/token.js`, `api/tiktok/advertisers.js` | Relay CORS, permukaan risiko |
 | Worker | `src/gmvmax/worker.mjs`, `vpsCommit.mjs`, `writer.mjs`, `providers/supabaseTokenStore.mjs`, `engine.mjs` | Sync deterministik, shadow vs commit |
-| Deploy | `vercel.json`, `.github/workflows/deploy.yml`, `vite.config.js` | Konflik target deploy |
+| Deploy | `vercel.json`, `vite.config.js` | Target tunggal Vercel (Pages dihapus 2026-08-28) |
 | Settings/UI | `src/pages/SettingsPage.jsx` | Profil/Brand/Integrasi/Team, consent |
 
 **File yang kemungkinan usang / menyesatkan:**
 - `README.md`, `HANDOFF.md` — **usang** (2026-06-18, pra-GMV Max); klaim "data
   bisnis di localStorage" **salah** untuk kondisi sekarang (sudah Supabase).
   **VERIFIED.**
-- `.github/workflows/deploy.yml` (GitHub Pages) — bertentangan dengan Vercel/`api/`.
-  **VERIFIED.**
+- ~~`.github/workflows/deploy.yml` (GitHub Pages)~~ — **dihapus 2026-08-28**
+  bersama situs Pages-nya (§16 poin 5). **VERIFIED.**
 - `src/gmvmax/providers/tokenStore.mjs` (Keychain) — sebagian digantikan
   `supabaseTokenStore.mjs`. **VERIFIED.**
 - `src/utils/gmvmaxApiService.js` + `gmvmaxApiPoller.js` — ada tapi tak dipanggil
