@@ -12,7 +12,9 @@ import { createApproval, getExecutionSettings } from './gmvmaxApprovals'
 
 async function requireConn() {
   const conn = await getConnection()
-  if (!conn?.access_token) throw new Error('TikTok Ads belum tersambung untuk workspace ini.')
+  // Token tak lagi terbaca browser (diselesaikan server) — keberadaan
+  // BARIS koneksi yang menandakan tersambung, bukan ada-tidaknya token.
+  if (!conn?.workspace_id) throw new Error('TikTok Ads belum tersambung untuk workspace ini.')
   if (!conn?.advertiser_id) throw new Error('Advertiser belum dipilih (Pengaturan → Integrasi).')
   return conn
 }
@@ -84,7 +86,7 @@ export async function fetchStoreProducts() {
   const conn = await requireConn()
   if (!conn.store_id) throw new Error('store_id koneksi kosong — cek Pengaturan → Integrasi.')
   const r = await post('/api/gmvmax/tt-video', {
-    access_token: conn.access_token, advertiser_id: conn.advertiser_id,
+    workspace_id: conn.workspace_id, advertiser_id: conn.advertiser_id,
     op: 'store_products', store_id: conn.store_id,
   })
   return r.products || []
@@ -301,7 +303,7 @@ export async function requestSessionStop({ campaignId, campaignName, sessionId, 
 export async function fetchSessions(campaignId) {
   const conn = await requireConn()
   const r = await post('/api/gmvmax/tt-video', {
-    access_token: conn.access_token, advertiser_id: conn.advertiser_id,
+    workspace_id: conn.workspace_id, advertiser_id: conn.advertiser_id,
     op: 'session_list', campaign_id: String(campaignId),
   })
   return r.sessions || []
@@ -340,7 +342,7 @@ export async function executeCampaignAction(approvalRow) {
   let result = null, failMsg = null
   try {
     result = await post('/api/gmvmax/execute', {
-      access_token: conn.access_token,
+      workspace_id: conn.workspace_id,
       action_type: approvalRow.action_type,
       approval_id: approvalRow.id,
       params,

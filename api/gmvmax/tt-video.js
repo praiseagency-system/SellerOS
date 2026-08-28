@@ -6,6 +6,7 @@
 //
 // WAJIB sesi Supabase + origin dikenal + batas laju (api/_lib/guard.js).
 import { guard, parseBody } from '../_lib/guard.js'
+import { connectionOrRespond } from '../_lib/tiktokToken.js'
 
 const MCP_URL = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer'
 
@@ -59,8 +60,14 @@ export default async function handler(req, res) {
   if (!auth) return
   try {
     const body = parseBody(req)
-    const { access_token, advertiser_id, op } = body || {}
-    if (!access_token || !advertiser_id) { res.status(400).json({ error: 'invalid_request', error_description: 'access_token & advertiser_id wajib' }); return }
+    const { op } = body || {}
+    // Token diambil server (browser cukup menyebut workspace_id). advertiser_id
+    // ikut diambil dari koneksi supaya klien tak bisa menunjuk akun lain.
+    const conn = await connectionOrRespond(res, auth.token, body?.workspace_id)
+    if (!conn) return
+    const access_token = conn.access_token
+    const advertiser_id = conn.advertiser_id
+    if (!advertiser_id) { res.status(400).json({ error: 'invalid_request', error_description: 'Advertiser belum dipilih (Pengaturan → Integrasi).' }); return }
 
     if (op === 'info') {
       if (!body.auth_code) { res.status(400).json({ error: 'invalid_request', error_description: 'auth_code wajib untuk op info' }); return }

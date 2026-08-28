@@ -8,6 +8,7 @@
 // keyword item_id (bila info tersedia) → bukti ikatan benar-benar terjadi.
 import { callBusinessTool, sanitizeAuthCode } from './tt-video.js'
 import { guard, parseBody, selectAsUser } from '../_lib/guard.js'
+import { connectionOrRespond } from '../_lib/tiktokToken.js'
 
 // Verifikasi baris approval ATAS NAMA pemanggil (RLS yang menjaga kepemilikan).
 // Sebelum ini `approval_id` hanya dicek "tidak kosong" — string apa pun lolos,
@@ -61,8 +62,7 @@ export default async function handler(req, res) {
   if (!auth) return
   try {
     const body = parseBody(req)
-    const { access_token, action_type, approval_id, params } = body || {}
-    if (!access_token) { res.status(400).json({ error: 'invalid_request', error_description: 'access_token wajib' }); return }
+    const { action_type, approval_id, params } = body || {}
     if (!ALLOWED.has(action_type)) { res.status(400).json({ error: 'invalid_action', error_description: `action_type tak dikenal: ${action_type}` }); return }
     if (!approval_id) { res.status(400).json({ error: 'approval_required', error_description: 'Eksekusi hanya menerima aksi ber-approval (approval_id wajib).' }); return }
     if (!ENABLED.has(action_type)) {
@@ -73,6 +73,12 @@ export default async function handler(req, res) {
     // Approval diperiksa SEBELUM aksi apa pun menyentuh TikTok.
     const bad = await verifyApproval(auth.token, approval_id, action_type)
     if (bad) { res.status(bad.http).json(bad.body); return }
+
+    // Token diambil server setelah kepemilikan workspace terbukti — browser
+    // tak lagi mengirimkannya.
+    const conn = await connectionOrRespond(res, auth.token, body?.workspace_id)
+    if (!conn) return
+    const access_token = conn.access_token
 
     // ── E4b: SESSION_CREATE (Max Delivery / Creative Boost) ─────────────────
     if (action_type === 'SESSION_CREATE') {

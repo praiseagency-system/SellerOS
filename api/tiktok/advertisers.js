@@ -7,6 +7,7 @@
 // WAJIB sesi Supabase + origin dikenal + batas laju (api/_lib/guard.js).
 // Sebelumnya siapa pun bisa memakai endpoint ini sebagai relai ke MCP TikTok.
 import { guard, parseBody } from '../_lib/guard.js'
+import { connectionOrRespond } from '../_lib/tiktokToken.js'
 
 const MCP_URL = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer'
 
@@ -42,8 +43,11 @@ export default async function handler(req, res) {
   if (!auth) return
   try {
     const body = parseBody(req)
-    const token = body?.access_token
-    if (!token) { res.status(400).json({ error: 'invalid_request', error_description: 'access_token wajib' }); return }
+    // Browser tak lagi mengirim token — cukup sebut workspace-nya, server yang
+    // mengambil (dan menyegarkan) token setelah kepemilikan terbukti.
+    const conn = await connectionOrRespond(res, auth.token, body?.workspace_id)
+    if (!conn) return
+    const token = conn.access_token
 
     // Handshake MCP (sama seperti worker): initialize → initialized → tools/call.
     const init = await mcpPost(token, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'selleros', version: '1' } } })

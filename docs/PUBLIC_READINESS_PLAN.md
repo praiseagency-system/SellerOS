@@ -81,7 +81,24 @@ untuk jenis aksi berbeda (400), `approval_id` bukan UUID (400). "Tak ditemukan"
 dan "bukan milikmu" sengaja berjawaban sama agar keberadaan approval orang lain
 tak bocor. Semua penolakan terjadi SEBELUM TikTok tersentuh.
 
-**1.2 Token TikTok tidak lagi terbaca client — BELUM, asumsi awal SALAH.**
+**1.2 Token TikTok tidak lagi terbaca client — SELESAI (tahap kode).**
+Browser kini cukup menyebut `workspace_id`; server yang mengambil, menyegarkan,
+dan memakai token (`api/_lib/tiktokToken.js`). Dua lapis izin dipisah dengan
+sengaja: **kepemilikan** workspace diperiksa dengan JWT pemanggil (RLS yang
+memutuskan), baru setelah itu **token** dibaca dengan service_role — urutannya
+penting, karena service_role menembus semua RLS dan tak boleh dipakai sebelum
+kepemilikan terbukti. Perpanjangan token pindah ke `api/tiktok/renew`, dan
+`refreshAccessToken` versi browser dihapus. `getConnection` tak lagi
+`select('*')` (bintang akan gagal total begitu privilege kolom dicabut).
+
+SISA: (a) migrasi mencabut privilege SELECT kolom token dari `authenticated` —
+sengaja MENYUSUL setelah kode ini terbukti jalan di produksi, karena urutannya
+kebalikan migrasi 0049: di sini migrasi MENGHAPUS kemampuan yang dibutuhkan kode
+lama; (b) pertukaran kode OAuth awal masih lewat browser (PKCE verifier ada di
+sessionStorage), jadi token masih menyentuh browser SEKALI saat connect —
+memindahkannya perlu proxy token ikut menyimpan koneksi.
+
+**Catatan asumsi lama (biarkan tercatat):**
 Rencana awal menyebut "client tak butuh membaca isi token". Setelah dibaca,
 ternyata **butuh**: `renew` memanggil `refreshAccessToken(conn.refresh_token)`
 dan keempat endpoint di atas dipanggil dengan `access_token` dari browser.

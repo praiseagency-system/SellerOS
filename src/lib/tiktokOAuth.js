@@ -111,23 +111,21 @@ export function exchangeCode({ code, verifier }) {
   })
 }
 
-// Perpanjang access_token via refresh_token (dipakai UI & — versi Node — worker).
-export function refreshAccessToken(refreshToken) {
-  return postToken({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: TIKTOK_OAUTH.clientId,
-  })
-}
+// CATATAN: `refreshAccessToken` versi browser SENGAJA DIHAPUS. Perpanjangan token
+// kini dikerjakan server (api/tiktok/renew → api/_lib/tiktokToken), sehingga
+// refresh_token tak perlu lagi dibaca browser. Jangan hidupkan kembali di sini —
+// mengembalikannya berarti menarik refresh_token masuk ke tab lagi, dan itu
+// justru yang ditutup. Worker Node punya jalurnya sendiri (src/gmvmax).
 
 // Daftar advertiser/toko yang dilihat token (lewat proxy serverless — MCP kena
 // CORS dari browser). → [{ advertiser_id, advertiser_name }]
+// Cukup sebut workspace-nya: token diambil & disegarkan di sisi server.
 const ADV_PROXY = import.meta.env.VITE_TIKTOK_ADV_PROXY || '/api/tiktok/advertisers'
-export async function fetchAdvertisers(accessToken) {
+export async function fetchAdvertisers(workspaceId) {
   const res = await fetch(ADV_PROXY, {
     method: 'POST',
     headers: await authHeaders(),
-    body: JSON.stringify({ access_token: accessToken }),
+    body: JSON.stringify({ workspace_id: workspaceId }),
   })
   const text = await res.text()
   let j
