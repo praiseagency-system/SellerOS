@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
 import { tiktokVideoUrl } from './ui'
 import { VideoExecCell } from './VideoExecActions'
+import { pickBoostTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
 
 const TONE = {
   green: { n: 'text-emerald-400', bar: 'bg-emerald-500/60', btn: 'border-emerald-500/35 text-emerald-400 hover:bg-emerald-500/10' },
@@ -26,9 +27,41 @@ function outreachText(items) {
   return items.map(i => `@${i.akun || '?'} — ${String(i.judul || '').slice(0, 60)} — https://www.tiktok.com/@${i.akun || ''}/video/${i.id}`).join('\n')
 }
 
+// Baris sasaran: apa yang dipilih sistem DAN kenapa. Ditaruh di KOLOM KIRI di
+// bawah judul video (bukan diselipkan di sel tombol) supaya nama produknya utuh
+// terbaca — di kolom kanan yang sempit ia terpotong jadi "Custom AsterixSty …".
+// Alasannya ditampilkan supaya aturan pemilihan BISA DIBANTAH: kalau keliru,
+// tekan "ganti".
+function TargetLine({ video, exec, onGanti }) {
+  const t = pickBoostTarget({
+    video, anchorSpu: exec.anchorOf?.(video.videoId) || null, eligible: (p) => !!exec.resolve(p),
+  })
+  if (!t.options.length) return null
+  if (!t.confident) {
+    return (
+      <span className="block text-[10px] text-ink-faint mt-0.5">
+        Sasaran belum pasti — {undecidedReason(t.options)} ·{' '}
+        <button onClick={onGanti} className="text-blue-300 hover:underline">pilih sasaran</button>
+      </span>
+    )
+  }
+  const nama = exec.productName?.(t.placement.productId) || t.placement.productId
+  return (
+    <span className="block text-[10px] mt-0.5">
+      <span className="text-blue-300">→ {t.placement.campaignName || t.placement.campaignId}</span>
+      <span className="text-ink-muted"> · {nama}</span>
+      <span className="text-ink-faint"> — {t.reason}</span>
+      {t.options.length > 1 && (
+        <> · <button onClick={onGanti} className="text-blue-300 hover:underline">ganti</button></>
+      )}
+    </span>
+  )
+}
+
 function ActionCard({ group, exec }) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [chooser, setChooser] = useState(null)   // { id, kind } — pemilih sasaran yang terbuka
   const t = TONE[group.tone] || TONE.blue
   const n = group.items.length
   const empty = n === 0
@@ -74,7 +107,7 @@ function ActionCard({ group, exec }) {
       {open && !empty && (
         <div className="border-t border-line/10 divide-y divide-line/5 max-h-96 overflow-auto">
           {group.items.slice(0, 60).map(it => (
-            <div key={it.id} className="flex items-center gap-3 px-4 py-2.5">
+            <div key={it.id} className="flex items-start gap-3 px-4 py-2.5">
               <div className="min-w-0 flex-1">
                 {it.video || group.key === 'AUTH_EXPIRED' ? (
                   <a href={tiktokVideoUrl(it.id, it.akun) || '#'} target="_blank" rel="noreferrer"
@@ -85,14 +118,20 @@ function ActionCard({ group, exec }) {
                 <span className="block text-[10px] text-ink-faint">
                   {it.akun ? `@${it.akun} · ` : ''}{it.detail}
                 </span>
+                {it.video && exec && (
+                  <TargetLine video={it.video} exec={exec} onGanti={() => setChooser({ id: it.id, kind: 'BOOST' })} />
+                )}
               </div>
-              {/* Sel yang sama dengan Performa Video: gerbang status + menu ▾
-                  untuk video yang ikut di lebih dari satu campaign. Dipakai
-                  ulang, bukan ditiru, supaya perilakunya tak bercabang. */}
+              {/* Sel yang sama dengan Performa Video: gerbang status + pemilih
+                  sasaran. Dipakai ulang, bukan ditiru, supaya perilakunya tak
+                  bercabang; menunya dikendalikan dari sini agar tautan "ganti"
+                  di kolom kiri bisa membukanya. */}
               {it.video && exec && (
                 <VideoExecCell video={it.video} resolve={exec.resolve}
                   onBoost={exec.onBoost} onExclude={exec.onExclude}
-                  anchorOf={exec.anchorOf} productName={exec.productName} layout="inline" />
+                  anchorOf={exec.anchorOf} productName={exec.productName}
+                  open={chooser?.id === it.id ? chooser.kind : null}
+                  onOpenChange={(k) => setChooser(k ? { id: it.id, kind: k } : null)} />
               )}
             </div>
           ))}

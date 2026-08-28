@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Rocket, Ban, X, ChevronDown } from 'lucide-react'
 import { requestBoostSession, requestCreativeExclude, SESSION_MIN_BUDGET_IDR, BOOST_BLOCKED_STATUS } from '../../data/gmvmaxCampaignControl'
-import { pickBoostTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
+import { pickBoostTarget } from '../../utils/gmvmaxBoostTarget'
 import SessionSchedule from './SessionSchedule'
 import { defaultSchedule } from '../../utils/gmvmaxSchedule'
 
@@ -36,9 +36,15 @@ const rpS = (n) => Math.round(Number(n) || 0).toLocaleString('id-ID')
 // layout 'cell'   → hanya tombol (tabel padat)
 //        'inline' → tombol + baris sasaran & alasannya (daftar rekomendasi)
 export function VideoExecCell({
-  video, resolve, onBoost, onExclude, anchorOf, productName, layout = 'cell',
+  video, resolve, onBoost, onExclude, anchorOf, productName,
+  open: openProp, onOpenChange,
 }) {
-  const [open, setOpen] = useState(null)   // 'BOOST' | 'EXCLUDE' → daftar sasaran
+  // Menu boleh dikendalikan pemanggil (open/onOpenChange) supaya baris sasaran
+  // bisa diletakkan di kolom kiri — di bawah judul video, tempat ia terbaca —
+  // sambil tetap bisa membuka pemilih yang hidup di sel ini.
+  const [openInner, setOpenInner] = useState(null)   // 'BOOST' | 'EXCLUDE'
+  const open = openProp !== undefined ? openProp : openInner
+  const setOpen = onOpenChange || setOpenInner
   const withProduct = (video.placements || []).filter(p => p.productId)
   const places = withProduct.filter(p => resolve(p))
   const blocked = BOOST_BLOCKED_STATUS.includes(video.delivery)
@@ -65,29 +71,7 @@ export function VideoExecCell({
 
   const btn = 'px-2 py-0.5 rounded-md text-[10px] font-semibold border disabled:opacity-40 whitespace-nowrap'
 
-  // Baris sasaran: apa yang dipilih sistem DAN kenapa. Alasannya ditampilkan
-  // supaya bisa kamu bantah — kalau keliru, tekan "ganti". Tanpa alasan, ini
-  // cuma kotak hitam yang membelanjakan uangmu entah di mana.
-  const targetLine = layout !== 'inline' ? null : target.confident && target.placement ? (
-    <div className="text-[10px] leading-snug text-right max-w-[15rem]">
-      <p className="text-blue-300 truncate">
-        → {target.placement.campaignName || target.placement.campaignId}
-        <span className="text-ink"> · {nama(target.placement)}</span>
-      </p>
-      <p className="text-ink-faint">
-        {target.reason}
-        {target.options.length > 1 && (
-          <> · <button onClick={() => setOpen('BOOST')} className="text-blue-300 hover:underline">ganti</button></>
-        )}
-      </p>
-    </div>
-  ) : (
-    <p className="text-[10px] text-ink-faint text-right max-w-[15rem] leading-snug">
-      Sasaran belum pasti — {undecidedReason(target.options)}
-    </p>
-  )
-
-  const inti = (
+  return (
     <div className="relative inline-flex items-center gap-1">
       {blocked ? (
         <span className="text-[10px] text-ink-faint whitespace-nowrap">{BLOCK_HINT[video.delivery] || '—'}</span>
@@ -128,14 +112,6 @@ export function VideoExecCell({
           </div>
         </>
       )}
-    </div>
-  )
-
-  if (layout !== 'inline') return inti
-  return (
-    <div className="flex flex-col items-end gap-1">
-      {inti}
-      {targetLine}
     </div>
   )
 }
