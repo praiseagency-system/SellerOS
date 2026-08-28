@@ -47,25 +47,48 @@ Total ±4–6 minggu kerja efektif. Fase 5 boleh berjalan paralel sejak Fase 1.
 
 ---
 
-## Fase 1 — Keamanan (3–4 hari)
+## Fase 1 — Keamanan (3–4 hari) — 1.1 & 1.3 SELESAI 2026-08-28
 
-**1.1 Hardening proxy Vercel** (`api/tiktok/token.js`, `advertisers.js`)
-- Wajib header `Authorization: Bearer <JWT Supabase>`; verifikasi di proxy
-  via `auth.getUser(jwt)` (cukup anon key). Tanpa sesi valid → 401.
-- Allowlist `Origin` = domain produksi + localhost dev.
-- Rate-limit sederhana per IP (in-memory per instance sudah menaikkan biaya abuse).
+**1.1 Hardening proxy Vercel — SELESAI.** Cakupan ternyata LEBIH LUAS dari
+audit Juli yang menyebut "2 fungsi Vercel". Saat dikerjakan ditemukan **4**
+endpoint, dan dua yang tak terdaftar justru yang paling berbahaya:
 
-**1.2 Token TikTok tidak lagi terbaca client**
-- Opsi ringan (direkomendasikan dulu): client tak butuh membaca isi token —
-  hanya status koneksi. Buat view/RPC yang mengembalikan `tiktok_connections`
-  TANPA kolom token; cabut SELECT kolom token dari `authenticated`.
-  Worker (service_role) tak terpengaruh.
-- Opsi penuh (belakangan): enkripsi at-rest via pgsodium/Vault.
+| Endpoint | Sifat | Kondisi sebelumnya |
+|---|---|---|
+| `api/tiktok/token` | relai token OAuth | terbuka |
+| `api/tiktok/advertisers` | baca daftar akun | terbuka |
+| `api/gmvmax/tt-video` | baca video/katalog | terbuka (tak terdaftar di audit) |
+| **`api/gmvmax/execute`** | **TULIS ke TikTok** — ikat spark, ubah budget/ROI, buat sesi boost | **terbuka** (tak terdaftar di audit) |
 
-**1.3 `gmvmax_video_meta`**
-- Ganti policy `using(true) with check(true)` → insert bebas, update hanya
-  bila nilai lama `notfound/error` (anti cache-poisoning), atau pindah tulis
-  ke RPC dengan validasi format `video_id`.
+Keempatnya kini lewat `api/_lib/guard.js`: wajib `Authorization: Bearer <JWT
+Supabase>` (diverifikasi ke `/auth/v1/user`), allowlist Origin, batas laju
+per user+IP, dan **gagal tertutup** bila env auth tak tersedia.
+
+**SISA yang belum ditutup (bukan lagi lubang internet, tapi tetap celah):**
+`execute` menerima `approval_id` apa adanya — tak pernah dicek ke DB apakah
+baris approval itu ada, milik workspace pemanggil, dan berstatus APPROVED.
+Artinya user login bisa mengeksekusi aksi tanpa melewati alur persetujuan.
+Menutupnya butuh baca DB di sisi server → digabung dengan 1.2.
+
+**1.2 Token TikTok tidak lagi terbaca client — BELUM, asumsi awal SALAH.**
+Rencana awal menyebut "client tak butuh membaca isi token". Setelah dibaca,
+ternyata **butuh**: `renew` memanggil `refreshAccessToken(conn.refresh_token)`
+dan keempat endpoint di atas dipanggil dengan `access_token` dari browser.
+Jadi mencabut SELECT kolom token akan mematikan Integrasi TikTok.
+
+Urutan yang benar (butuh `SUPABASE_SECRET_KEY` di env Vercel — keputusan user):
+1. Pindahkan `renew` + pengambilan token ke sisi server: endpoint membaca
+   token via service_role berdasarkan workspace milik pemanggil, jadi token
+   tak pernah menyentuh browser. Sekalian verifikasi `approval_id` (sisa 1.1).
+2. Baru cabut SELECT kolom token dari `authenticated`.
+3. Enkripsi at-rest (pgsodium) menyusul.
+
+**1.3 `gmvmax_video_meta` — SELESAI** (migrasi 0050). Policy `using(true) with
+check(true)` diganti: baca bebas, insert hanya `video_id` numerik, update hanya
+untuk baris yang belum `ok` (baris berhasil jadi beku → tak bisa ditimpa).
+Sisa risiko yang disadari: user login masih bisa mengisi video yang belum
+ter-cache dengan nama karangan — menutupnya menuntut enrichment pindah ke
+server (kini di browser karena oEmbed mengizinkan CORS).
 
 **Gate 1:** pentest ringan pakai **Strix** (sudah terpasang di Mac, via Colima)
 terhadap proxy + auth; temuan High/Critical = 0.
