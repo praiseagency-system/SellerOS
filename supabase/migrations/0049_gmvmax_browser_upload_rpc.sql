@@ -21,8 +21,11 @@
 --
 -- SIFAT: aditif & idempoten (create or replace). Tidak mengubah 0017/0030,
 -- tidak mengubah tabel/kolom, tidak menyentuh jalur worker.
+-- Dibungkus satu transaksi (konvensi migrasi 0017): fungsi + grant menyala
+-- bersama-sama, tak ada keadaan setengah jadi.
 -- Terapkan di Supabase Dashboard → SQL Editor.
 -- ============================================================================
+begin;
 
 create or replace function public.gmvmax_upload_snapshot(
   p_workspace_id      uuid,
@@ -76,3 +79,5 @@ end $$;
 -- Hanya sesi login yang boleh memanggil. anon & public ditolak.
 revoke execute on function public.gmvmax_upload_snapshot(uuid, date, text, jsonb, jsonb, boolean) from public;
 grant  execute on function public.gmvmax_upload_snapshot(uuid, date, text, jsonb, jsonb, boolean) to authenticated;
+
+commit;

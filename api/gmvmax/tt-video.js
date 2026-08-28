@@ -3,6 +3,10 @@
 // op:'list' → tt_video_list_get (daftar post ter-otorisasi ke ad account)
 // Browser kirim access_token miliknya sendiri (RLS owner). TIDAK menyimpan token.
 
+//
+// WAJIB sesi Supabase + origin dikenal + batas laju (api/_lib/guard.js).
+import { guard, parseBody } from '../_lib/guard.js'
+
 const MCP_URL = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer'
 
 async function mcpPost(token, body) {
@@ -38,7 +42,7 @@ export async function callBusinessTool(token, toolName, params) {
   const r = await mcpPost(token, { jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name: 'tool_execute', arguments: { tool_name: toolName, params } } })
   if (r.status === 401) return { error: 'auth', error_description: 'Token kedaluwarsa/invalid.', http: 401 }
   const text = r.data?.result?.content?.[0]?.text
-  let payload = null
+  let payload
   try { payload = text ? JSON.parse(text) : null } catch { payload = null }
   if (!payload) return { error: 'mcp_error', error_description: `respons tak terbaca (${r.status})${r.raw ? `: ${r.raw}` : ''}`, http: 502 }
   if (payload.code !== 0) return { error: 'tiktok_error', error_description: payload.message || `code ${payload.code}`, code: payload.code, http: 502 }
@@ -49,10 +53,12 @@ export async function callBusinessTool(token, toolName, params) {
 export const sanitizeAuthCode = (code) => String(code || '').trim().replace(/\+/g, '%2B')
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
+  // Read-only, tapi tetap relai ke MCP TikTok atas nama token pemanggil →
+  // butuh sesi. 60/menit menampung paginasi daftar video yang panjang.
+  const auth = await guard(req, res, { limit: 60, windowMs: 60_000 })
+  if (!auth) return
   try {
-    let body = req.body
-    if (typeof body === 'string') body = JSON.parse(body || '{}')
+    const body = parseBody(req)
     const { access_token, advertiser_id, op } = body || {}
     if (!access_token || !advertiser_id) { res.status(400).json({ error: 'invalid_request', error_description: 'access_token & advertiser_id wajib' }); return }
 

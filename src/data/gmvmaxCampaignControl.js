@@ -4,6 +4,7 @@
 // campaign_gmv_max_update / campaign_status_update → read-back info_get.
 // Pagar di sini (bukan cuma UI): bounds % kenaikan budget + cooldown per campaign.
 import { supabase } from '../lib/supabase'
+import { postJson as post } from '../lib/apiClient'
 import { getCurrentWorkspaceId } from '../utils/workspace'
 import { getConnection } from './tiktokConnection'
 import { addActionLog } from './gmvmaxActionLog'
@@ -304,19 +305,6 @@ export async function fetchSessions(campaignId) {
     op: 'session_list', campaign_id: String(campaignId),
   })
   return r.sessions || []
-}
-
-async function post(url, body) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const text = await res.text()
-  let j
-  try { j = JSON.parse(text) } catch { throw new Error(`balasan non-JSON (${res.status})`) }
-  if (!res.ok || j.error) { const e = new Error(j.error_description || j.error || `gagal (${res.status})`); e.payload = j; throw e }
-  return j
 }
 
 // Eksekusi aksi campaign untuk baris approval APPROVED (dipanggil ApprovalBell).

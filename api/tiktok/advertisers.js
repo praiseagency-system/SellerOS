@@ -3,6 +3,10 @@
 // Browser kirim access_token miliknya sendiri (boleh ia baca via RLS owner);
 // fungsi ini panggil tool `auth_advertiser_get` lalu balikin {advertiser_id,name}.
 // TIDAK menyimpan token.
+//
+// WAJIB sesi Supabase + origin dikenal + batas laju (api/_lib/guard.js).
+// Sebelumnya siapa pun bisa memakai endpoint ini sebagai relai ke MCP TikTok.
+import { guard, parseBody } from '../_lib/guard.js'
 
 const MCP_URL = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer'
 
@@ -32,10 +36,12 @@ async function mcpPost(token, body) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return }
+  // Enumerasi advertiser dipanggil beberapa kali saat menyambung akun →
+  // 20 per menit cukup lapang, tetap membatasi relai massal.
+  const auth = await guard(req, res, { limit: 20, windowMs: 60_000 })
+  if (!auth) return
   try {
-    let body = req.body
-    if (typeof body === 'string') body = JSON.parse(body || '{}')
+    const body = parseBody(req)
     const token = body?.access_token
     if (!token) { res.status(400).json({ error: 'invalid_request', error_description: 'access_token wajib' }); return }
 

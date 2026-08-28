@@ -3,23 +3,11 @@
 // setelah APPROVED → executeSparkBind (proxy execute) → update baris approval
 // EXECUTED/FAILED + jurnal [AUTO] hasil eksekusi ke Log Optimasi.
 import { supabase } from '../lib/supabase'
+import { postJson as post } from '../lib/apiClient'
 import { getCurrentWorkspaceId } from '../utils/workspace'
 import { getConnection } from './tiktokConnection'
 import { addActionLog } from './gmvmaxActionLog'
 import { createApproval, decideApproval } from './gmvmaxApprovals'
-
-async function post(url, body) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const text = await res.text()
-  let j
-  try { j = JSON.parse(text) } catch { throw new Error(`balasan non-JSON (${res.status})`) }
-  if (!res.ok || j.error) { const e = new Error(j.error_description || j.error || `gagal (${res.status})`); e.payload = j; throw e }
-  return j
-}
 
 // Koneksi + advertiser aktif workspace (token dibaca via RLS owner).
 async function requireConn() {

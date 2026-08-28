@@ -10,6 +10,8 @@
 // 8d6ac659… hanya mengenal domain vercel.app. Daftarkan ulang dgn
 // scripts/tiktok-register-client.mjs bila domain berubah lagi.
 
+import { authHeaders } from './apiClient'
+
 const BASE = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer/oauth'
 export const TIKTOK_OAUTH = {
   authorizationEndpoint: `${BASE}/authorize`,
@@ -83,10 +85,12 @@ function normalizeToken(j) {
 // asli langsung (tanpa CORS). Bisa dioverride via VITE_TIKTOK_TOKEN_PROXY.
 const TOKEN_PROXY = import.meta.env.VITE_TIKTOK_TOKEN_PROXY || '/api/tiktok/token'
 
+// Proxy kini menolak permintaan tanpa sesi Supabase yang sah (api/_lib/guard.js),
+// jadi setiap panggilan membawa JWT sesi yang sedang aktif (lihat lib/apiClient).
 async function postToken(body) {
   const res = await fetch(TOKEN_PROXY, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   })
   const text = await res.text()
@@ -122,7 +126,7 @@ const ADV_PROXY = import.meta.env.VITE_TIKTOK_ADV_PROXY || '/api/tiktok/advertis
 export async function fetchAdvertisers(accessToken) {
   const res = await fetch(ADV_PROXY, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: await authHeaders(),
     body: JSON.stringify({ access_token: accessToken }),
   })
   const text = await res.text()

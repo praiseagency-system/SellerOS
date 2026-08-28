@@ -4,6 +4,11 @@
 // (PKCE, tanpa secret) → proxy hanya merelai, tak menyimpan/menandatangani apa pun.
 // Body masuk: JSON { grant_type, code?, refresh_token?, redirect_uri?, client_id, code_verifier? }
 // Diteruskan sebagai application/x-www-form-urlencoded ke token endpoint.
+//
+// WAJIB sesi Supabase (header Authorization: Bearer <JWT>) + origin dikenal +
+// batas laju — lihat api/_lib/guard.js. Sebelumnya endpoint ini terbuka untuk
+// siapa saja di internet.
+import { guard, parseBody } from '../_lib/guard.js'
 
 const TOKEN_ENDPOINT = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer/oauth/token'
 const ALLOWED = new Set([
@@ -11,14 +16,12 @@ const ALLOWED = new Set([
 ])
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'method_not_allowed' })
-    return
-  }
+  // Menukar/menyegarkan token itu jarang: 10 per menit sudah longgar untuk
+  // pemakaian wajar, tapi menutup penyalahgunaan beruntun.
+  const auth = await guard(req, res, { limit: 10, windowMs: 60_000 })
+  if (!auth) return
   try {
-    let body = req.body
-    if (typeof body === 'string') body = JSON.parse(body || '{}')
-    if (!body || typeof body !== 'object') body = {}
+    const body = parseBody(req)
 
     const form = new URLSearchParams()
     for (const [k, v] of Object.entries(body)) {

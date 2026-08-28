@@ -31,9 +31,25 @@ export async function saveVideoMeta(results) {
     fetched_at: new Date().toISOString(),
   }))
   for (let i = 0; i < rows.length; i += 300) {
+    const batch = rows.slice(i, i + 300)
     const { error } = await supabase
       .from('gmvmax_video_meta')
-      .upsert(rows.slice(i, i + 300), { onConflict: 'video_id' })
-    if (error) throw error
+      .upsert(batch, { onConflict: 'video_id' })
+    if (!error) continue
+    // Sejak migrasi 0050 baris yang sudah 'ok' tak boleh ditimpa. Kalau dua tab
+    // meng-enrich video yang sama bersamaan, satu baris bisa keburu jadi 'ok'
+    // dan menggagalkan SELURUH batch. Jatuh ke per-baris supaya satu baris yang
+    // ditolak tak ikut membuang 299 baris lain yang sah.
+    for (const row of batch) {
+      const { error: one } = await supabase
+        .from('gmvmax_video_meta')
+        .upsert(row, { onConflict: 'video_id' })
+      // Penolakan RLS di sini artinya cache sudah terisi hasil yang baik —
+      // itu bukan kegagalan, jadi diabaikan.
+      if (one && !isRlsDenied(one)) throw one
+    }
   }
 }
+
+const isRlsDenied = (e) =>
+  e?.code === '42501' || /row-level security/i.test(e?.message || '')
