@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ShieldOff, LogOut, AlertCircle, CheckCircle2,
   User, Palette, Users, Camera, Save, Store, Mail, UserPlus,
@@ -10,6 +10,7 @@ import { fileToAvatarDataUrl } from '../data/localIdentity'
 import { supabase } from '../lib/supabase'
 import { createPkce, buildAuthorizeUrl, stashOAuthSession, fetchAdvertisers } from '../lib/tiktokOAuth'
 import { postJson } from '../lib/apiClient'
+import { listMembers, listPendingInvites, inviteMember, setMemberRole, removeMember, revokeInvite } from '../data/team'
 import { getConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
 import { getExecutionSettings, saveExecutionSettings, createApproval } from '../data/gmvmaxApprovals'
 import EligibilityAlert from '../components/gmvmax/EligibilityAlert'
@@ -51,7 +52,7 @@ export default function SettingsPage({ initialTab = 'profil', currentWorkspace }
           <ExecutionSection currentWorkspace={currentWorkspace} />
         </div>
       )}
-      {tab === 'team' && <TeamTab />}
+      {tab === 'team' && <TeamTab currentWorkspace={currentWorkspace} />}
     </div>
   )
 }
@@ -454,41 +455,173 @@ function AdvertiserSection({ conn, wsId, onSaved }) {
   )
 }
 
-// ── Tab Team: anggota (backend menyusul setelah freeze) ────────────────────
-function TeamTab() {
+// ── Tab Team: anggota & undangan ───────────────────────────────────────────
+// Baca langsung dari Supabase (RLS menjaga), tulis selalu lewat server —
+// workspace_members sengaja tak bisa ditulis browser (lihat src/data/team.js).
+function TeamTab({ currentWorkspace }) {
   const { user } = useAuth()
-  const { profile } = useIdentity()
-  return (
-    <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5">
-      <h2 className="text-sm font-semibold text-ink-strong mb-4 flex items-center gap-2">
-        <Users className="w-4 h-4 text-blue-500" /> Anggota Tim
-      </h2>
+  const wsId = currentWorkspace?.id || null
+  const [members, setMembers] = useState([])
+  const [invites, setInvites] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('editor')
+  const [link, setLink] = useState(null)
+  const [copied, setCopied] = useState(false)
 
-      <div className="flex items-center gap-3 p-3 rounded-xl bg-fill/5 border border-line/10">
-        <div className="w-9 h-9 rounded-xl overflow-hidden bg-blue-600 flex items-center justify-center text-white text-sm font-bold uppercase flex-shrink-0">
-          {profile.avatar
-            ? <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
-            : (user?.email?.[0] || '?')}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-ink truncate">{profile.name || user?.email}</p>
-          <p className="text-xs text-ink-faint flex items-center gap-1"><Mail className="w-3 h-3" />{user?.email}</p>
-        </div>
-        <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-blue-500/15 text-blue-400">Pemilik</span>
+  const muat = useCallback(async () => {
+    if (!wsId) { setLoading(false); return }
+    setLoading(true); setErr(null)
+    try {
+      const [m, i] = await Promise.all([listMembers(wsId), listPendingInvites(wsId)])
+      setMembers(m); setInvites(i)
+    } catch (e) { setErr(e.message || 'Gagal memuat anggota.') }
+    finally { setLoading(false) }
+  }, [wsId])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { muat() }, [muat])
+
+  const akuOwner = members.find(m => m.user_id === user?.id)?.role === 'owner'
+
+  async function jalankan(fn, sesudah) {
+    setBusy(true); setErr(null)
+    try { const r = await fn(); sesudah?.(r); await muat() }
+    catch (e) { setErr(e.message || 'Gagal.') }
+    finally { setBusy(false) }
+  }
+
+  if (!wsId) {
+    return <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-8 text-center">
+      <p className="text-sm text-ink-muted">Pilih workspace dulu.</p>
+    </section>
+  }
+
+  return (
+    <section className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-ink-strong flex items-center gap-2">
+          <Users className="w-4 h-4 text-blue-500" /> Anggota Tim
+        </h2>
+        <p className="text-[11px] text-ink-faint mt-1">
+          Anggota melihat data workspace ini. <b>Editor</b> bisa mengubah, <b>viewer</b> hanya membaca.
+          Koneksi TikTok & pengelolaan anggota tetap milik pemilik.
+        </p>
       </div>
 
-      <button disabled
-        className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-line/15 text-sm text-ink-faint cursor-not-allowed">
-        <UserPlus className="w-4 h-4" /> Undang anggota — segera hadir
-      </button>
-      <p className="text-[11px] text-ink-faint mt-2 leading-relaxed">
-        Kolaborasi multi-user butuh sinkron akun. Menyusul setelah backend disiapkan.
-      </p>
+      {err && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl p-3">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-300">{err}</p>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-ink-faint flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat…
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {members.map(m => (
+            <div key={m.user_id} className="flex items-center gap-3 p-3 rounded-xl bg-fill/5 border border-line/10">
+              <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white text-sm font-bold uppercase flex-shrink-0">
+                {(m.email || '?')[0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink truncate">{m.email}</p>
+                {m.user_id === user?.id && <p className="text-[11px] text-ink-faint">kamu</p>}
+              </div>
+              {m.role === 'owner' || !akuOwner || m.user_id === user?.id ? (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-blue-500/15 text-blue-400">
+                  {m.role === 'owner' ? 'Pemilik' : m.role === 'editor' ? 'Editor' : 'Viewer'}
+                </span>
+              ) : (
+                <>
+                  <select value={m.role} disabled={busy}
+                    onChange={e => jalankan(() => setMemberRole(m.user_id, e.target.value, wsId))}
+                    className="bg-fill/5 border border-line/10 rounded-lg px-2 py-1.5 text-xs text-ink">
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <button disabled={busy}
+                    onClick={() => jalankan(() => removeMember(m.user_id, wsId))}
+                    className="text-xs text-red-400 hover:underline disabled:opacity-40">Keluarkan</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {invites.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Menunggu diterima</p>
+          {invites.map(i => (
+            <div key={i.token} className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
+              <Mail className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-ink truncate">{i.email}</p>
+                <p className="text-[11px] text-ink-faint">
+                  {i.role} · berlaku s/d {new Date(i.expires_at).toLocaleDateString('id-ID', { dateStyle: 'medium' })}
+                </p>
+              </div>
+              <button disabled={busy}
+                onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/join-team?t=${i.token}`); setCopied(i.token); setTimeout(() => setCopied(false), 2000) }}
+                className="text-xs text-blue-400 hover:underline">{copied === i.token ? 'Tersalin' : 'Salin tautan'}</button>
+              {akuOwner && (
+                <button disabled={busy} onClick={() => jalankan(() => revokeInvite(i.token, wsId))}
+                  className="text-xs text-red-400 hover:underline disabled:opacity-40">Batalkan</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {akuOwner ? (
+        <div className="space-y-3 pt-1">
+          <div className="flex gap-2">
+            <input value={email} onChange={e => setEmail(e.target.value)} type="email"
+              placeholder="email anggota baru" className={`${inputCls} flex-1`} />
+            <select value={role} onChange={e => setRole(e.target.value)}
+              className="bg-fill/5 border border-line/10 rounded-xl px-3 text-sm text-ink">
+              <option value="editor">Editor</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button disabled={busy || !email.trim()}
+              onClick={() => jalankan(() => inviteMember(email.trim(), role, wsId), r => { setLink(r.url); setEmail('') })}
+              className="flex items-center gap-2 px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+              <UserPlus className="w-4 h-4" /> Undang
+            </button>
+          </div>
+
+          {link && (
+            <div className="bg-green-500/10 border border-green-500/25 rounded-xl p-3 space-y-2">
+              <p className="text-xs text-green-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Undangan dibuat — kirim tautan ini ke orangnya.
+              </p>
+              <div className="flex gap-2">
+                <input readOnly value={link} className={`${inputCls} text-[11px] font-mono`} />
+                <button onClick={() => { navigator.clipboard?.writeText(link); setCopied('baru'); setTimeout(() => setCopied(false), 2000) }}
+                  className="px-3 rounded-xl text-xs font-semibold bg-green-600/20 text-green-300 hover:bg-green-600/30">
+                  {copied === 'baru' ? 'Tersalin' : 'Salin'}
+                </button>
+              </div>
+              <p className="text-[11px] text-ink-faint">
+                Tautan hanya bisa dipakai oleh pemilik email itu, dan berlaku 7 hari.
+                Email tidak dikirim otomatis — kirim sendiri lewat WhatsApp.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-[11px] text-ink-faint">Hanya pemilik workspace yang bisa mengundang atau mengubah anggota.</p>
+      )}
     </section>
   )
 }
 
-// ── Bagian privasi (dipertahankan dari versi lama) ─────────────────────────
 function PrivacySection({ user, profile, refreshProfile }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
