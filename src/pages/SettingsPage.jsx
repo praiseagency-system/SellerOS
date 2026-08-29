@@ -488,6 +488,10 @@ function TeamTab({ currentWorkspace }) {
 
   async function jalankan(fn, sesudah) {
     setBusy(true); setErr(null)
+    // Bersihkan tautan undangan terakhir dulu: setelah dibatalkan atau setelah
+    // aksi lain, tautan lama sudah mati tapi kotaknya masih mengajak
+    // "kirim tautan ini" — orang bisa mengirim tautan yang tak berguna.
+    setLink(null)
     try { const r = await fn(); sesudah?.(r); await muat() }
     catch (e) { setErr(e.message || 'Gagal.') }
     finally { setBusy(false) }
