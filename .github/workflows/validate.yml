@@ -35,6 +35,13 @@ jobs:
       - name: Worker tests (raw Node, full suite)
         run: node --test $(find src/gmvmax -name '*.test.mjs')
 
+      # Ditambahkan 2026-08-29. Sebelumnya CI sama sekali tak menjalankan suite
+      # vitest, jadi test gerbang izin (api/team) dan gerbang belanja iklan
+      # (api/gmvmax/execute) tak menjaga apa pun di PR — keduanya jalur yang
+      # memegang service_role atau membelanjakan uang.
+      - name: App & API tests (vitest)
+        run: npm test
+
       - name: Worker-scoped lint (src/gmvmax)
         run: npx eslint src/gmvmax
 

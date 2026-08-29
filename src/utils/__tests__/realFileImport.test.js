@@ -17,7 +17,13 @@ const sheet = (p, name) => {
   const wb = XLSX.read(fs.readFileSync(p), { type: 'buffer', raw: false, cellText: true })
   return XLSX.utils.sheet_to_json(wb.Sheets[name || wb.SheetNames[0]], { header: 1, defval: '', raw: false })
 }
-const run = have(TIKTOK) && have(SHOPEE) ? describe : describe.skip
+// describe.skip TETAP menjalankan callback-nya untuk mengumpulkan daftar test,
+// dan callback di bawah membaca file pada baris pertamanya — jadi "skip" saja
+// tak cukup: di mesin tanpa fixture, pembacaan tetap terjadi dan melempar
+// ENOENT. Callback-nya harus benar-benar tak dipanggil.
+const run = have(TIKTOK) && have(SHOPEE)
+  ? describe
+  : (nama) => describe.skip(nama, () => { it('dilewati — fixture lokal tak ada di mesin ini', () => {}) })
 
 // Cari baris header lewat keberadaan kolom penanda — bukan indeks tetap.
 function findHeaderRow(rows, markers) {

@@ -13,6 +13,13 @@ dist-vps/
 dist-ssr
 *.local
 
+# Berkas env. `*.local` di atas sudah menutupi .env.local, TAPI `.env` polos
+# tidak — dan satu `cp .env.example .env` cukup untuk meng-commit kunci
+# service_role yang menembus semua RLS. Contoh (.env.example) tetap dilacak.
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
