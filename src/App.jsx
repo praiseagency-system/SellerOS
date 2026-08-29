@@ -16,6 +16,9 @@ import LoginPage from './pages/LoginPage'
 import ApprovalPage from './pages/ApprovalPage'
 import TiktokCallback from './components/TiktokCallback'
 import JoinTeam from './components/JoinTeam'
+import Tentang from './pages/publik/Tentang'
+import Privasi from './pages/publik/Privasi'
+import Ketentuan from './pages/publik/Ketentuan'
 import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
 
@@ -47,6 +50,12 @@ export default function App() {
   // Undangan tim: butuh sesi, tapi JoinTeam yang mengurus layar masuknya sendiri
   // (token disimpan dulu agar tak hilang saat login).
   if (window.location.pathname === '/join-team') return <JoinTeam />
+  // Halaman publik (tanpa login). Melengkapi consent screen Google menuntut
+  // alamat homepage & kebijakan privasi yang bisa dibuka tanpa akun; sampai
+  // sekarang domain ini langsung menuju layar masuk.
+  if (window.location.pathname === '/tentang') return <Tentang />
+  if (window.location.pathname === '/privasi') return <Privasi />
+  if (window.location.pathname === '/ketentuan') return <Ketentuan />
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-app">
