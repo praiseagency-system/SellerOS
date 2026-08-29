@@ -158,3 +158,32 @@ export async function connectionOrRespond(res, userJwt, workspaceId, opts) {
     return null
   }
 }
+
+// Simpan koneksi hasil pertukaran kode OAuth — DI SISI SERVER.
+//
+// Dulu browser yang melakukan ini (saveConnection): ia menerima token dari
+// proxy lalu meng-upsert-nya sendiri. Dua akibatnya: (1) token menyentuh
+// browser walau cuma sekali, dan (2) upsert-nya menulis `on conflict do update
+// set access_token = excluded.access_token`, yang MEMBACA kolom itu — sehingga
+// mustahil mencabut hak baca kolom token tanpa mematikan sambung-ulang.
+// Dengan menyimpannya di sini, keduanya selesai sekaligus.
+export async function saveConnectionServerSide(userJwt, workspaceId, tok, clientId) {
+  await assertOwnsWorkspace(userJwt, workspaceId)
+  const expiresAt = new Date(Date.now() + (Number(tok.expires_in) || 0) * 1000).toISOString()
+  const row = {
+    workspace_id: workspaceId,
+    client_id: clientId || null,
+    scope: tok.scope || null,
+    token_type: tok.token_type || 'Bearer',
+    access_token: tok.access_token,
+    refresh_token: tok.refresh_token || null,
+    expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  }
+  await serviceRequest('tiktok_connections?on_conflict=workspace_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(row),
+  })
+  return { expires_at: expiresAt }
+}
