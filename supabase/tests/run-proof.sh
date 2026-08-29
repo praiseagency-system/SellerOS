@@ -39,10 +39,11 @@ run "$MIG/0030_gmvmax_write_versioned_snapshot.sql"
 run "$MIG/0049_gmvmax_browser_upload_rpc.sql"
 run "$MIG/0050_gmvmax_video_meta_antipoison.sql"
 run "$MIG/0051_tiktok_token_columns_server_only.sql"
+run "$MIG/0052_workspace_members.sql"
 
 echo "▶ bukti perilaku:"
 out=""
-for p in proof_0049_0050 proof_0051; do
+for p in proof_0049_0050 proof_0051 proof_0052; do
   docker cp "$HERE/$p.sql" "$CONTAINER:/tmp/p.sql" >/dev/null
   # `|| true`: psql keluar non-zero saat ada ERROR yang MEMANG diharapkan
   # (uji penolakan). Tanpa ini `set -e` membunuh skrip dan buktinya tak tampil.
