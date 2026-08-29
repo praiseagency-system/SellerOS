@@ -15,6 +15,7 @@ import { useAuth } from './contexts/AuthContext'
 import LoginPage from './pages/LoginPage'
 import ApprovalPage from './pages/ApprovalPage'
 import TiktokCallback from './components/TiktokCallback'
+import JoinTeam from './components/JoinTeam'
 import { listWorkspaces, createWorkspace } from './data/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspace, PRESET_COLORS } from './utils/workspace'
 
@@ -43,6 +44,9 @@ export default function App() {
   // Halaman approval publik (atasan/client) — lolos gate login, kelola auth
   // (magic link) sendiri. Token di query `?t=`.
   if (window.location.pathname === '/approve') return <ApprovalPage />
+  // Undangan tim: butuh sesi, tapi JoinTeam yang mengurus layar masuknya sendiri
+  // (token disimpan dulu agar tak hilang saat login).
+  if (window.location.pathname === '/join-team') return <JoinTeam />
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-app">
