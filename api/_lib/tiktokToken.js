@@ -61,7 +61,12 @@ async function serviceRequest(path, init = {}) {
   if (!r.ok) {
     throw new TokenError(502, 'connection_lookup_failed', `PostgREST ${r.status}: ${(await r.text()).slice(0, 120)}`)
   }
-  return r.status === 204 ? null : r.json()
+  // PostgREST membalas badan KOSONG untuk `Prefer: return=minimal` — 204 pada
+  // PATCH, tapi 201 pada POST. Mengandaikan "selain 204 pasti JSON" membuat
+  // r.json() melempar "Unexpected end of JSON input" SETELAH datanya benar-benar
+  // tersimpan, jadi kegagalan palsu yang menyesatkan. Baca sebagai teks dulu.
+  const body = await r.text()
+  return body.trim() ? JSON.parse(body) : null
 }
 
 // Lapis 1: benar-benar milik pemanggil? RLS `workspaces` yang menjawab.

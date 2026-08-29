@@ -38,20 +38,20 @@ function stubFetch() {
     if (url.includes('/auth/v1/user')) return { ok: true, json: async () => ({ id: 'user-1' }) }
     if (url.includes('gmvmax_approvals')) {
       const id = Object.keys(ROWS).find(k => url.includes(k))
-      return { ok: true, json: async () => (id ? ROWS[id] : []) }
+      return { ok: true, status: 200, text: async () => JSON.stringify(id ? ROWS[id] : []) }
     }
     // Meniru RLS: hanya workspace milik pemanggil yang terlihat.
     if (url.includes('/rest/v1/workspaces')) {
-      return { ok: true, json: async () => (url.includes(WS_MINE) ? [{ id: WS_MINE }] : []) }
+      return { ok: true, status: 200, text: async () => JSON.stringify(url.includes(WS_MINE) ? [{ id: WS_MINE }] : []) }
     }
     if (url.includes('tiktok_connections')) {
       return {
-        ok: true,
-        json: async () => [{
+        ok: true, status: 200,
+        text: async () => JSON.stringify([{
           workspace_id: WS_MINE, client_id: 'c', access_token: 'tok', refresh_token: 'r',
           expires_at: new Date(Date.now() + 3600_000 * 5).toISOString(),
           advertiser_id: 'adv-1', advertiser_name: 'Toko A',
-        }],
+        }]),
       }
     }
     throw new Error(TIKTOK_REACHED)

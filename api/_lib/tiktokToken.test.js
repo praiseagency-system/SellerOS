@@ -24,15 +24,17 @@ function stub({ conn, refresh } = {}) {
     if (u.includes('/rest/v1/workspaces')) {
       // Meniru RLS: hanya workspace milik pemanggil yang terlihat.
       const mine = u.includes(MINE)
-      return { ok: true, json: async () => (mine ? [{ id: MINE }] : []) }
+      return { ok: true, status: 200, text: async () => JSON.stringify(mine ? [{ id: MINE }] : []) }
     }
     if (u.includes('/rest/v1/tiktok_connections')) {
+      // PostgREST: return=minimal → badan KOSONG (204 utk PATCH, 201 utk POST).
       if ((init.method || 'GET') === 'PATCH') return { ok: true, status: 204, text: async () => '' }
-      return { ok: true, json: async () => (conn ? [conn] : []) }
+      if ((init.method || 'GET') === 'POST') return { ok: true, status: 201, text: async () => '' }
+      return { ok: true, status: 200, text: async () => JSON.stringify(conn ? [conn] : []) }
     }
     if (u.includes('oauth/token')) {
       return refresh
-        ? { ok: true, text: async () => JSON.stringify(refresh) }
+        ? { ok: true, status: 200, text: async () => JSON.stringify(refresh) }
         : { ok: false, status: 400, text: async () => JSON.stringify({ error: 'invalid_grant' }) }
     }
     throw new Error(`URL tak terduga: ${u}`)
@@ -173,6 +175,13 @@ describe('saveConnectionServerSide', () => {
       (e) => isTokenError(e) && e.http === 403)
     // Kunci rahasia tak boleh menyentuh jaringan saat kepemilikan belum terbukti.
     expect(calls.every(c => c.key !== SECRET)).toBe(true)
+  })
+
+  // REGRESI: PostgREST membalas 201 + badan KOSONG untuk `return=minimal`.
+  // Sebelum diperbaiki, r.json() melempar "Unexpected end of JSON input"
+  // SETELAH baris tersimpan — connect tampak gagal padahal berhasil.
+  it('tidak tersedak balasan 201 berbadan kosong dari PostgREST', async () => {
+    await expect(saveConnectionServerSide(JWT, MINE, tok, 'cid')).resolves.toHaveProperty('expires_at')
   })
 
   it('menyimpan lewat service_role dan mengembalikan expires_at saja', async () => {
