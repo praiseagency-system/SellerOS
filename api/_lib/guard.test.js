@@ -49,8 +49,20 @@ describe('rateLimited', () => {
 })
 
 describe('guard', () => {
-  beforeEach(() => { vi.stubGlobal('fetch', vi.fn(okUser)) })
-  afterEach(() => { vi.unstubAllGlobals() })
+  // Env dipasang DI SINI, tidak diwarisi. Sebelumnya berkas ini lulus hanya
+  // karena vitest memuat .env.local milik pengembang ke process.env — di CI
+  // berkas itu tak ada, dan seluruh test di bawah balas 503 (server_unconfigured)
+  // alih-alih 401/200. Gerbang yang menjaga endpoint pembelanja uang tak boleh
+  // diuji dengan env pinjaman dari mesin siapa pun.
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(okUser))
+    process.env.SUPABASE_URL = 'https://x.supabase.co'
+    process.env.SUPABASE_ANON_KEY = 'anon'
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    delete process.env.SUPABASE_URL; delete process.env.SUPABASE_ANON_KEY
+  })
 
   const OPTS = { limit: 100, windowMs: 60_000 }
 
@@ -82,12 +94,13 @@ describe('guard', () => {
   })
 
   it('GAGAL TERTUTUP saat env auth belum tersedia', async () => {
-    const saved = { ...process.env }
+    // Varian VITE_ ikut dihapus: guard.js menerimanya sebagai cadangan, dan
+    // vitest bisa mengisinya dari .env.local di mesin pengembang. afterEach
+    // yang membersihkan sisanya.
     delete process.env.SUPABASE_URL; delete process.env.VITE_SUPABASE_URL
     delete process.env.SUPABASE_ANON_KEY; delete process.env.VITE_SUPABASE_ANON_KEY
     const res = mockRes()
     const out = await guard(req({ headers: { authorization: 'Bearer sah' } }), res, OPTS)
-    process.env = saved
     expect(out).toBeNull()          // menolak, BUKAN meloloskan
     expect(res.statusCode).toBe(503)
   })
