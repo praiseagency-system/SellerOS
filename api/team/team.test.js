@@ -22,15 +22,22 @@ function mockRes() {
 }
 const req = (body, uid = OWNER) => ({ method: 'POST', headers: { authorization: 'Bearer sah' }, body, _uid: uid })
 
-let calls, uid, invRow, myEmail, myRole
+let calls, uid, invRow, myEmail, myRole, resendStatus, mailSent
 function stub() {
-  calls = []
+  calls = []; mailSent = []
   vi.stubGlobal('fetch', vi.fn(async (u, init = {}) => {
     const url = String(u); const key = init.headers?.apikey || ''
     calls.push({ url, key, method: init.method || 'GET' })
     const ok = (data) => ({ ok: true, status: 200, text: async () => JSON.stringify(data) })
 
+    if (url.includes('api.resend.com')) {
+      mailSent.push(JSON.parse(init.body))
+      return resendStatus === 200
+        ? { ok: true, status: 200, text: async () => '{"id":"m1"}' }
+        : { ok: false, status: resendStatus, text: async () => 'domain not verified' }
+    }
     if (url.includes('/auth/v1/user')) return { ok: true, json: async () => ({ id: uid }) }
+    if (url.includes('/rest/v1/workspaces')) return ok([{ name: 'Toko <b>A</b>' }])
     // Dipanggil dengan JWT pemanggil (anon key) → tiru RLS: hanya workspace
     // yang dia ikuti yang terlihat.
     if (url.includes('workspace_members') && key !== SECRET) {
@@ -50,6 +57,10 @@ beforeEach(() => {
   process.env.SUPABASE_ANON_KEY = 'anon'
   process.env.SUPABASE_SECRET_KEY = SECRET
   uid = OWNER; myRole = 'owner'; myEmail = 'owner@contoh.com'
+  // Bawaan: SMTP belum dipasang. Test yang menguji email menyalakannya sendiri,
+  // supaya test lama membuktikan perilaku "tanpa Resend" apa adanya.
+  delete process.env.RESEND_API_KEY
+  resendStatus = 200
   invRow = {
     token: TOKEN, workspace_id: WS, email: 'diundang@contoh.com', role: 'editor',
     expires_at: new Date(Date.now() + 86400000).toISOString(), accepted_at: null, revoked_at: null,
@@ -83,6 +94,46 @@ describe('invite', () => {
     const r = await run(invite, { workspace_id: WS, email: 'x@y.com', role: 'viewer' })
     expect(r.statusCode).toBe(200)
     expect(r.body.url).toContain('/join-team?t=')
+  })
+
+  // Email adalah jalur TAMBAHAN. Empat test berikut menjaga agar ia tak pernah
+  // berubah menjadi jalur tunggal — kalau ia bisa menggagalkan undangan, satu
+  // domain yang belum terverifikasi cukup untuk mematikan fitur tim.
+  it('tanpa RESEND_API_KEY: tautan tetap keluar, Resend tak disentuh', async () => {
+    const r = await run(invite, { workspace_id: WS, email: 'x@y.com' })
+    expect(r.statusCode).toBe(200)
+    expect(r.body.url).toContain('/join-team?t=')
+    expect(r.body.emailed).toBe(false)
+    expect(calls.some(c => c.url.includes('api.resend.com'))).toBe(false)
+  })
+
+  it('dengan kunci: email terkirim ke alamat yang diundang', async () => {
+    process.env.RESEND_API_KEY = 're_palsu'
+    const r = await run(invite, { workspace_id: WS, email: 'x@y.com', role: 'viewer' })
+    expect(r.statusCode).toBe(200)
+    expect(r.body.emailed).toBe(true)
+    expect(mailSent).toHaveLength(1)
+    expect(mailSent[0].to).toEqual(['x@y.com'])
+    expect(mailSent[0].html).toContain('/join-team?t=')
+  })
+
+  it('Resend gagal TIDAK menggagalkan undangan', async () => {
+    process.env.RESEND_API_KEY = 're_palsu'
+    resendStatus = 403
+    const r = await run(invite, { workspace_id: WS, email: 'x@y.com' })
+    expect(r.statusCode).toBe(200)              // <- inti test ini
+    expect(r.body.url).toContain('/join-team?t=')
+    expect(r.body.emailed).toBe(false)
+    expect(r.body.email_error).toContain('403')
+  })
+
+  it('nama workspace tak bisa menyuntikkan HTML ke email', async () => {
+    process.env.RESEND_API_KEY = 're_palsu'
+    await run(invite, { workspace_id: WS, email: 'x@y.com' })
+    // Stub mengembalikan nama 'Toko <b>A</b>'.
+    expect(mailSent[0].html).not.toContain('<b>A</b>')
+    expect(mailSent[0].html).toContain('&lt;b&gt;A&lt;/b&gt;')
+    expect(mailSent[0].subject).not.toMatch(/[\r\n]/)
   })
 })
 

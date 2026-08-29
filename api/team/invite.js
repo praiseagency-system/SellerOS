@@ -1,9 +1,16 @@
 // Buat undangan anggota — hanya owner workspace.
-// Balik { token, url } yang tinggal disalin & dikirim owner lewat WhatsApp.
-// Email TIDAK dikirim dari sini: SMTP proyek masih bawaan Supabase yang
-// dibatasi beberapa email per jam (lihat 0055).
+// Balik { token, url } DAN mengirim email undangan lewat Resend bila
+// RESEND_API_KEY terpasang.
+//
+// Tautannya tetap dikembalikan apa pun yang terjadi. Alasannya bukan malas:
+// undangan sudah tercatat di basis data sebelum email disentuh, jadi kalau
+// Resend mati, domain belum terverifikasi, atau kunci belum dipasang, pemilik
+// workspace tetap bisa menyalin tautan itu ke WhatsApp. Email adalah jalur
+// tambahan, bukan jalur tunggal — lihat aturan di api/_lib/mailer.js.
 import { guard, parseBody } from '../_lib/guard.js'
 import { assertOwner, service, respondTeamError, TeamError, normEmail, isEmail } from '../_lib/team.js'
+import { mailerReady, sendMail } from '../_lib/mailer.js'
+import { inviteEmail } from '../_lib/emails.js'
 
 const ROLES = new Set(['editor', 'viewer'])
 
@@ -56,6 +63,33 @@ export default async function handler(req, res) {
     if (!token) throw new TeamError(502, 'invite_failed', 'Undangan gagal dibuat.')
 
     const origin = req.headers?.origin || 'https://selleros.praiseagency.id'
-    res.status(200).json({ token, url: `${origin}/join-team?t=${token}`, email, role })
+    const url = `${origin}/join-team?t=${token}`
+
+    // Nama workspace & email pengundang hanya untuk isi email. Keduanya
+    // opsional: kalau pembacaannya gagal, email tetap dikirim dengan kalimat
+    // umum, karena undangan sendiri sudah sah tanpa keduanya.
+    let emailed = false, emailError = null
+    if (mailerReady()) {
+      try {
+        const [ws, pengundang] = await Promise.all([
+          service(`workspaces?id=eq.${encodeURIComponent(body.workspace_id)}&select=name&limit=1`).catch(() => null),
+          service(`profiles?id=eq.${encodeURIComponent(auth.userId)}&select=email&limit=1`).catch(() => null),
+        ])
+        const inv = await service(
+          `workspace_invites?token=eq.${encodeURIComponent(token)}&select=expires_at&limit=1`
+        ).catch(() => null)
+
+        await sendMail({ to: email, ...inviteEmail({
+          workspaceName: ws?.[0]?.name, inviterEmail: pengundang?.[0]?.email,
+          url, role, expiresAt: inv?.[0]?.expires_at,
+        }) })
+        emailed = true
+      } catch (e) {
+        // Ditelan dengan sengaja — lihat komentar di kepala berkas.
+        emailError = String(e?.message || e).slice(0, 200)
+      }
+    }
+
+    res.status(200).json({ token, url, email, role, emailed, ...(emailError ? { email_error: emailError } : {}) })
   } catch (e) { await respondTeamError(res, e) }
 }
