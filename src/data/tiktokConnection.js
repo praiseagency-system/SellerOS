@@ -3,7 +3,6 @@
 // self-refresh. Satu baris per workspace.
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
-import { TIKTOK_OAUTH } from '../lib/tiktokOAuth'
 
 // Kolom yang boleh dibaca browser — SENGAJA tanpa access_token & refresh_token.
 // Token kini diselesaikan di sisi server (api/_lib/tiktokToken.js); browser
@@ -26,23 +25,13 @@ export async function getConnection(wsId = getCurrentWorkspaceId()) {
   return data || null
 }
 
-// Simpan/timpa koneksi (upsert by workspace_id). tok = hasil exchange/refresh.
-export async function saveConnection(tok, wsId = getCurrentWorkspaceId()) {
-  if (!wsId) throw new Error('Workspace tidak aktif.')
-  const { data: userRes } = await supabase.auth.getUser()
-  const { error } = await supabase.from('tiktok_connections').upsert({
-    workspace_id: wsId,
-    client_id: tok.clientId || TIKTOK_OAUTH.clientId,
-    scope: tok.scope,
-    token_type: tok.tokenType,
-    access_token: tok.accessToken,
-    refresh_token: tok.refreshToken,
-    expires_at: new Date(tok.expiresAt).toISOString(),
-    connected_by: userRes?.user?.id ?? null,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'workspace_id' })
-  if (error) throw error
-}
+// CATATAN: `saveConnection` versi browser SENGAJA DIHAPUS. Penyimpanan koneksi
+// kini dilakukan server saat menukar kode OAuth (api/_lib/tiktokToken.js →
+// saveConnectionServerSide). Jangan hidupkan kembali: upsert dari browser
+// menulis `on conflict do update set access_token = excluded.access_token`, dan
+// referensi `excluded.access_token` itu MEMBACA kolom token — yang sejak migrasi
+// 0051 tak lagi boleh dibaca `authenticated`, sehingga sambung-ulang akan gagal
+// dengan "permission denied".
 
 // Simpan advertiser/toko terpilih (pemetaan 1 workspace ↔ 1 advertiser).
 export async function saveAdvertiser({ advertiser_id, advertiser_name }, wsId = getCurrentWorkspaceId()) {

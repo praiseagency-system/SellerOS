@@ -9,6 +9,7 @@
 // batas laju — lihat api/_lib/guard.js. Sebelumnya endpoint ini terbuka untuk
 // siapa saja di internet.
 import { guard, parseBody } from '../_lib/guard.js'
+import { saveConnectionServerSide, isTokenError } from '../_lib/tiktokToken.js'
 
 const TOKEN_ENDPOINT = 'https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer/oauth/token'
 const ALLOWED = new Set([
@@ -38,6 +39,28 @@ export default async function handler(req, res) {
       body: form.toString(),
     })
     const text = await upstream.text()
+
+    // Bila pemanggil menyebut workspace_id, koneksi disimpan DI SINI dan token
+    // TIDAK dikembalikan ke browser — jadi token tak pernah menyentuh browser
+    // sama sekali, bahkan saat connect pertama. Tanpa workspace_id, perilaku
+    // lama dipertahankan (relai apa adanya) agar tak ada pemanggil yang putus
+    // mendadak saat peralihan.
+    const wsId = body?.workspace_id
+    if (wsId && upstream.ok) {
+      let tok = null
+      try { tok = JSON.parse(text) } catch { tok = null }
+      if (tok?.access_token) {
+        try {
+          const saved = await saveConnectionServerSide(auth.token, wsId, tok, form.get('client_id'))
+          res.status(200).json({ ok: true, expires_at: saved.expires_at })
+        } catch (e) {
+          if (isTokenError(e)) res.status(e.http).json({ error: e.error, error_description: e.description })
+          else res.status(502).json({ error: 'save_connection_failed', error_description: String(e?.message || e) })
+        }
+        return
+      }
+    }
+
     res.status(upstream.status)
     res.setHeader('Content-Type', 'application/json')
     // Teruskan apa adanya (JSON token atau JSON error OAuth).

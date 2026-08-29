@@ -68,54 +68,39 @@ export function buildAuthorizeUrl({ challenge, state }) {
   return `${TIKTOK_OAUTH.authorizationEndpoint}?${p.toString()}`
 }
 
-// Normalisasi respons token → {accessToken, refreshToken, scope, tokenType, expiresAt(ms)}
-function normalizeToken(j) {
-  const expiresInSec = Number(j.expires_in) || 0
-  return {
-    accessToken: j.access_token,
-    refreshToken: j.refresh_token || null,
-    scope: j.scope || TIKTOK_OAUTH.scope,
-    tokenType: j.token_type || 'Bearer',
-    expiresAt: Date.now() + expiresInSec * 1000,
-  }
-}
-
-// Token endpoint TikTok tak mengirim header CORS → browser lewat proxy
-// same-origin (Vercel function api/tiktok/token). Worker Node memakai endpoint
-// asli langsung (tanpa CORS). Bisa dioverride via VITE_TIKTOK_TOKEN_PROXY.
+// Tukar authorization code → token, LALU SIMPAN DI SERVER.
+//
+// Browser tidak lagi menerima tokennya: proxy yang menukar kode ke TikTok dan
+// langsung menyimpan koneksi (api/tiktok/token → saveConnectionServerSide),
+// jadi token tak pernah menyentuh browser bahkan saat connect pertama.
+// Yang kembali hanya { ok, expires_at }.
+//
+// Ini juga yang memungkinkan hak baca kolom token dicabut dari `authenticated`:
+// upsert versi browser dulu menulis `on conflict do update set access_token =
+// excluded.access_token`, dan referensi `excluded.access_token` itu MEMBACA
+// kolomnya — sehingga mustahil dikunci selama penyimpanan masih di browser.
 const TOKEN_PROXY = import.meta.env.VITE_TIKTOK_TOKEN_PROXY || '/api/tiktok/token'
 
-// Proxy kini menolak permintaan tanpa sesi Supabase yang sah (api/_lib/guard.js),
-// jadi setiap panggilan membawa JWT sesi yang sedang aktif (lihat lib/apiClient).
-async function postToken(body) {
+export async function exchangeCodeAndSave({ code, verifier, workspaceId }) {
+  if (!workspaceId) throw new Error('Workspace tidak diketahui untuk koneksi ini.')
   const res = await fetch(TOKEN_PROXY, {
     method: 'POST',
     headers: await authHeaders(),
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri(),
+      client_id: TIKTOK_OAUTH.clientId,
+      code_verifier: verifier,
+      workspace_id: workspaceId,
+    }),
   })
   const text = await res.text()
   let j
   try { j = JSON.parse(text) } catch { throw new Error(`Token endpoint balas non-JSON (${res.status}): ${text.slice(0, 200)}`) }
   if (!res.ok || j.error) throw new Error(j.error_description || j.error || `Token exchange gagal (${res.status})`)
-  return normalizeToken(j)
+  return j
 }
-
-// Tukar authorization code → token (dipanggil di halaman callback).
-export function exchangeCode({ code, verifier }) {
-  return postToken({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: redirectUri(),
-    client_id: TIKTOK_OAUTH.clientId,
-    code_verifier: verifier,
-  })
-}
-
-// CATATAN: `refreshAccessToken` versi browser SENGAJA DIHAPUS. Perpanjangan token
-// kini dikerjakan server (api/tiktok/renew → api/_lib/tiktokToken), sehingga
-// refresh_token tak perlu lagi dibaca browser. Jangan hidupkan kembali di sini —
-// mengembalikannya berarti menarik refresh_token masuk ke tab lagi, dan itu
-// justru yang ditutup. Worker Node punya jalurnya sendiri (src/gmvmax).
 
 // Daftar advertiser/toko yang dilihat token (lewat proxy serverless — MCP kena
 // CORS dari browser). → [{ advertiser_id, advertiser_name }]

@@ -3,7 +3,7 @@
 // yang dilakukan LEBIH DULU dengan JWT pemanggil. Test ini menjaga urutan itu:
 // service_role tak boleh tersentuh sebelum kepemilikan terbukti.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { resolveConnection, isTokenError } from './tiktokToken.js'
+import { resolveConnection, saveConnectionServerSide, isTokenError } from './tiktokToken.js'
 
 const JWT = 'jwt-pemanggil'
 const MINE = '11111111-1111-1111-1111-111111111111'
@@ -154,5 +154,35 @@ describe('pesan saat kunci server tak terbaca', () => {
     const out = await resolveConnection(JWT, MINE)
     expect(out.access_token).toBe('token-lama')
     delete process.env.SUPABASE_SERVICE_ROLE_KEY
+  })
+})
+
+describe('saveConnectionServerSide', () => {
+  beforeEach(() => {
+    process.env.SUPABASE_URL = 'https://x.supabase.co'
+    process.env.SUPABASE_ANON_KEY = 'anon'
+    process.env.SUPABASE_SECRET_KEY = SECRET
+    stub({ conn: baseConn })
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  const tok = { access_token: 'a', refresh_token: 'r', expires_in: 7200, scope: 's', token_type: 'Bearer' }
+
+  it('menolak menyimpan ke workspace orang lain SEBELUM service_role dipakai', async () => {
+    await expect(saveConnectionServerSide(JWT, NOT_MINE, tok, 'cid')).rejects.toSatisfy(
+      (e) => isTokenError(e) && e.http === 403)
+    // Kunci rahasia tak boleh menyentuh jaringan saat kepemilikan belum terbukti.
+    expect(calls.every(c => c.key !== SECRET)).toBe(true)
+  })
+
+  it('menyimpan lewat service_role dan mengembalikan expires_at saja', async () => {
+    const out = await saveConnectionServerSide(JWT, MINE, tok, 'cid')
+    expect(out).toHaveProperty('expires_at')
+    // Token TIDAK ikut dikembalikan ke pemanggil.
+    expect(out.access_token).toBeUndefined()
+    expect(out.refresh_token).toBeUndefined()
+    const write = calls.find(c => c.url.includes('tiktok_connections') && c.method === 'POST')
+    expect(write).toBeTruthy()
+    expect(write.key).toBe(SECRET)
   })
 })

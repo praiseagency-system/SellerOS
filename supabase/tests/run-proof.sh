@@ -24,8 +24,10 @@ cleanup
 
 echo "▶ menyalakan Postgres sekali pakai…"
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=test postgres:15-alpine >/dev/null
-for _ in $(seq 1 30); do
-  docker exec "$CONTAINER" pg_isready >/dev/null 2>&1 && break
+# pg_isready sempat "true" saat initdb masih memutus koneksi sementara —
+# tunggu sampai query BENAR-BENAR berhasil, bukan sekadar port terbuka.
+for _ in $(seq 1 60); do
+  docker exec "$CONTAINER" psql -U postgres -c 'select 1' >/dev/null 2>&1 && break
   sleep 1
 done
 
@@ -36,10 +38,17 @@ run "$HERE/scaffold.sql"
 run "$MIG/0030_gmvmax_write_versioned_snapshot.sql"
 run "$MIG/0049_gmvmax_browser_upload_rpc.sql"
 run "$MIG/0050_gmvmax_video_meta_antipoison.sql"
+run "$MIG/0051_tiktok_token_columns_server_only.sql"
 
 echo "▶ bukti perilaku:"
-docker cp "$HERE/proof_0049_0050.sql" "$CONTAINER:/tmp/p.sql" >/dev/null
-out=$(docker exec "$CONTAINER" psql -U postgres -X -q -f /tmp/p.sql 2>&1)
+out=""
+for p in proof_0049_0050 proof_0051; do
+  docker cp "$HERE/$p.sql" "$CONTAINER:/tmp/p.sql" >/dev/null
+  # `|| true`: psql keluar non-zero saat ada ERROR yang MEMANG diharapkan
+  # (uji penolakan). Tanpa ini `set -e` membunuh skrip dan buktinya tak tampil.
+  out="$out
+$(docker exec "$CONTAINER" psql -U postgres -X -q -f /tmp/p.sql 2>&1 || true)"
+done
 echo "$out" | grep -E "✅|❌|->|="
 
 if echo "$out" | grep -q "❌"; then

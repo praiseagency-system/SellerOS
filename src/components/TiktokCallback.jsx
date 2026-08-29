@@ -4,8 +4,7 @@
 // kembali ke aplikasi (tab Settings → Integrasi).
 import { useState, useEffect, useRef } from 'react'
 import { CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
-import { exchangeCode, readOAuthSession, clearOAuthSession } from '../lib/tiktokOAuth'
-import { saveConnection } from '../data/tiktokConnection'
+import { exchangeCodeAndSave, readOAuthSession, clearOAuthSession } from '../lib/tiktokOAuth'
 
 export default function TiktokCallback() {
   const [status, setStatus] = useState('working') // working | ok | error
@@ -28,8 +27,9 @@ export default function TiktokCallback() {
         if (!saved) throw new Error('Sesi koneksi tak ditemukan. Ulangi dari tombol Connect.')
         if (!state || state !== saved.state) throw new Error('State tidak cocok (kemungkinan CSRF). Ulangi koneksi.')
 
-        const tok = await exchangeCode({ code, verifier: saved.verifier })
-        await saveConnection(tok, saved.wsId)
+        // Penukaran DAN penyimpanan dikerjakan server — browser tak pernah
+        // memegang tokennya (lihat api/tiktok/token).
+        await exchangeCodeAndSave({ code, verifier: saved.verifier, workspaceId: saved.wsId })
         clearOAuthSession()
 
         setStatus('ok'); setMsg('Akun TikTok berhasil ditautkan.')

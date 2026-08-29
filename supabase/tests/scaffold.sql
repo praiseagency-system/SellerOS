@@ -2,7 +2,9 @@
 -- 0049 & 0050 di Postgres sekali pakai. Bukan bagian produk.
 create role anon;
 create role authenticated;
-create role service_role;
+-- Di Supabase, service_role punya grant penuh DAN mem-bypass RLS. Tanpa meniru
+-- keduanya, uji jalur worker/server gagal karena alasan yang tak ada di produksi.
+create role service_role bypassrls;
 
 create schema if not exists auth;
 create table auth.users (id uuid primary key);
@@ -71,3 +73,27 @@ create policy gmvmax_creatives_owner_all on public.gmvmax_creatives
                       where i.id = import_id and w.user_id = auth.uid()));
 grant select, insert, update, delete on public.gmvmax_imports, public.gmvmax_creatives to authenticated;
 grant select on public.workspaces to authenticated;
+
+-- tiktok_connections apa adanya (kondisi SEBELUM 0051), bentuk sesuai 0019+0021.
+create table public.tiktok_connections (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  advertiser_id text, advertiser_name text,
+  client_id text not null, scope text, token_type text default 'Bearer',
+  access_token text not null, refresh_token text,
+  expires_at timestamptz not null,
+  connected_by uuid, created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  store_id text, store_name text,
+  unique (workspace_id)
+);
+grant select, insert, update, delete on public.tiktok_connections to authenticated;
+grant all on public.tiktok_connections to service_role;
+alter table public.tiktok_connections enable row level security;
+create policy tiktok_connections_owner_all on public.tiktok_connections
+  for all using (exists (select 1 from public.workspaces w where w.id = workspace_id and w.user_id = auth.uid()))
+  with check (exists (select 1 from public.workspaces w where w.id = workspace_id and w.user_id = auth.uid()));
+
+-- Samakan dengan Supabase: service_role boleh apa saja atas semua tabel.
+grant all on all tables in schema public to service_role;
+grant usage on schema public to authenticated, service_role;
