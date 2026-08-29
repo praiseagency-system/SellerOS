@@ -75,14 +75,20 @@ function ProfilTab() {
     if (file.size > 2 * 1024 * 1024) { setImgErr('Ukuran maksimal 2 MB.'); return }
     try {
       const dataUrl = await fileToAvatarDataUrl(file, 256)
-      saveProfile({ avatar: dataUrl })
-    } catch { setImgErr('Gagal memproses gambar.') }
+      await saveProfile({ avatar: dataUrl })
+    } catch (err) { setImgErr(err?.message || 'Gagal memproses gambar.') }
   }
 
-  function saveInfo() {
-    saveProfile({ name: name.trim(), phone: phone.trim() })
-    setDirty(false); setSavedProfile(true)
-    setTimeout(() => setSavedProfile(false), 2500)
+  // Sejak profil pindah ke DB, simpan bisa GAGAL. Jangan menampilkan
+  // "Tersimpan" sebelum server benar-benar menerima — itu kebohongan yang
+  // membuat orang mengira datanya aman.
+  async function saveInfo() {
+    setImgErr(null)
+    try {
+      await saveProfile({ name: name.trim(), phone: phone.trim() })
+      setDirty(false); setSavedProfile(true)
+      setTimeout(() => setSavedProfile(false), 2500)
+    } catch (err) { setImgErr(err?.message || 'Gagal menyimpan profil.') }
   }
 
   return (
@@ -180,12 +186,15 @@ function BrandTab({ currentWorkspace }) {
     if (!file) return
     setImgErr(null)
     if (file.size > 2 * 1024 * 1024) { setImgErr('Ukuran maksimal 2 MB.'); return }
-    try { saveBrand(wsId, { logo: await fileToAvatarDataUrl(file, 256) }) }
-    catch { setImgErr('Gagal memproses gambar.') }
+    try { await saveBrand(wsId, { logo: await fileToAvatarDataUrl(file, 256) }) }
+    catch (err) { setImgErr(pesanBrand(err)) }
   }
-  function saveName() {
-    saveBrand(wsId, { name: name.trim() })
-    setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
+  async function saveName() {
+    setImgErr(null)
+    try {
+      await saveBrand(wsId, { name: name.trim() })
+      setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch (err) { setImgErr(pesanBrand(err)) }
   }
 
   return (
@@ -677,6 +686,17 @@ function PrivacySection({ user, profile, refreshProfile }) {
       </div>
     </section>
   )
+}
+
+// Brand hanya boleh diubah owner (policy ws_owner_modify, migrasi 0053).
+// RLS menolaknya dengan 0 baris terpengaruh atau galat privilege — pesan mentah
+// itu tak berarti apa-apa bagi user, jadi diterjemahkan.
+function pesanBrand(err) {
+  const m = String(err?.message || '')
+  if (/row-level security|permission denied|violates/i.test(m)) {
+    return 'Hanya pemilik workspace yang bisa mengubah brand.'
+  }
+  return m || 'Gagal menyimpan brand.'
 }
 
 const inputCls = 'w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-600/50'
