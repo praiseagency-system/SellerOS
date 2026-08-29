@@ -149,7 +149,10 @@ export async function selectAsUser(token, path) {
     headers: { apikey: anonKey, Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   if (!r.ok) throw new Error(`PostgREST ${r.status}: ${(await r.text()).slice(0, 120)}`)
-  return r.json()
+  // Dibaca sebagai teks dulu: badan kosong yang sah (mis. return=minimal) membuat
+  // r.json() melempar "Unexpected end of JSON input" dan menyamar jadi kegagalan.
+  const body = await r.text()
+  return body.trim() ? JSON.parse(body) : null
 }
 
 // Gerbang lengkap: metode → origin → sesi → batas laju.
