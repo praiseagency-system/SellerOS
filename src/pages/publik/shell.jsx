@@ -35,7 +35,7 @@ export function PublicShell({ judul, ringkas, children }) {
             <p className="text-xs text-amber-300 leading-relaxed">
               <b>Draf — belum siap dipublikasikan.</b> Masih ada isian bertanda <code>[…]</code> yang
               hanya bisa dilengkapi pemilik layanan (badan hukum, alamat, email kontak, lokasi data).
-              Lengkapi di <code>src/pages/publik/shell.jsx</code> sebelum dikirim ke Google atau
+              Lengkapi di <code>src/pages/publik/data.js</code> sebelum dikirim ke Google atau
               ditunjukkan ke klien.
             </p>
           </div>
