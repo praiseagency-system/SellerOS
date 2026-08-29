@@ -214,6 +214,15 @@ function AuthShell({ title, subtitle, children }) {
         <div className="bg-surface rounded-2xl border border-line/8 shadow-xl p-5 space-y-4">
           {children}
         </div>
+        {/* Dokumen publik wajib bisa ditemukan tanpa login — selain syarat
+            consent screen Google, orang berhak tahu isinya SEBELUM membuat akun. */}
+        <p className="mt-5 text-center text-[11px] text-ink-faint">
+          <a href="/privasi" className="hover:text-ink">Kebijakan Privasi</a>
+          <span className="mx-2">·</span>
+          <a href="/ketentuan" className="hover:text-ink">Ketentuan Layanan</a>
+          <span className="mx-2">·</span>
+          <a href="/tentang" className="hover:text-ink">Tentang</a>
+        </p>
       </div>
     </div>
   )
