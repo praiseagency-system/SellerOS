@@ -61,7 +61,7 @@ psql_q -c "grant all on all tables in schema public to service_role;" >/dev/null
 
 echo "▶ bukti perilaku:"
 out=""
-for p in proof_0049_0050 proof_0051 proof_0052 proof_0053; do
+for p in proof_0049_0050 proof_0051 proof_0052 proof_0053 proof_0056; do
   [ -f "$HERE/$p.sql" ] || continue
   docker cp "$HERE/$p.sql" "$CONTAINER:/tmp/p.sql" >/dev/null
   # `|| true`: psql keluar non-zero pada uji penolakan yang MEMANG diharapkan gagal.
