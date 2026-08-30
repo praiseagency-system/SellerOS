@@ -40,9 +40,14 @@ async function loadSeries(sb, { workspaceId, from, to, subject }) {
 // null/absent → classifyOutcome tetap konservatif (jangan isi TBD).
 async function loadRuleConfig(sb, workspaceId) {
   const { data } = await sb.from('gmvmax_settings')
-    .select('experiment_roi_floor,experiment_spike_drop_pct,experiment_winner_persistence')
+    .select('spend_floor,experiment_roi_floor,experiment_spike_drop_pct,experiment_winner_persistence')
     .eq('workspace_id', workspaceId).maybeSingle()
   const cfg = {}
+  // Lantai belanja pemilik dipakai menilai apakah baseline SEBANDING (bukan utk
+  // vonis). Video yang sebelum boost hampir tak dibelanjai tak punya "ROAS
+  // sebelum" yang berarti — deltanya disembunyikan, bukan ditampilkan sbg minus.
+  const sf = data?.spend_floor
+  if (sf != null && Number.isFinite(Number(sf))) cfg.spendFloor = Number(sf)
   const rf = data?.experiment_roi_floor
   if (rf != null && Number.isFinite(Number(rf))) cfg.roiFloor = Number(rf)
   // Tanpa spikeDropPct, classifyOutcome TIDAK PERNAH bisa memvonis
@@ -67,7 +72,7 @@ export async function evaluateExperiments({ sb, workspaceId, ruleConfig }) {
     const from = exp.baseline_start || String(exp.start_at).slice(0, 10)
     const subject = { video_id: exp.creative_video_id, product_id: exp.product_id, campaign_id: exp.campaign_id }
     const series = await loadSeries(sb, { workspaceId, from, to: today, subject })
-    const computed = computeCheckpoints({ experiment: exp, series })
+    const computed = computeCheckpoints({ experiment: exp, series, spendFloor: ruleConfig.spendFloor ?? null })
     // TERCAMPUR = ada perubahan lain mendarat di jendela pengukuran, jadi sebab
     // hasilnya tak bisa dipisahkan. Checkpoint tetap dihitung (angkanya masih
     // berguna dilihat manusia) tetapi TIDAK boleh jadi vonis — kalau dipaksa

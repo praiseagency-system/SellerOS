@@ -210,3 +210,140 @@ export async function markContamination({ sb, workspaceId, now = Date.now() }) {
   }
   return { marked }
 }
+
+// ── JEMBATAN 2 — sesi boost DI LUAR APLIKASI → eksperimen ────────────────────
+//
+// Jembatan 1 di atas hanya mengenal aksi yang lewat tombol 🔔. Creative Boost yang
+// dikerjakan langsung di Seller Centre TIDAK pernah membuat baris approval, jadi
+// ia tak pernah membuka eksperimen — padahal itu justru aksi yang paling sering
+// dipakai. Sumbernya di sini adalah potret harian `gmvmax_boost_sessions`.
+//
+// ANGGARAN WAKTU (penting saat membaca checkpoint): snapshot_date memakai hari
+// bisnis WIB, sedangkan computeCheckpoints menganggat hari dari potongan UTC
+// `start_at`. Untuk boost yang mulai lewat tengah malam WIB (00:00–07:00) kedua
+// hal itu berbeda satu hari, dan justru menguntungkan: H+1 mendarat tepat di hari
+// WIB pertama boost berjalan. Untuk boost siang/malam, H+1 = hari penuh pertama.
+// Baseline SELALU dihitung dalam hari WIB supaya tak pernah menabrak hari
+// perlakuan. Diverifikasi atas 3 sesi nyata 29 Agu 2026 (01:30–01:34 WIB).
+import { jakartaDateString, dateMinusDays } from './runtime/jakartaDate.mjs'
+
+const ABSENT = /does not exist|find the table|column|schema cache/i
+// Sesi yang sama boleh dianggap "sudah tercatat" bila ada eksperimen dgn subjek
+// sama yang mulai dalam 6 jam — itu jejak boost yang dijalankan LEWAT aplikasi
+// (approval → eksperimen), bukan kejadian kedua.
+const NEAR_MS = 6 * 3600 * 1000
+const rp = (n) => `Rp${Number(n || 0).toLocaleString('id-ID')}`
+
+// Baseline 7 hari WIB penuh, berakhir sehari sebelum hari boost.
+export function baselineWindowWib(startMs) {
+  const day = jakartaDateString(startMs)
+  return { baseline_start: dateMinusDays(day, 7), baseline_end: dateMinusDays(day, 1) }
+}
+
+// Sesi → rencana eksperimen. CREATIVE_NO_BID tanpa item_id sengaja TIDAK dibuka:
+// subjeknya tak diketahui, dan eksperimen tanpa subjek akan mengukur video yang
+// salah. Lebih baik satu sesi tak tercatat daripada satu vonis yang keliru.
+export function planFromSession(s) {
+  if (!s) return null
+  const campaign_id = s.campaign_id ? String(s.campaign_id) : null
+  const product_id = s.spu_id != null ? String(s.spu_id) : null
+  const video_id = s.item_id != null ? String(s.item_id) : null
+  const asal = 'dijalankan di Seller Centre'
+
+  if (s.bid_type === 'CREATIVE_NO_BID') {
+    if (!video_id) return null
+    return {
+      experiment_type: 'MANUAL_BOOST',
+      creative_video_id: video_id, product_id, campaign_id,
+      treatment: `Creative Boost ${rp(s.budget)}/hari — ${asal}`,
+    }
+  }
+  if (s.bid_type === 'NO_BID') {
+    return {
+      experiment_type: 'ACCELERATE_TESTING',
+      creative_video_id: null, product_id, campaign_id,
+      treatment: `Max Delivery ${rp(s.budget)}/hari — ${asal}`,
+    }
+  }
+  return null
+}
+
+// Satu sesi muncul di SETIAP potret harian selama ia berjalan. Ambil penampakan
+// pertama (tanggal mulainya benar), tapi item_id dari potret mana pun yang
+// memilikinya — baris sebelum 31 Agu 2026 ditulis sebelum endpoint detail dipanggil.
+export function dedupeSessions(rows = []) {
+  const by = new Map()
+  for (const r of rows) {
+    const cur = by.get(r.session_id)
+    if (!cur) by.set(r.session_id, { ...r })
+    else if (!cur.item_id && r.item_id) cur.item_id = r.item_id
+  }
+  return [...by.values()]
+}
+
+// Sudah ada eksperimen untuk perlakuan yang sama? (mis. boost yang dijalankan
+// lewat aplikasi sudah membuka eksperimen dari approval-nya).
+export function alreadyCovered(exps, { plan, startMs, sessionId }) {
+  return (exps || []).some(e => {
+    if (e.source_session_id && e.source_session_id === sessionId) return true
+    if (e.experiment_type !== plan.experiment_type) return false
+    const subjekSama = plan.creative_video_id
+      ? e.creative_video_id === plan.creative_video_id
+      : (!e.creative_video_id && e.campaign_id === plan.campaign_id)
+    if (!subjekSama) return false
+    const t = Date.parse(e.start_at)
+    return Number.isFinite(t) && Math.abs(t - startMs) <= NEAR_MS
+  })
+}
+
+export async function openExperimentsFromSessions({
+  sb, workspaceId, storeId, now = Date.now(), lookbackDays = 60,
+}) {
+  const { data: raw, error } = await sb.from('gmvmax_boost_sessions')
+    .select('*').eq('workspace_id', workspaceId)
+    .gte('snapshot_date', dstr(now - lookbackDays * DAY)).order('snapshot_date')
+  if (error) {
+    if (ABSENT.test(error.message || '')) return { opened: 0, absent: true }
+    throw new Error(`baca sesi boost gagal: ${error.message}`)
+  }
+  if (!raw?.length) return { opened: 0, skipped: 0, noSubject: 0 }
+
+  const { data: exps, error: e2 } = await sb.from('gmvmax_experiments')
+    .select('*').eq('workspace_id', workspaceId)
+  if (e2) {
+    if (ABSENT.test(e2.message || '')) return { opened: 0, absent: true }
+    throw new Error(`baca eksperimen gagal: ${e2.message}`)
+  }
+
+  const rows = []
+  let skipped = 0, noSubject = 0
+  for (const s of dedupeSessions(raw)) {
+    const plan = planFromSession(s)
+    if (!plan) { if (s.bid_type === 'CREATIVE_NO_BID') noSubject++; else skipped++; continue }
+    const startMs = Date.parse(s.schedule_start_time)
+    if (!Number.isFinite(startMs)) { skipped++; continue }
+    if (alreadyCovered(exps, { plan, startMs, sessionId: s.session_id })) { skipped++; continue }
+    rows.push({
+      workspace_id: workspaceId,
+      store_id: String(storeId),
+      source_session_id: s.session_id,
+      start_at: new Date(startMs).toISOString(),
+      ...baselineWindowWib(startMs),
+      ...plan,
+      status: 'RUNNING',
+      notes: `Terdeteksi dari potret harian sesi boost (${s.campaign_name || s.campaign_id}) — bukan dari tombol persetujuan.`,
+    })
+  }
+  if (!rows.length) return { opened: 0, skipped, noSubject }
+
+  let { error: e3 } = await sb.from('gmvmax_experiments').insert(rows)
+  // Kolom asal-usul baru ada di migrasi 0057. Belum di-apply → tetap buka
+  // eksperimennya (dedup natural key sudah menahan duplikat), jangan menahan
+  // seluruh fitur hanya karena satu kolom provenance.
+  if (e3 && ABSENT.test(e3.message || '')) {
+    ({ error: e3 } = await sb.from('gmvmax_experiments')
+      .insert(rows.map(({ source_session_id, ...r }) => r)))
+  }
+  if (e3) throw new Error(`buka eksperimen dari sesi gagal: ${e3.message}`)
+  return { opened: rows.length, skipped, noSubject }
+}

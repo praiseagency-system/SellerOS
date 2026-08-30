@@ -100,3 +100,49 @@ test('0031 additive, RLS owner-scoped, CHECK enum, no secret, NOT APPLIED', () =
   assert.doesNotMatch(sql, /\b(access_token|refresh_token|client_secret|service_role_key)\b/i)
   assert.match(sql, /NOT APPLIED/i)
 })
+
+// ── Baseline yang TIDAK SEBANDING ───────────────────────────────────────────
+// Kejadian nyata 29 Agu 2026: video diboost Rp50rb/hari, tapi 7 hari sebelumnya
+// hanya dibelanjai Rp364 total sambil tetap menerima omzet organik → "ROAS
+// sebelum" 1.141x. Δ terhadap angka itu (-1.224) terbaca seperti bencana padahal
+// boost-nya normal. Lantai belanja pemilik yang memutuskan sebanding atau tidak.
+const seriesReceh = () => [
+  { date: '2026-07-10', roi: 1000, revenue: 100000, spend: 100 },
+  { date: '2026-07-11', roi: 1000, revenue: 100000, spend: 100 },
+  { date: '2026-07-13', roi: 3, revenue: 150000, spend: 50000 }, // H+1, hari boost
+]
+
+test('baseline receh + lantai belanja → delta DISEMBUNYIKAN, bukan minus raksasa', () => {
+  const c = computeCheckpoints({ experiment: exp(), series: seriesReceh(), spendFloor: 50000 })
+  assert.equal(c.baseline.spend_total, 200)
+  assert.equal(c.baseline.comparable, false)
+  assert.equal(c.baseline_state, 'DISCLOSED_NOT_COMPARABLE')
+  const h1 = c.checkpoints.find(x => x.label === 'H+1')
+  assert.equal(h1.roi, 3, 'angka terukurnya tetap ditampilkan apa adanya')
+  assert.equal(h1.roi_delta_vs_baseline, null, 'delta thd baseline tak sebanding = null')
+  assert.equal(h1.revenue_delta_vs_baseline, null)
+})
+
+test('baseline tak sebanding TETAP dianggap dinyatakan (vonis tak jatuh ke DATA_INSUFFICIENT)', () => {
+  const c = computeCheckpoints({ experiment: exp(), series: seriesReceh(), spendFloor: 50000 })
+  assert.equal(c.baseline_disclosed, true)
+  const out = classifyOutcome({ computed: c, ruleConfig: { roiFloor: 4 } })
+  assert.equal(out.conclusion, OutcomeClass.WEAK, 'vonis tetap dari ROAS vs lantai, bukan dari delta')
+})
+
+test('tanpa lantai belanja → tak menghakimi kesebandingan (perilaku lama utuh)', () => {
+  const c = computeCheckpoints({ experiment: exp(), series: seriesReceh() })
+  assert.equal(c.baseline.comparable, null)
+  assert.equal(c.baseline_state, 'DISCLOSED')
+  assert.notEqual(c.checkpoints.find(x => x.label === 'H+1').roi_delta_vs_baseline, null)
+})
+
+test('baseline ROAS = Σomzet/Σbelanja, bukan rata-rata rasio harian', () => {
+  const timpang = [
+    { date: '2026-07-10', roi: 1000, revenue: 100000, spend: 100 },   // hari receh
+    { date: '2026-07-11', roi: 5, revenue: 500000, spend: 100000 },   // hari sungguhan
+  ]
+  const c = computeCheckpoints({ experiment: exp(), series: timpang })
+  // Rata-rata rasio = 502,5 (hari Rp100 menenggelamkan hari Rp100rb); tertimbang = 6.
+  assert.equal(Math.round(c.baseline.roi * 100) / 100, 5.99)
+})

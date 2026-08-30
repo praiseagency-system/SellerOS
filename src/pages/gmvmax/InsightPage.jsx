@@ -8,6 +8,7 @@ import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, fmtRpC, fmtRoasX, tiktokVideoUrl, VideoIdLink } from '../../components/gmvmax/ui'
 import DecisionPanel from '../../components/gmvmax/DecisionPanel'
 import ExperimentPanel from '../../components/gmvmax/ExperimentPanel'
+import OutOfBandPanel from '../../components/gmvmax/OutOfBandPanel'
 import ActionCards from '../../components/gmvmax/ActionCards'
 import { VideoBoostDialog, VideoExcludeDialog } from '../../components/gmvmax/VideoExecActions'
 import { buildRecommendations, totalActions } from '../../utils/gmvmaxRecommendations'
@@ -17,6 +18,7 @@ import { loadLatestSparkAuth } from '../../data/gmvmaxSparkAuth'
 const TABS = [
   { id: 'di', label: 'Decision Intelligence' },
   { id: 'exp', label: 'Eksperimen' },
+  { id: 'luar', label: 'Di luar aplikasi' },
   { id: 'insight', label: 'Insight' },
   { id: 'plan', label: 'Rekomendasi Aksi' },
   { id: 'framework', label: 'Winning Framework' },
@@ -101,6 +103,7 @@ export default function InsightPage({ onOpenUpload }) {
 
       {tab === 'di' && <DecisionPanel onExperiment={startExperiment} />}
       {tab === 'exp' && <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} />}
+      {tab === 'luar' && <OutOfBandPanel />}
       {tab === 'insight' && <InsightCards cards={insights.cards} />}
       {tab === 'plan' && (
         <div className="space-y-6">

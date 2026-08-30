@@ -27,7 +27,9 @@ const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length :
 
 // series: [{ date:'YYYY-MM-DD', spend, impressions, clicks, orders, revenue, roi }] untuk KREATIF ini.
 // experiment: { start_at (ISO/date), baseline_start, baseline_end }.
-export function computeCheckpoints({ experiment, series = [] }) {
+// spendFloor: lantai belanja pemilik (gmvmax_settings.spend_floor). Baseline yang
+//   belanjanya di bawah lantai TIDAK SEBANDING — lihat catatan di bawah.
+export function computeCheckpoints({ experiment, series = [], spendFloor = null }) {
   const byDate = new Map(series.map(r => [r.date, r]))
   const startDate = String(experiment.start_at).slice(0, 10)
 
@@ -37,15 +39,32 @@ export function computeCheckpoints({ experiment, series = [] }) {
   if (bs && be) {
     const inRange = series.filter(r => r.date >= bs && r.date <= be)
     if (inRange.length) {
+      // ROAS baseline = Σomzet / Σbelanja, BUKAN rata-rata rasio harian: satu hari
+      // beromzet dgn belanja Rp23 kalau dirata-rata sebagai rasio akan menenggelamkan
+      // enam hari lain (aturan agregasi rumah: rasio selalu ditimbang).
+      const spendTotal = inRange.reduce((a, r) => a + (isNum(r.spend) ? r.spend : 0), 0)
+      const revenueTotal = inRange.reduce((a, r) => a + (isNum(r.revenue) ? r.revenue : 0), 0)
       baseline = {
-        roi: avg(inRange.map(r => r.roi).filter(isNum)),
+        roi: spendTotal > 0 ? revenueTotal / spendTotal : null,
         revenue: avg(inRange.map(r => r.revenue).filter(isNum)),
         spend: avg(inRange.map(r => r.spend).filter(isNum)),
+        spend_total: spendTotal,
         days: inRange.length,
+        // SEBANDING? Video yang sebelum boost nyaris tak dibelanjai (Rp364 selama
+        // 7 hari) tetap punya "ROAS" ratusan kali — itu omzet organik yang
+        // kebetulan teratribusi, bukan prestasi iklan. Membandingkan ROAS boost
+        // dengan angka itu menghasilkan Δ -1.224 yang terlihat seperti bencana
+        // padahal boost-nya baik-baik saja. Tanpa lantai (null) → tak menghakimi.
+        comparable: isNum(spendFloor) ? spendTotal >= spendFloor : null,
       }
       baselineDisclosed = true
     }
   }
+  // Delta hanya dihitung bila baseline-nya memang sebanding.
+  const bandingkan = baseline != null && baseline.comparable !== false
+  // Penanda eksplisit supaya pembaca (dan UI) bisa membedakan "baseline tak ada"
+  // dari "baseline ada tapi tak sebanding" — dua hal yang artinya jauh berbeda.
+  const baselineState = !baselineDisclosed ? 'ABSENT' : (bandingkan ? 'DISCLOSED' : 'DISCLOSED_NOT_COMPARABLE')
 
   const checkpoints = CHECKPOINT_OFFSETS.map(off => {
     const date = addDays(startDate, off)
@@ -57,12 +76,13 @@ export function computeCheckpoints({ experiment, series = [] }) {
       label: `H+${off}`, date,
       roi, revenue, spend: r && isNum(r.spend) ? r.spend : null,
       measurement_label: measured ? ML.MEASURED : ML.UNKNOWN,
-      roi_delta_vs_baseline: roi != null && baseline?.roi != null ? roi - baseline.roi : null,
-      revenue_delta_vs_baseline: revenue != null && baseline?.revenue != null ? revenue - baseline.revenue : null,
+      baseline_state: baselineState,
+      roi_delta_vs_baseline: bandingkan && roi != null && baseline?.roi != null ? roi - baseline.roi : null,
+      revenue_delta_vs_baseline: bandingkan && revenue != null && baseline?.revenue != null ? revenue - baseline.revenue : null,
     }
   })
 
-  return { start_date: startDate, baseline, baseline_disclosed: baselineDisclosed, checkpoints }
+  return { start_date: startDate, baseline, baseline_disclosed: baselineDisclosed, baseline_state: baselineState, checkpoints }
 }
 
 // Signature deterministik eksperimen (identitas stabil, bukan narasi).
