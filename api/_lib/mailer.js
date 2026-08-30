@@ -23,8 +23,24 @@ export const mailerEnv = () => ({
   apiKey: env('RESEND_API_KEY'),
   // Harus alamat di domain yang SUDAH terverifikasi di Resend. Kalau tidak,
   // Resend menolak dengan 403 dan emailnya tak pernah terkirim.
-  from: env('MAIL_FROM') || 'SellerOS <noreply@praiseagency.id>',
+  //
+  // praiseagency.id sudah terverifikasi di akun Resend yang sama dengan Praise
+  // Affiliate OS (rekaman send.* dan resend._domainkey.* sudah ada di DNS sejak
+  // sebelum berkas ini dibuat), jadi alamat mana pun di domain itu langsung sah.
+  // RESEND_FROM_EMAIL diterima sebagai nama cadangan supaya sama dengan
+  // konvensi yang sudah dipakai Praise (src/lib/email.ts di repo itu).
+  from: namaPengirim(env('MAIL_FROM', 'RESEND_FROM_EMAIL')),
 })
+
+// Alamat polos ("selleros@praiseagency.id") dibungkus nama tampilan, supaya di
+// kotak masuk terbaca "SellerOS", bukan alamat mentah. Nilai yang sudah memuat
+// "<" dianggap lengkap dan dibiarkan apa adanya. Praise melakukan hal yang sama
+// di src/lib/email.ts — disamakan agar env bisa disalin antar-produk.
+const namaPengirim = (raw) => {
+  const v = String(raw || '').trim()
+  if (!v) return 'SellerOS <noreply@praiseagency.id>'
+  return v.includes('<') ? v : `SellerOS <${v}>`
+}
 
 export const mailerReady = () => Boolean(mailerEnv().apiKey)
 

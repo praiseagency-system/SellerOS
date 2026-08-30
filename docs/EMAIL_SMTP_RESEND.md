@@ -1,6 +1,23 @@
 # Email transaksional — Resend + Supabase SMTP
 
-Fase 2.3 dari [PUBLIC_READINESS_PLAN.md](PUBLIC_READINESS_PLAN.md). Ditulis 2026-08-29.
+Fase 2.3 dari [PUBLIC_READINESS_PLAN.md](PUBLIC_READINESS_PLAN.md).
+Ditulis 2026-08-29, direvisi 2026-08-31.
+
+## Ringkasan: akun Resend dipakai bersama Praise
+
+**Domain `praiseagency.id` SUDAH terverifikasi di Resend** — dipakai Praise
+Affiliate OS sejak sebelum berkas ini ada (`src/lib/email.ts` di repo itu,
+mengirim dari `invite@praiseagency.id`). Diperiksa lewat DNS 2026-08-31:
+
+```
+send.praiseagency.id              MX   10 feedback-smtp.ap-northeast-1.amazonses.com
+send.praiseagency.id              TXT  "v=spf1 include:amazonses.com ~all"
+resend._domainkey.praiseagency.id TXT  p=MIGfMA0GCSqGSIb3...
+```
+
+Artinya **tak ada pekerjaan DNS tersisa** untuk SellerOS. Alamat mana pun di
+`@praiseagency.id` langsung sah dikirim. Region Resend-nya `ap-northeast-1`
+(Tokyo) — kebetulan sama dengan region Supabase SellerOS.
 
 ## Kenapa perlu
 
@@ -12,54 +29,39 @@ Tiga alur berhenti tanpa email yang benar-benar terkirim:
 | Magic link persetujuan `/approve` | `src/pages/ApprovalPage.jsx:429` | Supabase Auth |
 | Undangan anggota tim | `api/team/invite.js` | Resend langsung (kita sendiri) |
 
-SMTP bawaan Supabase dibatasi beberapa email per jam dan **tidak untuk produksi**.
-Itu sebabnya undangan tim sampai sekarang hanya mengembalikan tautan untuk
-disalin ke WhatsApp.
+SMTP bawaan Supabase dibatasi beberapa email per jam dan **tidak untuk
+produksi**. Itu sebabnya undangan tim sampai sekarang hanya mengembalikan
+tautan untuk disalin ke WhatsApp.
 
-## ⚠️ Jebakan DNS — baca sebelum menyentuh apa pun
+## ⚠️ DNS: sudah beres — jangan diutak-atik
 
-Domain `praiseagency.id` **sudah punya email yang berjalan**:
+Root `praiseagency.id` memegang kotak surat **Hostinger** yang aktif:
 
 ```
 MX   praiseagency.id  →  mx1.hostinger.com (5), mx2.hostinger.com (10)
 TXT  praiseagency.id  →  v=spf1 include:_spf.mail.hostinger.com ~all
 ```
 
-Kotak surat itu milik Hostinger dan **tidak boleh terganggu**. Kabar baiknya:
-rekaman yang diminta Resend semuanya berada di **subdomain**, bukan di root —
+Rekaman Resend semuanya di **subdomain** (`send`, `resend._domainkey`), jadi
+keduanya hidup berdampingan tanpa bentrok. **Jangan** mengubah MX atau SPF di
+root dengan alasan apa pun — itu mematikan kotak surat Hostinger. DNS dikelola
+di Hostinger (nameserver `hermes/artemis.dns-parking.com`).
 
-| Tipe | Host | Bentrok dengan Hostinger? |
-|---|---|---|
-| MX | `send` | Tidak — root tetap milik Hostinger |
-| TXT (SPF) | `send` | Tidak — SPF root tetap utuh |
-| TXT (DKIM) | `resend._domainkey` | Tidak — rekaman baru |
+## Langkah yang tersisa
 
-**Yang TIDAK boleh dilakukan:** mengubah atau mengganti MX di root, dan
-mengganti (bukan menambah) TXT SPF di root. Keduanya akan mematikan email
-Hostinger. Kalau panel Hostinger menawarkan "replace existing records" saat
-menambah domain, tolak dan tambahkan satu per satu.
+### 1. API key terpisah untuk SellerOS
 
-DNS dikelola di **Hostinger** (nameserver `hermes/artemis.dns-parking.com`),
-jadi rekaman ditambahkan di hPanel → Domains → DNS Zone Editor.
+Di akun Resend yang sama → **API Keys → Create**, izin *Sending access* saja,
+beri nama `selleros`.
 
-## Langkah
+**Jangan menyalin kunci milik Praise.** Kunci SellerOS akan hidup di dua tempat
+tambahan (env Vercel + kolom password SMTP Supabase); kalau ia bocor atau perlu
+dirotasi, kunci terpisah membuat rotasinya tidak ikut mematikan undangan dan
+email keputusan waitlist di Praise. Resend juga melaporkan pemakaian per kunci,
+jadi terlihat produk mana yang mengirim.
 
-### 1. Resend
-1. Buat akun di [resend.com](https://resend.com).
-2. **Domains → Add Domain** → isi `praiseagency.id`, pilih region terdekat
-   (Tokyo/Singapore bila tersedia).
-3. Resend menampilkan 3 rekaman. Salin **persis**, termasuk nilai region di
-   `feedback-smtp.<region>.amazonses.com` — nilainya berbeda per region, jadi
-   jangan pakai contoh dari dokumen mana pun.
-4. Tambahkan ketiganya di Hostinger DNS Zone Editor. Saat mengisi kolom "Name",
-   tulis hanya `send` dan `resend._domainkey` — **tanpa** `.praiseagency.id`
-   di belakangnya (Hostinger menambahkannya sendiri; kalau ditulis, hasilnya
-   jadi `send.praiseagency.id.praiseagency.id`).
-5. Kembali ke Resend → **Verify**. Perlu beberapa menit sampai satu jam.
-6. **API Keys → Create** → izin *Sending access* saja. Salin kuncinya sekali;
-   Resend tak menampilkannya lagi.
+### 2. Supabase — untuk reset kata sandi & magic link
 
-### 2. Supabase (untuk reset kata sandi & magic link)
 **Authentication → Emails → SMTP Settings → Enable custom SMTP:**
 
 | Kolom | Nilai |
@@ -67,7 +69,7 @@ jadi rekaman ditambahkan di hPanel → Domains → DNS Zone Editor.
 | Host | `smtp.resend.com` |
 | Port | `465` |
 | Username | `resend` |
-| Password | API key Resend |
+| Password | API key `selleros` |
 | Sender email | `noreply@praiseagency.id` |
 | Sender name | `SellerOS` |
 
@@ -84,15 +86,17 @@ Berkas-berkas itu **dihasilkan**, bukan ditulis tangan — jalankan
 `node supabase/email-templates/build.mjs` setelah mengubah rangkanya di
 `api/_lib/emails.js`, jangan sunting `.html`-nya langsung.
 
-### 3. Vercel (untuk undangan tim)
+### 3. Vercel — untuk undangan tim
+
 **Settings → Environment Variables**, scope **Production**:
 
-| Nama | Nilai |
-|---|---|
-| `RESEND_API_KEY` | API key Resend |
-| `MAIL_FROM` | `SellerOS <noreply@praiseagency.id>` |
+| Nama | Nilai | Wajib? |
+|---|---|---|
+| `RESEND_API_KEY` | API key `selleros` | ya |
+| `MAIL_FROM` | `SellerOS <noreply@praiseagency.id>` | tidak — sudah jadi bawaan |
 
-`MAIL_FROM` opsional — bawaannya sudah `SellerOS <noreply@praiseagency.id>`.
+`RESEND_FROM_EMAIL` diterima sebagai nama cadangan `MAIL_FROM`, mengikuti
+konvensi Praise. Alamat polos otomatis dibungkus jadi `SellerOS <alamat>`.
 
 > **JANGAN** beri awalan `VITE_`. Apa pun yang berawalan itu ikut dikompilasi ke
 > bundel browser, dan kunci Resend yang bocor bisa dipakai siapa saja mengirim
@@ -101,21 +105,29 @@ Berkas-berkas itu **dihasilkan**, bukan ditulis tangan — jalankan
 
 Setelah menambah env var, **redeploy** — env baru tak masuk ke deployment lama.
 
+## Kuota dipakai berdua
+
+Paket gratis Resend: **100 email/hari**, 3.000/bulan, 3 domain. Sejak SellerOS
+ikut mengirim, kuota itu **dibagi dengan Praise** — dan batas harian yang lebih
+ketat, bukan batas bulanan. Praise mengirim undangan workspace dan email
+keputusan waitlist; kalau keduanya pernah dikirim berbarengan dalam jumlah
+besar, periksa pemakaian di dashboard Resend sebelum membuka pendaftaran.
+Paket Pro $20/bln menghapus batas harian (50.000/bulan).
+
 ## Perilaku saat gagal
 
 Undangan tim **tidak pernah** gagal karena email. Urutannya: baris undangan
-ditulis ke basis data dulu, baru email dicoba. Kalau Resend mati, domain belum
-terverifikasi, atau `RESEND_API_KEY` belum ada, respons tetap 200 dan tetap
-memuat `url` untuk disalin — hanya `emailed: false` (plus `email_error` bila ada
-sebabnya). Dijaga oleh test di `api/team/team.test.js`
-("Resend gagal TIDAK menggagalkan undangan").
+ditulis ke basis data dulu, baru email dicoba. Kalau Resend mati, kuota habis,
+atau `RESEND_API_KEY` belum ada, respons tetap 200 dan tetap memuat `url` untuk
+disalin — hanya `emailed: false` (plus `email_error` bila ada sebabnya). Dijaga
+test di `api/team/team.test.js` ("Resend gagal TIDAK menggagalkan undangan").
 
 ## Verifikasi setelah dipasang
 
 1. Reset kata sandi dari halaman masuk → email masuk dalam <1 menit, berbahasa
    Indonesia, pengirim `noreply@praiseagency.id`.
 2. Undang anggota ke workspace uji → respons memuat `"emailed": true`.
-3. Kirim satu email uji ke alamat Gmail dan periksa **Show original**:
-   `SPF: PASS`, `DKIM: PASS`, `DMARC: PASS`.
-4. Pastikan email Hostinger yang lama **masih masuk** — kirim satu pesan ke
-   kotak surat `@praiseagency.id` yang ada.
+3. Buka salah satu email di Gmail → **Show original**: `SPF: PASS`,
+   `DKIM: PASS`, `DMARC: PASS`.
+4. Pastikan email Praise **masih terkirim** — kunci baru tidak mengganggu yang
+   lama, tapi murah untuk dicek.
