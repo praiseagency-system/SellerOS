@@ -36,10 +36,18 @@ export const mailerEnv = () => ({
 // kotak masuk terbaca "SellerOS", bukan alamat mentah. Nilai yang sudah memuat
 // "<" dianggap lengkap dan dibiarkan apa adanya. Praise melakukan hal yang sama
 // di src/lib/email.ts — disamakan agar env bisa disalin antar-produk.
+//
+// Bawaannya SENGAJA sama persis dengan yang sudah dipasang di Supabase
+// (Authentication → Emails → SMTP: team@praiseagency.id, nama "Praise Agency").
+// Reset kata sandi dikirim Supabase, undangan tim dikirim berkas ini — kalau
+// keduanya berbeda pengirim, satu orang bisa menerima dua email dari produk
+// yang sama dengan dua identitas berbeda. `team@` juga kotak surat sungguhan
+// di Hostinger, jadi balasan sampai ke orang; `noreply@` tidak.
+const BAWAAN = 'Praise Agency <team@praiseagency.id>'
 const namaPengirim = (raw) => {
   const v = String(raw || '').trim()
-  if (!v) return 'SellerOS <noreply@praiseagency.id>'
-  return v.includes('<') ? v : `SellerOS <${v}>`
+  if (!v) return BAWAAN
+  return v.includes('<') ? v : `Praise Agency <${v}>`
 }
 
 export const mailerReady = () => Boolean(mailerEnv().apiKey)

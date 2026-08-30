@@ -60,18 +60,26 @@ dirotasi, kunci terpisah membuat rotasinya tidak ikut mematikan undangan dan
 email keputusan waitlist di Praise. Resend juga melaporkan pemakaian per kunci,
 jadi terlihat produk mana yang mengirim.
 
-### 2. Supabase — untuk reset kata sandi & magic link
+### 2. Supabase — ✅ SUDAH TERPASANG (diperiksa 2026-08-31)
 
-**Authentication → Emails → SMTP Settings → Enable custom SMTP:**
+Custom SMTP sudah menyala di proyek `mhamqoqvemthumasqwrr`, lewat kunci Resend
+bernama "Supabase Integration". **Jangan diganti** — cukup diverifikasi:
 
-| Kolom | Nilai |
+| Kolom | Nilai terpasang |
 |---|---|
 | Host | `smtp.resend.com` |
 | Port | `465` |
 | Username | `resend` |
-| Password | API key `selleros` |
-| Sender email | `noreply@praiseagency.id` |
-| Sender name | `SellerOS` |
+| Sender email | `team@praiseagency.id` |
+| Sender name | `Praise Agency` |
+
+Bawaan `MAIL_FROM` di kode disamakan dengan ini, supaya reset kata sandi (dikirim
+Supabase) dan undangan tim (dikirim `api/_lib/mailer.js`) tidak datang dari dua
+identitas berbeda.
+
+**Yang masih perlu dicek:** Authentication → **Rate Limits** → batas kirim email.
+Supabase memasang batasnya sendiri di atas Resend — bawaannya rendah (puluhan per
+jam), dan itu berlaku terpisah dari kuota Resend.
 
 Lalu **Authentication → Emails → Templates**, tempel isi berkas dari
 [`supabase/email-templates/`](../supabase/email-templates/):
@@ -93,10 +101,10 @@ Berkas-berkas itu **dihasilkan**, bukan ditulis tangan — jalankan
 | Nama | Nilai | Wajib? |
 |---|---|---|
 | `RESEND_API_KEY` | API key `selleros` | ya |
-| `MAIL_FROM` | `SellerOS <noreply@praiseagency.id>` | tidak — sudah jadi bawaan |
+| `MAIL_FROM` | `Praise Agency <team@praiseagency.id>` | tidak — sudah jadi bawaan |
 
 `RESEND_FROM_EMAIL` diterima sebagai nama cadangan `MAIL_FROM`, mengikuti
-konvensi Praise. Alamat polos otomatis dibungkus jadi `SellerOS <alamat>`.
+konvensi Praise. Alamat polos otomatis dibungkus jadi `Praise Agency <alamat>`.
 
 > **JANGAN** beri awalan `VITE_`. Apa pun yang berawalan itu ikut dikompilasi ke
 > bundel browser, dan kunci Resend yang bocor bisa dipakai siapa saja mengirim
@@ -125,7 +133,7 @@ test di `api/team/team.test.js` ("Resend gagal TIDAK menggagalkan undangan").
 ## Verifikasi setelah dipasang
 
 1. Reset kata sandi dari halaman masuk → email masuk dalam <1 menit, berbahasa
-   Indonesia, pengirim `noreply@praiseagency.id`.
+   Indonesia, pengirim `team@praiseagency.id`.
 2. Undang anggota ke workspace uji → respons memuat `"emailed": true`.
 3. Buka salah satu email di Gmail → **Show original**: `SPF: PASS`,
    `DKIM: PASS`, `DMARC: PASS`.
