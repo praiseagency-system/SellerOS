@@ -30,7 +30,7 @@ import { advertiserTargetsForDate } from './sourceModel.mjs'
 import { loadEligibleConnections } from './connections.mjs'
 import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
 import { fetchBoostSessions, persistBoostSessions, fetchSparkAuth, persistSparkAuth } from './outOfBandCapture.mjs'
-import { openExperimentsFromApprovals, markContamination } from './experimentOpener.mjs'
+import { openExperimentsFromApprovals, openExperimentsFromSessions, markContamination } from './experimentOpener.mjs'
 import { fetchRegistryInputs, fetchAuthorizedAdvertiserIds } from './featureRegistryFetch.mjs'
 import { persistRegistry, resolveWorkspaceOwner } from './featureRegistryWriter.mjs'
 import { generateAndPersistDecisions } from './decisions.mjs'
@@ -176,6 +176,13 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
         const o = await openExperimentsFromApprovals({ sb, workspaceId, storeId: entries[0]?.storeId, now })
         safeLog({ event: 'EXP_OPENED', workspace_id: workspaceId, snapshot_date: date, opened: o.opened, skipped: o.skipped ?? 0, absent: o.absent === true })
       } catch (e) { safeLog({ event: 'EXP_OPEN_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
+      // JEMBATAN 2 — sesi boost yang dikerjakan di Seller Centre tak punya approval.
+      // Dijalankan SETELAH potret sesi (4b) supaya boost tadi malam ikut terbaca,
+      // dan SEBELUM penanda tercampur + evaluasi supaya langsung terukur hari ini.
+      try {
+        const os = await openExperimentsFromSessions({ sb, workspaceId, storeId: entries[0]?.storeId, now })
+        safeLog({ event: 'EXP_OPENED_FROM_SESSIONS', workspace_id: workspaceId, snapshot_date: date, opened: os.opened, skipped: os.skipped ?? 0, no_subject: os.noSubject ?? 0, absent: os.absent === true })
+      } catch (e) { safeLog({ event: 'EXP_OPEN_SESSIONS_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
       try {
         const m = await markContamination({ sb, workspaceId, now })
         safeLog({ event: 'EXP_CONTAMINATION_MARKED', workspace_id: workspaceId, snapshot_date: date, marked: m.marked, absent: m.absent === true })

@@ -72,3 +72,78 @@ test('opener: id selalu string (campaign_id numerik dari API tak boleh bocor sbg
   assert.equal(typeof p.campaign_id, 'string')
   assert.equal(typeof p.creative_video_id, 'string')
 })
+
+// ── Jembatan 2: sesi boost di luar aplikasi ─────────────────────────────────
+import { planFromSession, dedupeSessions, alreadyCovered, baselineWindowWib } from './experimentOpener.mjs'
+
+const sesi = (o = {}) => ({
+  session_id: 'S1', campaign_id: '111', campaign_name: 'Exotic Blue GMV Max',
+  bid_type: 'CREATIVE_NO_BID', budget: 50000, item_id: '999', spu_id: '77',
+  schedule_start_time: '2026-08-28T18:30:08.000Z', snapshot_date: '2026-08-29', ...o,
+})
+
+test('sesi: Creative Boost ber-item_id → MANUAL_BOOST dgn subjek VIDEO', () => {
+  const p = planFromSession(sesi())
+  assert.equal(p.experiment_type, 'MANUAL_BOOST')
+  assert.equal(p.creative_video_id, '999')
+  assert.equal(p.product_id, '77')
+  assert.equal(p.campaign_id, '111')
+  assert.match(p.treatment, /Seller Centre/)
+})
+
+test('sesi: Creative Boost TANPA item_id tidak membuka apa pun', () => {
+  // Subjeknya tak diketahui — eksperimen tanpa subjek akan mengukur video yang salah.
+  assert.equal(planFromSession(sesi({ item_id: null })), null)
+})
+
+test('sesi: Max Delivery → ACCELERATE_TESTING level campaign, bukan video', () => {
+  const p = planFromSession(sesi({ bid_type: 'NO_BID', item_id: null }))
+  assert.equal(p.experiment_type, 'ACCELERATE_TESTING')
+  assert.equal(p.creative_video_id, null)
+  assert.equal(p.campaign_id, '111')
+})
+
+test('sesi: bid_type asing tidak membuka eksperimen', () => {
+  assert.equal(planFromSession(sesi({ bid_type: 'ROAS_BID' })), null)
+  assert.equal(planFromSession(null), null)
+})
+
+test('sesi: satu sesi di banyak potret → satu baris, item_id dipungut dari mana pun', () => {
+  // Baris potret lama (sebelum endpoint detail dipanggil) item_id-nya null.
+  const rows = dedupeSessions([
+    sesi({ snapshot_date: '2026-08-28', item_id: null }),
+    sesi({ snapshot_date: '2026-08-29', item_id: '999' }),
+    sesi({ session_id: 'S2', snapshot_date: '2026-08-29' }),
+  ])
+  assert.equal(rows.length, 2)
+  const s1 = rows.find(r => r.session_id === 'S1')
+  assert.equal(s1.snapshot_date, '2026-08-28', 'penampakan PERTAMA yang dipakai')
+  assert.equal(s1.item_id, '999', 'item_id dipungut dari potret yang punya')
+})
+
+test('sesi: boost yang sudah tercatat lewat approval TIDAK dibuka dua kali', () => {
+  const plan = planFromSession(sesi())
+  const startMs = Date.parse('2026-08-28T18:30:08.000Z')
+  const lewatAplikasi = [{
+    experiment_type: 'MANUAL_BOOST', creative_video_id: '999', campaign_id: '111',
+    start_at: '2026-08-28T18:33:00.000Z', source_approval_id: 'a1',
+  }]
+  assert.equal(alreadyCovered(lewatAplikasi, { plan, startMs, sessionId: 'S1' }), true)
+
+  // Boost pada video sama tapi 3 hari kemudian = kejadian LAIN, harus dibuka.
+  const lama = [{ ...lewatAplikasi[0], start_at: '2026-08-25T18:30:00.000Z' }]
+  assert.equal(alreadyCovered(lama, { plan, startMs, sessionId: 'S1' }), false)
+})
+
+test('sesi: sesi yang sama dikenali lewat source_session_id walau jam bergeser', () => {
+  const plan = planFromSession(sesi())
+  const exps = [{ experiment_type: 'MANUAL_BOOST', creative_video_id: 'lain', campaign_id: 'lain', start_at: '2020-01-01T00:00:00.000Z', source_session_id: 'S1' }]
+  assert.equal(alreadyCovered(exps, { plan, startMs: Date.now(), sessionId: 'S1' }), true)
+})
+
+test('sesi: baseline dihitung dalam hari WIB, berhenti sehari sebelum hari boost', () => {
+  // 2026-08-28 18:30 UTC = 29 Agu 01:30 WIB → hari boost 29 Agu, baseline 22–28 Agu.
+  const b = baselineWindowWib(Date.parse('2026-08-28T18:30:08.000Z'))
+  assert.equal(b.baseline_start, '2026-08-22')
+  assert.equal(b.baseline_end, '2026-08-28', 'hari perlakuan tak boleh masuk baseline')
+})

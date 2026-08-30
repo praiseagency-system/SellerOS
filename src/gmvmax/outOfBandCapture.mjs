@@ -11,6 +11,13 @@
 //     Konsekuensi jujur: sesi lebih pendek dari 24 jam masih bisa lolos di antara
 //     dua potret; sesi ≥24 jam pasti tertangkap.
 //
+//     BUTUH DUA PANGGILAN. Daftar (`_list_get`) TIDAK membawa `item_id`, jadi
+//     Creative Boost — yang justru bekerja pada SATU video — tak bisa ditautkan ke
+//     videonya; s/d 2026-08-31 seluruh baris tersimpan dgn item_id null. Endpoint
+//     detail `campaign_gmv_max_session_get` (parameter `session_ids`, JAMAK)
+//     membawanya (diverifikasi runtime 2026-08-31 atas 3 sesi CREATIVE_NO_BID).
+//     Tanpa item_id, sesi boost tak bisa membuka eksperimen ber-subjek video.
+//
 //   * OTORISASI SPARK — `tt_video_list_get` membawa auth_code UTUH, produk yang
 //     tertaut, dan kapan izin berakhir. Kode yang dimasukkan lewat Seller Centre
 //     jadi ikut tercatat, bukan cuma bayangannya (perpindahan status di snapshot).
@@ -53,6 +60,26 @@ export function normalizeSession(s, { advertiserId, campaignId, campaignName }) 
   }
 }
 
+// item_id per sesi — HANYA ada di endpoint detail. Dipanggil sekali per campaign
+// (session_ids jamak), bukan per sesi, supaya hemat kuota: campaign tanpa sesi
+// aktif tidak memicu panggilan sama sekali. Gagal = kembalikan peta kosong;
+// potretnya tetap ditulis dgn item_id null, seperti perilaku lama.
+export async function fetchSessionItemIds(provider, { advertiserId, campaignId, sessionIds }) {
+  const map = new Map()
+  if (!sessionIds?.length) return map
+  try {
+    const r = await provider.callTool('campaign_gmv_max_session_get', {
+      advertiser_id: advertiserId, campaign_id: campaignId, session_ids: sessionIds,
+    })
+    for (const row of unwrap(r, 'session_list') || []) {
+      if (row?.session_id != null && row?.item_id != null) {
+        map.set(String(row.session_id), String(row.item_id))
+      }
+    }
+  } catch { /* detail gagal — potret tetap jalan tanpa item_id */ }
+  return map
+}
+
 // Semua sesi aktif seluruh campaign GMV Max milik satu advertiser+store.
 export async function fetchBoostSessions(provider, { advertiserId, storeId }) {
   const out = []
@@ -70,11 +97,19 @@ export async function fetchBoostSessions(provider, { advertiserId, storeId }) {
           const s = await provider.callTool('campaign_gmv_max_session_list_get', {
             advertiser_id: advertiserId, campaign_id: c.campaign_id,
           })
+          const rows = []
           for (const row of unwrap(s, 'session_list') || []) {
             const n = normalizeSession(row, {
               advertiserId, campaignId: c.campaign_id, campaignName: c.campaign_name,
             })
-            if (n.session_id) out.push(n)
+            if (n.session_id) rows.push(n)
+          }
+          const items = await fetchSessionItemIds(provider, {
+            advertiserId, campaignId: c.campaign_id, sessionIds: rows.map(r => r.session_id),
+          })
+          for (const n of rows) {
+            if (!n.item_id) n.item_id = items.get(n.session_id) ?? null
+            out.push(n)
           }
         } catch { /* campaign ini dilewati; sisanya lanjut */ }
       }
