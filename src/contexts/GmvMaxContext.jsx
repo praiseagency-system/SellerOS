@@ -6,7 +6,7 @@
 // hari terakhir yang diagregasi untuk semua tabel. Tren = angka per-hari langsung
 // (dari `totals` ringkas tiap snapshot, tanpa selisih). Creatives dimuat hanya
 // untuk hari-hari dalam window (+ pembanding) agar hemat memori.
-import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { parseGmvMaxFile, fmtSnapshotLabel } from '../utils/parseGmvMax'
 import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gmvmaxImports'
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
@@ -120,6 +120,38 @@ export function GmvMaxProvider({ children }) {
     return () => { active = false }
   }, [reload])
 
+  // ── Kesegaran: segarkan daftar snapshot di latar ────────────────────────────
+  // Daftar imports dimuat sekali saat app dibuka; tab yang dibiarkan terbuka tak
+  // pernah melihat snapshot baru hasil sync pagi (07:30 WIB) — dashboard tampak
+  // "kosong" padahal datanya ada (kejadian 31 Agu 2026). Segarkan saat tab
+  // kembali fokus + tiap 10 menit; state hanya disentuh bila daftarnya benar-benar
+  // berubah supaya creatives tak di-refetch sia-sia. Gagal (offline sesaat) =
+  // diam, coba lagi di siklus berikutnya.
+  const importsSig = useRef('')
+  useEffect(() => { importsSig.current = imports.map(i => i.id).join('|') }, [imports])
+  useEffect(() => {
+    if (loading) return undefined
+    let inFlight = false
+    const refresh = async () => {
+      if (inFlight || document.hidden) return
+      inFlight = true
+      try {
+        const imps = await listImports()
+        if (imps.map(i => i.id).join('|') !== importsSig.current) setImports(imps)
+      } catch { /* offline / sesi kadaluarsa sesaat — biarkan, data lama tetap tampil */ }
+      finally { inFlight = false }
+    }
+    const onVisible = () => { if (!document.hidden) refresh() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', onVisible)
+    const t = setInterval(refresh, 10 * 60 * 1000)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(t)
+    }
+  }, [loading])
+
   // ── Bulan & window ──────────────────────────────────────────────────────────
   const months = useMemo(() => {
     const map = new Map()
@@ -214,6 +246,31 @@ export function GmvMaxProvider({ children }) {
     })()
     return () => { active = false }
   }, [neededKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Kesegaran data (badge di top-strip) ─────────────────────────────────────
+  // Snapshot hari N ditulis worker ±07:30 pagi hari N+1 → normalnya data
+  // "tertinggal" 1 hari; sebelum jam 08:00, 2 hari masih wajar (run hari ini
+  // belum jalan). Lebih dari itu = basi → badge peringatan.
+  const freshness = useMemo(() => {
+    let latest = null
+    for (const i of imports) {
+      if (i.snapshot_date && (!latest || i.snapshot_date > latest.snapshot_date)) latest = i
+    }
+    if (!latest) return null
+    const now = new Date()
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const behind = daysBetweenISO(latest.snapshot_date, todayISO)
+    const written = latest.created_at ? new Date(latest.created_at) : null
+    return {
+      date: latest.snapshot_date,
+      label: fmtSnapshotLabel(latest.snapshot_date) || latest.snapshot_date,
+      writtenLabel: written
+        ? `${String(written.getHours()).padStart(2, '0')}:${String(written.getMinutes()).padStart(2, '0')}`
+        : null,
+      behind,
+      stale: behind > (now.getHours() < 8 ? 2 : 1),
+    }
+  }, [imports])
 
   // ── Turunan ─────────────────────────────────────────────────────────────────
   const creativesEnriched = useMemo(() => creatives.map(c => {
@@ -449,7 +506,7 @@ export function GmvMaxProvider({ children }) {
     prev, dailyDelta, trend,
     videos, campaigns, creators, hooks, products, productsCard, dashboard, typeTotals, insights,
     channels, channelTrend,
-    hasData: imports.length > 0,
+    hasData: imports.length > 0, freshness,
     loading, busy, creativesLoading, error,
     missingAccountCount, enriching,
     upload, importDataset, removeImport, updateThresholds, setNote, clearNote, enrichUsernames,

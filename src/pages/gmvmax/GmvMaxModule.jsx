@@ -30,7 +30,7 @@ const PAGES = {
 }
 
 export default function GmvMaxModule({ page, onNavigate }) {
-  const { hasData, loading, creativesLoading } = useGmvMax()
+  const { hasData, loading, creativesLoading, freshness } = useGmvMax()
   const [showUpload, setShowUpload] = useState(false)
   const Page = PAGES[page] || DashboardPage
 
@@ -50,6 +50,19 @@ export default function GmvMaxModule({ page, onNavigate }) {
           {creativesLoading && (
             <span className="inline-flex items-center gap-1.5 text-xs text-ink-faint">
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> memuat data periode…
+            </span>
+          )}
+          {freshness && (
+            <span
+              className={freshness.stale
+                ? 'ml-auto inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-500'
+                : 'ml-auto inline-flex items-center gap-1.5 text-xs text-ink-faint'}
+              title="Snapshot harian ditulis worker ±07:30 WIB — data hari N muncul keesokan paginya. Daftar disegarkan otomatis saat tab kembali dibuka."
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${freshness.stale ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+              {freshness.stale
+                ? `Data tertinggal ${freshness.behind} hari · terakhir ${freshness.label}`
+                : `Data per ${freshness.label}${freshness.writtenLabel ? ` · ditulis ${freshness.writtenLabel}` : ''}`}
             </span>
           )}
         </div>
