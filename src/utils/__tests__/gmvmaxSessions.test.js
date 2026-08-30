@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { foldSessions } from './gmvmaxBoostSessions'
+import { foldSessions } from '../gmvmaxSessions'
 
 // Potret harian mencatat ULANG sesi yang sama tiap pagi selama ia berjalan.
 // Yang dilihat pembaca panel adalah SESI-nya, bukan penampakan hariannya.
