@@ -49,16 +49,20 @@ di Hostinger (nameserver `hermes/artemis.dns-parking.com`).
 
 ## Langkah yang tersisa
 
-### 1. API key terpisah untuk SellerOS
+### 1. API key — keputusan 2026-08-31: SATU kunci dipakai bersama
 
-Di akun Resend yang sama → **API Keys → Create**, izin *Sending access* saja,
-beri nama `selleros`.
+SellerOS memakai kunci Resend bernama **"Supabase Integration"** untuk KEDUA
+jalur: SMTP Supabase (reset kata sandi, magic link) dan env Vercel (undangan
+tim). Kunci terpisah sempat disarankan tapi tidak jadi dipakai.
 
-**Jangan menyalin kunci milik Praise.** Kunci SellerOS akan hidup di dua tempat
-tambahan (env Vercel + kolom password SMTP Supabase); kalau ia bocor atau perlu
-dirotasi, kunci terpisah membuat rotasinya tidak ikut mematikan undangan dan
-email keputusan waitlist di Praise. Resend juga melaporkan pemakaian per kunci,
-jadi terlihat produk mana yang mengirim.
+**Konsekuensi yang harus diingat saat mendiagnosis:** kunci itu duduk di dua
+tempat sekaligus. Kalau ia dirotasi atau dicabut, yang mati BUKAN satu fitur
+tapi dua — reset kata sandi dan undangan tim, berbarengan. Jadi kalau suatu
+hari kedua fitur itu mati bersamaan, curigai kuncinya lebih dulu, bukan kode
+di kedua sisi.
+
+Kunci milik Praise Affiliate OS (kemungkinan bernama "Onboarding") TIDAK ikut
+terpengaruh — itu kunci berbeda di akun yang sama.
 
 ### 2. Supabase — ✅ SUDAH TERPASANG (diperiksa 2026-08-31)
 
