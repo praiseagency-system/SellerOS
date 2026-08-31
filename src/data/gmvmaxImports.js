@@ -276,6 +276,40 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
     }))
 }
 
+// Identitas sasaran eksperimen — judul video, akun TikTok, nama campaign,
+// product_id — dari baris creatives TERBARU yang memuat sasaran itu (snapshot
+// baru dulu; berhenti begitu ketemu). Video bisa ikut >1 campaign → campaignNames
+// dikumpulkan distinct. Ringan: maks beberapa chunk kecil, limit per query.
+export async function loadExperimentIdentity({ videoId, productId, campaignId }) {
+  const target = videoId ? ['video_id', videoId]
+    : productId ? ['product_id', productId]
+      : campaignId ? ['campaign_id', campaignId] : null
+  if (!target) return null
+  const imports = await listImports() // sudah urut snapshot_date desc
+  const impIds = imports.map(i => i.id)
+  for (let i = 0; i < impIds.length; i += 10) {
+    const { data, error } = await supabase
+      .from('gmvmax_creatives')
+      .select('video_id, video_title, tiktok_account, campaign_id, campaign_name, product_id')
+      .in('import_id', impIds.slice(i, i + 10))
+      .eq(target[0], target[1])
+      .limit(30)
+    if (error) throw error
+    if (data && data.length) {
+      const first = data.find(r => r.video_title || r.tiktok_account) || data[0]
+      const campaignNames = [...new Set(data.map(r => r.campaign_name).filter(Boolean))]
+      const productIds = [...new Set(data.map(r => r.product_id).filter(Boolean))]
+      return {
+        videoTitle: first.video_title || null,
+        tiktokAccount: first.tiktok_account || null,
+        campaignNames,
+        productIds,
+      }
+    }
+  }
+  return null
+}
+
 // Simpan hasil parser. parsed = { meta, rows } dari parseGmvMaxFile.
 //
 // ATOMIK sejak migrasi 0049: satu panggilan RPC gmvmax_upload_snapshot →

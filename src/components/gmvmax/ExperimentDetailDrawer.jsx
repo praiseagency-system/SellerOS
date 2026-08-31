@@ -6,8 +6,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, ExternalLink } from 'lucide-react'
-import { loadExperimentDaily } from '../../data/gmvmaxImports'
+import { loadExperimentDaily, loadExperimentIdentity } from '../../data/gmvmaxImports'
 import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
+import { loadVideoMeta } from '../../data/gmvmaxVideoMeta'
+import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { getThresholds } from '../../data/gmvmaxSettings'
 import {
   stopExperiment, deleteExperiment, EXPERIMENT_TYPES, CONCLUSION_LABEL,
@@ -149,6 +151,9 @@ const SubHead = ({ children }) => (
 export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onChanged, onNavigate }) {
   const [daily, setDaily] = useState(null)     // null=memuat, []=kosong
   const [sessions, setSessions] = useState([])
+  const [ident, setIdent] = useState() // undefined=memuat · null=tak ketemu · objek={videoTitle,…}
+  const [metaAcct, setMetaAcct] = useState(null) // fallback akun dari cache oEmbed
+  const { productNames } = useGmvMax()
   const [spendFloor, setSpendFloor] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -161,7 +166,14 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
       loadBoostSessions({ days: 60 })
         .then(all => { if (on) setSessions(all.filter(s => s.item_id === e.creative_video_id)) })
         .catch(() => {})
+      // Kolom AKUN export sering kosong — cache oEmbed jadi cadangan nama kreator.
+      loadVideoMeta([e.creative_video_id])
+        .then(m => { if (on) setMetaAcct(m[e.creative_video_id] || null) })
+        .catch(() => {})
     }
+    loadExperimentIdentity({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id })
+      .then(r => { if (on) setIdent(r) })
+      .catch(() => { if (on) setIdent(null) })
     getThresholds().then(t => { if (on) setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
     return () => { on = false }
   }, [e.id, e.creative_video_id, e.product_id, e.campaign_id])
@@ -204,6 +216,12 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
     onNavigate?.('gmv_overview')
   }
 
+  // Kreator: akun dari creatives dulu; kosong → cache oEmbed (handle + nama tampilan).
+  const creatorHandle = metaAcct?.username || null
+  const creatorLabel = ident?.tiktokAccount
+    || (metaAcct?.username ? `@${metaAcct.username}${metaAcct.authorName ? ` (${metaAcct.authorName})` : ''}` : metaAcct?.authorName)
+    || null
+
   const measured = checkpoints.filter(c => c.roi != null)
   const bidLabel = (b) => (b === 'CREATIVE_NO_BID' ? 'Creative Boost' : b === 'NO_BID' ? 'Max Delivery' : (b || 'Sesi boost'))
 
@@ -221,11 +239,45 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           <span className="text-[11px] text-ink-faint">{typeLabel(e.experiment_type)}</span>
         </div>
         <p className="text-[15px] font-semibold text-ink-strong mt-2">{e.treatment || '—'}</p>
-        <p className="text-[11px] text-ink-faint mt-0.5 break-all">
-          {e.creative_video_id ? <>video <span className="font-mono">{e.creative_video_id}</span></> : null}
-          {e.product_id ? <> · produk <span className="font-mono">{e.product_id}</span></> : null}
-          {e.campaign_id ? <> · campaign <span className="font-mono">{e.campaign_id}</span></> : null}
-        </p>
+
+        {/* Identitas sasaran: video apa, kreator siapa, campaign mana. Nama dari
+            baris creatives terbaru; akun kosong → cadangan cache oEmbed; produk
+            di-label-kan dari master produk bila kodenya cocok. */}
+        <div className="mt-3 rounded-xl border border-line/15 bg-surface p-3 text-xs space-y-1.5">
+          {e.creative_video_id && (
+            <div className="flex items-start gap-2">
+              <span className="text-ink-faint shrink-0 w-16">Video</span>
+              <span className="text-ink min-w-0">
+                {ident === undefined ? 'memuat…' : (ident?.videoTitle || <span className="font-mono break-all">{e.creative_video_id}</span>)}
+                {' '}
+                <a href={`https://www.tiktok.com/@${creatorHandle || 'x'}/video/${e.creative_video_id}`}
+                  target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}
+                  className="text-accent hover:underline whitespace-nowrap">buka ↗</a>
+              </span>
+            </div>
+          )}
+          {e.creative_video_id && (
+            <div className="flex items-start gap-2">
+              <span className="text-ink-faint shrink-0 w-16">Kreator</span>
+              <span className="text-ink">{creatorLabel || <span className="text-ink-faint">tak dikenal — kolom akun kosong di export</span>}</span>
+            </div>
+          )}
+          {(ident?.campaignNames?.length || e.campaign_id) && (
+            <div className="flex items-start gap-2">
+              <span className="text-ink-faint shrink-0 w-16">Campaign</span>
+              <span className="text-ink min-w-0 break-words">{ident?.campaignNames?.length ? ident.campaignNames.join(' · ') : <span className="font-mono break-all">{e.campaign_id}</span>}</span>
+            </div>
+          )}
+          {(e.product_id || ident?.productIds?.length) && (
+            <div className="flex items-start gap-2">
+              <span className="text-ink-faint shrink-0 w-16">Produk</span>
+              <span className="text-ink min-w-0 break-words">
+                {(e.product_id ? [e.product_id] : ident.productIds).map(pid =>
+                  productNames?.[String(pid).trim()] || pid).join(' · ')}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Vonis + alasan */}
         <div className="mt-4 rounded-xl border border-line/15 bg-fill/[0.03] p-3.5">
