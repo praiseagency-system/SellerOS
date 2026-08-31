@@ -49,17 +49,20 @@ di Hostinger (nameserver `hermes/artemis.dns-parking.com`).
 
 ## Langkah yang tersisa
 
-### 1. API key — keputusan 2026-08-31: SATU kunci dipakai bersama
+### 1. API key — kunci `seller os` (sejak 2026-08-31)
 
-SellerOS memakai kunci Resend bernama **"Supabase Integration"** untuk KEDUA
-jalur: SMTP Supabase (reset kata sandi, magic link) dan env Vercel (undangan
-tim). Kunci terpisah sempat disarankan tapi tidak jadi dipakai.
+SellerOS memakai kunci Resend bernama **`seller os`** untuk KEDUA jalur: kolom
+Password SMTP Supabase (reset kata sandi, magic link) dan env `RESEND_API_KEY`
+di Vercel (undangan tim).
 
-**Konsekuensi yang harus diingat saat mendiagnosis:** kunci itu duduk di dua
-tempat sekaligus. Kalau ia dirotasi atau dicabut, yang mati BUKAN satu fitur
-tapi dua — reset kata sandi dan undangan tim, berbarengan. Jadi kalau suatu
-hari kedua fitur itu mati bersamaan, curigai kuncinya lebih dulu, bukan kode
-di kedua sisi.
+Kunci lama **"Supabase Integration"** sudah TIDAK SAH dan menjadi penyebab
+seluruh email diam-diam tak terkirim — lihat "Jebakan diagnostik" di bawah.
+Hapus saja dari daftar Resend supaya tak menyesatkan nanti.
+
+**Konsekuensi yang harus diingat saat mendiagnosis:** satu kunci duduk di dua
+tempat. Kalau ia dirotasi atau dicabut, yang mati BUKAN satu fitur tapi dua —
+reset kata sandi dan undangan tim, berbarengan. Jadi kalau kedua fitur itu mati
+bersamaan, curigai kuncinya lebih dulu, bukan kode di kedua sisi.
 
 Kunci milik Praise Affiliate OS (kemungkinan bernama "Onboarding") TIDAK ikut
 terpengaruh — itu kunci berbeda di akun yang sama.
@@ -125,6 +128,35 @@ ketat, bukan batas bulanan. Praise mengirim undangan workspace dan email
 keputusan waitlist; kalau keduanya pernah dikirim berbarengan dalam jumlah
 besar, periksa pemakaian di dashboard Resend sebelum membuka pendaftaran.
 Paket Pro $20/bln menghapus batas harian (50.000/bulan).
+
+## ⚠️ Jebakan diagnostik: Supabase TIDAK melaporkan kegagalan SMTP
+
+Terjadi 2026-08-31 dan memakan waktu lama untuk ditemukan. Gejalanya:
+
+- Email tak pernah sampai
+- Resend tak mencatat apa pun — bukan "gagal", melainkan **tidak ada barisnya sama sekali**
+- Log auth Supabase menulis `/signup | request completed` dan `/recover | request
+  completed` dengan severity **INFO**, kolom `error` **kosong**, tanpa satu pun
+  entri merah
+- Akun pengguna tetap terbuat; `signUp` mengembalikan sukses ke browser
+
+**Penyebabnya: kunci API yang tersimpan di kolom Password SMTP sudah tak sah.**
+Supabase gagal autentikasi ke `smtp.resend.com`, lalu **melaporkannya sebagai
+sukses**. Resend tak mencatat apa-apa karena autentikasi gagal tak pernah
+menghasilkan catatan email.
+
+**Aturan yang harus diingat:** "tidak ada galat di log auth Supabase" BUKAN
+bukti email terkirim. Satu-satunya bukti adalah barisnya muncul di Resend, atau
+emailnya benar-benar sampai.
+
+**Cara memperbaikinya, tanpa menebak:** buat kunci Resend BARU, lalu tempel ke
+kolom Password SMTP dan simpan. Kalau setelah itu email datang, kunci lamalah
+penyebabnya. Jangan mencoba memulihkan nilai kunci lama — Resend maupun Vercel
+hanya menampilkannya sekali, dan menebak-nebak di situ membuang waktu.
+
+Yang SUDAH terbukti bukan penyebab (jangan diperiksa ulang lebih dulu): toggle
+Enable custom SMTP, host/port/username, alamat pengirim, batas laju Supabase
+(25 email/jam), dan rekaman DNS.
 
 ## Perilaku saat gagal
 
