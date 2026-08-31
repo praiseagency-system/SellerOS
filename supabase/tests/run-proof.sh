@@ -44,7 +44,15 @@ create table auth.users (id uuid primary key, email text);
 create or replace function auth.uid() returns uuid language sql stable
   as \$\$ select nullif(current_setting('test.uid', true), '')::uuid \$\$;
 create extension if not exists pgcrypto;
-grant usage on schema public to anon, authenticated, service_role;" >/dev/null 2>&1
+grant usage on schema public to anon, authenticated, service_role;
+-- Supabase memberi hak penuh atas tabel baru kepada anon/authenticated/service_role
+-- lewat default privileges saat proyek dibuat. Tanpa meniru itu, tabel yang lahir
+-- dari migrasi di sini TIDAK punya grant sama sekali, sehingga uji isolasi gagal
+-- karena 'permission denied' — sebab yang tak ada di produksi — dan menutupi
+-- apakah RLS-nya sendiri benar. Dipasang SEBELUM migrasi supaya pencabutan
+-- selektif di 0051 (kolom token) tetap berlaku di atasnya, persis seperti aslinya.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;" >/dev/null 2>&1
 
 echo "▶ memasang seluruh migrasi…"
 ok=0; skip=""
@@ -61,7 +69,7 @@ psql_q -c "grant all on all tables in schema public to service_role;" >/dev/null
 
 echo "▶ bukti perilaku:"
 out=""
-for p in proof_0049_0050 proof_0051 proof_0052 proof_0053 proof_0056; do
+for p in proof_0049_0050 proof_0051 proof_0052 proof_0053 proof_0056 proof_isolation; do
   [ -f "$HERE/$p.sql" ] || continue
   docker cp "$HERE/$p.sql" "$CONTAINER:/tmp/p.sql" >/dev/null
   # `|| true`: psql keluar non-zero pada uji penolakan yang MEMANG diharapkan gagal.

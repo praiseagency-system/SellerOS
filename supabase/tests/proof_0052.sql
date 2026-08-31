@@ -73,6 +73,11 @@ select case when count(*) = 0 then '✅ orang luar melihat 0 baris'
   from public.workspace_members;
 
 -- Browser TIDAK boleh menambah dirinya sendiri ke workspace mana pun.
+-- Sejak 0058 penolakannya kembali datang dari PRIVILEGE ("permission denied"),
+-- bukan dari RLS. Bedanya penting: privilege adalah lapis luar yang tetap
+-- berdiri walau suatu hari ada yang menambahkan policy tulis tanpa berpikir
+-- panjang. Kalau assertion ini suatu saat berubah jadi "row-level security",
+-- artinya pencabutan di 0058 hilang — bukan sekadar pesan yang berganti.
 select pg_temp.expect_error(
   $$insert into public.workspace_members (workspace_id, user_id, role)
     values ('44444444-4444-4444-4444-444444444444','ffffffff-0000-0000-0000-000000000006','owner')$$,
