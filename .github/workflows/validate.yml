@@ -42,6 +42,14 @@ jobs:
       - name: App & API tests (vitest)
         run: npm test
 
+      # Gerbang 3: isolasi tenant dibuktikan ulang di Postgres sekali pakai
+      # dengan SELURUH riwayat migrasi. Sebelum ini, 68 policy di 34 tabel
+      # ditulis ulang tanpa artefak yang bisa dijalankan kembali — tiap migrasi
+      # dibuktikan sekali lalu buktinya menguap. Sejak pendaftaran dibuka untuk
+      # umum, migrasi yang merusak isolasi harus gagal DI PR, bukan di produksi.
+      - name: Bukti isolasi tenant (Postgres sekali pakai)
+        run: bash supabase/tests/run-proof.sh
+
       - name: Worker-scoped lint (src/gmvmax)
         run: npx eslint src/gmvmax
 
