@@ -35,8 +35,12 @@ export default function Tentang() {
 
       <Bagian judul="Akses">
         <p>
-          Saat ini SellerOS dipakai secara terbatas dan akun dibuat lewat undangan. Belum ada
-          pendaftaran mandiri terbuka.
+          Siapa pun bisa mendaftar sendiri di halaman masuk. Alamat email harus dikonfirmasi lebih
+          dulu lewat tautan yang kami kirim — akun belum aktif sebelum tautan itu dibuka.
+        </p>
+        <p>
+          Kamu juga bisa masuk ke workspace orang lain bila pemiliknya mengundangmu. Undangan
+          terikat pada alamat email yang dituju.
         </p>
       </Bagian>
 
