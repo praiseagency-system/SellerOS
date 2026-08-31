@@ -44,7 +44,15 @@ function sumVideos(arr) {
 export default function OverviewPage({ onOpenUpload }) {
   const { videos, thresholds, notes, productNames, hasData, prev, periodName } = useGmvMax()
   const [seg, setSeg] = useState('all')
-  const [q, setQ] = useState('')
+  // Pencarian bisa di-seed drawer eksperimen ("Lihat di Performa Video"):
+  // videoId dititip sekali lewat sessionStorage, langsung dihapus setelah dibaca.
+  const [q, setQ] = useState(() => {
+    try {
+      const v = sessionStorage.getItem('gmvJumpVideo')
+      if (v) { sessionStorage.removeItem('gmvJumpVideo'); return v }
+    } catch { /* storage di-block — mulai kosong */ }
+    return ''
+  })
   const [statusFilter, setStatusFilter] = useState('all') // status pengiriman TikTok
   const [noteVideo, setNoteVideo] = useState(null)
   const [showThreshold, setShowThreshold] = useState(false)

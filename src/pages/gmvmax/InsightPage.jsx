@@ -31,7 +31,7 @@ const ACTION_BADGE = {
   kill: { text: '✕ KILL', cls: 'text-red-500 border-red-500/40' },
 }
 
-export default function InsightPage({ onOpenUpload }) {
+export default function InsightPage({ onOpenUpload, onNavigate }) {
   const { insights, hasData, videos, thresholds, periodName, productNames } = useGmvMax()
   const [tab, setTab] = useState('insight')
   const [expDraft, setExpDraft] = useState(null)   // draft eksperimen dari DecisionPanel
@@ -102,7 +102,7 @@ export default function InsightPage({ onOpenUpload }) {
       </div>
 
       {tab === 'di' && <DecisionPanel onExperiment={startExperiment} />}
-      {tab === 'exp' && <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} />}
+      {tab === 'exp' && <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} onNavigate={onNavigate} />}
       {tab === 'luar' && <OutOfBandPanel />}
       {tab === 'insight' && <InsightCards cards={insights.cards} />}
       {tab === 'plan' && (

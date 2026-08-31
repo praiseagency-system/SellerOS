@@ -8,21 +8,8 @@ import {
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
 import { getThresholds, saveExperimentRoiFloor } from '../../data/gmvmaxSettings'
-import { classifyOutcome } from '../../gmvmax/skills/experimentClassify.mjs'
-
-// Vonis LIVE dari checkpoint tersimpan + roiFloor terkini (server sinkron tiap eval
-// harian). baseline_disclosed dibaca dari penanda baseline_state; baris lama (ditulis
-// sebelum penanda itu ada) direkonstruksi dari adanya delta-vs-baseline.
-// PENTING: "ada baseline tapi tak sebanding" TIDAK sama dengan "tak ada baseline" —
-// deltanya memang sengaja null, dan itu bukan alasan memvonis DATA_INSUFFICIENT.
-function liveConclusion(exp, roiFloor) {
-  const checkpoints = Array.isArray(exp.checkpoints) ? exp.checkpoints : []
-  const state = checkpoints.find(c => c.baseline_state)?.baseline_state
-  const disclosed = state ? state !== 'ABSENT' : checkpoints.some(c => c.roi_delta_vs_baseline != null)
-  const computed = { baseline: disclosed ? {} : null, baseline_disclosed: disclosed, checkpoints }
-  const ruleConfig = roiFloor != null ? { roiFloor } : {}
-  return classifyOutcome({ computed, ruleConfig, status: exp.status })
-}
+import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
+import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
 const STATUS = {
@@ -38,11 +25,12 @@ const CONC = {
 const iso = (d) => d.toISOString().slice(0, 10)
 const fmtD = (s) => (s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '—')
 
-export default function ExperimentPanel({ draft, onDraftUsed }) {
+export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   const [state, setState] = useState({ loading: true })
   // Draft dari tombol "Jadikan eksperimen" (DecisionPanel) → form terbuka saat mount.
   const [showForm, setShowForm] = useState(!!draft)
   const [roiFloor, setRoiFloor] = useState(null)
+  const [detail, setDetail] = useState(null) // eksperimen yang dibuka di drawer
 
   const reload = useCallback(() => {
     setState(s => ({ ...s, loading: true }))
@@ -79,12 +67,17 @@ export default function ExperimentPanel({ draft, onDraftUsed }) {
 
       {running.length > 0 && <div className="space-y-2">
         <h4 className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Berjalan</h4>
-        {running.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} onChanged={reload} />)}
+        {running.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} onChanged={reload} onOpen={() => setDetail(e)} />)}
       </div>}
       {done.length > 0 && <div className="space-y-2">
         <h4 className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Selesai</h4>
-        {done.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} onChanged={reload} />)}
+        {done.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} onChanged={reload} onOpen={() => setDetail(e)} />)}
       </div>}
+
+      {detail && (
+        <ExperimentDetailDrawer exp={detail} roiFloor={roiFloor} onNavigate={onNavigate}
+          onClose={() => setDetail(null)} onChanged={reload} />
+      )}
     </div>
   )
 }
@@ -145,7 +138,7 @@ function ExperimentForm({ draft, onDone, onCancel }) {
   )
 }
 
-function ExperimentCard({ e, roiFloor, onChanged }) {
+function ExperimentCard({ e, roiFloor, onChanged, onOpen }) {
   const [busy, setBusy] = useState(false)
   const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
   // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
@@ -155,8 +148,11 @@ function ExperimentCard({ e, roiFloor, onChanged }) {
     setBusy(true)
     try { await fn(e.id); onChanged() } catch (err) { alert('Gagal: ' + err.message); setBusy(false) }
   }
+  // Seluruh kartu bisa diklik → drawer detail; tombol aksi menghentikan bubble.
   return (
-    <div className="rounded-xl border border-line/15 bg-surface p-4">
+    <div onClick={onOpen} role="button" tabIndex={0}
+      onKeyDown={(ev) => { if (ev.key === 'Enter') onOpen?.() }}
+      className="rounded-xl border border-line/15 bg-surface p-4 cursor-pointer hover:border-line/30 transition-colors">
       <div className="flex items-center gap-2 flex-wrap mb-1.5">
         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${STATUS[e.status] || STATUS.STOPPED}`}>{e.status}</span>
         <span className="text-[11px] text-ink-faint">{typeLabel(e.experiment_type)}</span>
@@ -178,8 +174,8 @@ function ExperimentCard({ e, roiFloor, onChanged }) {
       )}
       {e.status === 'RUNNING' && (
         <div className="mt-2.5 flex items-center gap-2">
-          <button disabled={busy} onClick={() => act(stopExperiment)} className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5 disabled:opacity-50">Hentikan</button>
-          <button disabled={busy} onClick={() => { if (confirm('Hapus eksperimen ini?')) act(deleteExperiment) }} className="text-xs text-red-400/80 border border-red-500/20 rounded-lg px-2.5 py-1 hover:bg-red-500/5 disabled:opacity-50">Hapus</button>
+          <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); act(stopExperiment) }} className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5 disabled:opacity-50">Hentikan</button>
+          <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); if (confirm('Hapus eksperimen ini?')) act(deleteExperiment) }} className="text-xs text-red-400/80 border border-red-500/20 rounded-lg px-2.5 py-1 hover:bg-red-500/5 disabled:opacity-50">Hapus</button>
         </div>
       )}
     </div>

@@ -221,6 +221,61 @@ export async function loadVideosDaily(videoIds) {
   return out
 }
 
+// Deret harian untuk SATU sasaran eksperimen (video / produk / campaign) lintas
+// semua snapshot current — dipakai drawer detail eksperimen. Prioritas sasaran:
+// video > produk > campaign. Satu video bisa muncul di >1 campaign pada hari yang
+// sama → baris per tanggal diagregasi dengan aturan rasio: cost/revenue/orders/
+// impresi/klik dijumlah; ROI = Σomzet/Σbiaya, CTR = Σklik/Σimpresi, CVR =
+// Σorder/Σklik (BUKAN rata-rata rasio harian); retensi vr_* = rata-rata
+// tertimbang impresi. Semua rasio dalam fraksi 0–1 (apa adanya dari export).
+const VR_KEYS = ['vr_2s', 'vr_6s', 'vr_25', 'vr_50', 'vr_75', 'vr_100']
+export async function loadExperimentDaily({ videoId, productId, campaignId }) {
+  const target = videoId ? ['video_id', videoId]
+    : productId ? ['product_id', productId]
+      : campaignId ? ['campaign_id', campaignId] : null
+  if (!target) return []
+  const imports = await listImports()
+  if (imports.length === 0) return []
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
+  const impIds = imports.map(i => i.id)
+
+  const byDate = new Map()
+  for (let i = 0; i < impIds.length; i += 25) {
+    const { data, error } = await supabase
+      .from('gmvmax_creatives')
+      .select('import_id, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
+      .in('import_id', impIds.slice(i, i + 25))
+      .eq(target[0], target[1])
+    if (error) throw error
+    for (const r of data || []) {
+      const d = dateById[r.import_id]
+      if (!d) continue
+      const a = byDate.get(d) || {
+        date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
+        vrW: [0, 0, 0, 0, 0, 0],
+      }
+      const imp = num(r.impressions) || 0
+      a.cost += num(r.cost) || 0
+      a.revenue += num(r.gross_revenue) || 0
+      a.orders += num(r.sku_orders) || 0
+      a.impressions += imp
+      a.clicks += num(r.clicks) || 0
+      if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
+      byDate.set(d, a)
+    }
+  }
+  return [...byDate.values()]
+    .sort((x, y) => (x.date < y.date ? -1 : 1))
+    .map(a => ({
+      date: a.date, cost: a.cost, revenue: a.revenue, orders: a.orders,
+      impressions: a.impressions, clicks: a.clicks,
+      roi: a.cost > 0 ? a.revenue / a.cost : null,
+      ctr: a.impressions > 0 ? a.clicks / a.impressions : null,
+      cvr: a.clicks > 0 ? a.orders / a.clicks : null,
+      vr: a.impressions > 0 ? a.vrW.map(w => w / a.impressions) : null,
+    }))
+}
+
 // Simpan hasil parser. parsed = { meta, rows } dari parseGmvMaxFile.
 //
 // ATOMIK sejak migrasi 0049: satu panggilan RPC gmvmax_upload_snapshot →
