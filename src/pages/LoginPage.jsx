@@ -45,7 +45,10 @@ export default function LoginPage() {
         const { data, error } = await signUp(email.trim(), password)
         if (error) throw error
         if (data?.user && !data.session) {
-          setInfo('Akun dibuat. Cek email kamu untuk konfirmasi sebelum login.')
+          // Alamatnya ikut ditampilkan: salah ketik email adalah cara paling
+          // umum "email konfirmasi tidak sampai", dan tanpa ditampilkan orang
+          // menunggu di alamat yang benar sementara emailnya ke alamat lain.
+          setInfo(`Akun dibuat. Kami mengirim tautan konfirmasi ke ${email.trim()} — buka tautan itu dulu, baru bisa masuk. Cek juga folder spam.`)
         }
       }
     } catch (err) {

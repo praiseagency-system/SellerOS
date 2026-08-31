@@ -14,7 +14,11 @@ export default function Ketentuan() {
           SellerOS adalah alat bantu analitik dan pengelolaan iklan untuk seller e-commerce,
           disediakan oleh {penyedia}. Dengan memakainya, kamu menyetujui ketentuan di halaman ini.
         </p>
-        <p>Akun saat ini dibuat lewat undangan. Kamu bertanggung jawab menjaga kerahasiaan akses akunmu.</p>
+        <p>
+          Pendaftaran terbuka untuk umum. Alamat email wajib dikonfirmasi lewat tautan yang kami
+          kirim sebelum akun bisa dipakai — ini juga yang membuat undangan tim aman terikat pada
+          alamat tujuannya. Kamu bertanggung jawab menjaga kerahasiaan akses akunmu.
+        </p>
       </Bagian>
 
       <Bagian judul="Angka yang ditampilkan bersifat informasional">
