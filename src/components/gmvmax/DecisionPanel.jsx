@@ -65,6 +65,53 @@ const H = ({ children, sub }) => <div className="mb-3"><span className="text-sm 
 // Peta status rekomendasi → jenis eksperimen (untuk tombol "Jadikan eksperimen").
 const STATUS_TO_EXP = { SCALE: 'MANUAL_BOOST', BOOST: 'MANUAL_BOOST', OBSERVE: 'OTHER_APPROVED', KILL: 'CREATIVE_EXCLUSION', MAINTAIN: 'OTHER_APPROVED' }
 
+// Kesimpulan hari ini SAJA — dipasang di kepala tab "Aksi Hari Ini".
+//
+// Sampai 8 Sep 2026 vonis harian tinggal di tabnya sendiri sementara tombol
+// eksekusinya ada di tab lain, dengan dua kosakata untuk hal yang sama
+// (SCALE/BOOST/KILL/OBSERVE vs Naikkan/Hentikan). Yang naik ke sini hanya
+// kalimat kesimpulannya; rincian per modul tetap di panel penuh.
+//
+// DIAM TOTAL bila belum ada data (loading/error/kosong/tabel belum ada): isi
+// tab adalah kartu kerja di bawahnya, jadi pesan kosong di posisi teratas cuma
+// mendorong hal penting ke bawah tanpa memberi tahu apa pun.
+export function DecisionVerdictBanner({ onOpenFull }) {
+  const [s, setS] = useState({ loading: true })
+  useEffect(() => {
+    let live = true
+    loadLatestDecision()
+      .then(r => live && setS({ loading: false, ...r }))
+      .catch(() => live && setS({ loading: false, error: true }))
+    return () => { live = false }
+  }, [])
+
+  if (s.loading || s.error || s.empty || s.available === false) return null
+
+  const topAction = (s.skills?.GMVMAX_SKILL_09?.payload?.primary_actions || [])[0]
+  const topDiag = (s.skills?.GMVMAX_SKILL_04?.payload?.diagnoses || [])[0]
+  const v = verdictFor(topAction?.status)
+  const kalimat = topAction?.explanation || topAction?.title_en || topAction?.title
+    || (topDiag ? `${topDiag.observed_outcome} — ${topDiag.candidate_driver}.` : 'Tak ada perubahan yang disarankan hari ini.')
+
+  return (
+    <div className={`rounded-xl border ${v.wrap} border-l-4 p-4 relative overflow-hidden`}>
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${v.bar}`} />
+      <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${v.chip}`}>{v.label}</span>
+        <span className={`text-sm ${v.subtxt}`}>{v.sub}</span>
+        <span className="ml-auto text-[11px] text-ink-faint">{s.date}</span>
+      </div>
+      <p className="text-[15px] text-ink-strong leading-relaxed">{kalimat}</p>
+      {onOpenFull && (
+        <button onClick={onOpenFull}
+          className="mt-2.5 text-xs text-ink-muted underline underline-offset-2 hover:text-ink">
+          Lihat rincian per modul
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function DecisionPanel({ onExperiment }) {
   const [s, setS] = useState({ loading: true })
   const [busy, setBusy] = useState(false)

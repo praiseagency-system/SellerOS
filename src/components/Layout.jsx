@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   LayoutGrid, Calculator, TrendingUp,
   ChevronsLeft, ChevronsRight, ChevronDown,
-  BarChart3, Menu, Package, Megaphone, Home, Activity, Settings, Sparkles,
+  Menu, Package, Megaphone, Home, Settings, Sparkles,
   LayoutDashboard, PlaySquare, Users, Upload, LineChart, ClipboardList, Rocket
 } from 'lucide-react'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
@@ -40,8 +40,11 @@ const NAV = [
       // Sinyal yang memang berguna (eligibility tenant) diangkat ke
       // Pengaturan → Integrasi lewat <EligibilityAlert>.
       { id: 'gmv_log',       icon: ClipboardList },
-      // Stub display-only — belum ada route; TIDAK terhubung ke worker/sync.
-      { id: 'ads',           icon: Activity, soon: true },
+      // 'ads' (Ads Performance) DILEPAS dari nav 8 Sep 2026 — stub display-only
+      // tanpa route, tak terhubung worker/sync. Selagi ini alat internal, tanda
+      // "Soon" itu penanda roadmap; sejak pendaftaran dibuka untuk umum
+      // (31 Agu 2026) ia jadi janji kepada orang yang tak bisa kita jelaskan.
+      // Kembalikan barisnya begitu halamannya benar-benar ada.
     ],
   },
   {
@@ -55,7 +58,7 @@ const NAV = [
       { id: 'calculator',  icon: Calculator },
       { id: 'products',    icon: Package },
       { id: 'campaign',    icon: Megaphone },
-      { id: 'reports',     icon: BarChart3,  soon: true },
+      // 'reports' (Laporan Penjualan) dilepas dengan alasan yang sama dgn 'ads'.
     ],
   },
 ]
