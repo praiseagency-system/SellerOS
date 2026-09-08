@@ -1,28 +1,23 @@
 // AI Insight — rule-based (bukan model AI eksternal).
-// Tab "Rekomendasi Aksi" berisi pekerjaan NYATA yang bisa diantre ke 🔔 (Opsi B:
-// kartu per jenis pekerjaan). Bedanya dgn keluaran Skills yang bertanda
-// DESCRIPTIVE_ONLY: di sini tiap butir punya tombol dan membawa sidik kondisi
-// sebagai kait untuk loop belajar.
+//
+// DUA tab (sejak 8 Sep 2026, sebelumnya enam — alasan & peta id lama ada di
+// utils/insightTabs.js):
+//   · Aksi Hari Ini   — vonis harian + kartu kerja yang bisa diantre ke 🔔.
+//     Bedanya dgn keluaran Skills yang bertanda DESCRIPTIVE_ONLY: tiap butir di
+//     sini punya tombol dan membawa sidik kondisi sebagai kait loop belajar.
+//   · Bukti & Riwayat — eksperimen + aksi yang dikerjakan di Seller Centre.
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, fmtRpC, fmtRoasX, tiktokVideoUrl, VideoIdLink } from '../../components/gmvmax/ui'
-import DecisionPanel from '../../components/gmvmax/DecisionPanel'
+import DecisionPanel, { DecisionVerdictBanner } from '../../components/gmvmax/DecisionPanel'
 import ExperimentPanel from '../../components/gmvmax/ExperimentPanel'
 import OutOfBandPanel from '../../components/gmvmax/OutOfBandPanel'
 import ActionCards from '../../components/gmvmax/ActionCards'
 import { VideoBoostDialog, VideoExcludeDialog } from '../../components/gmvmax/VideoExecActions'
 import { buildRecommendations, totalActions } from '../../utils/gmvmaxRecommendations'
+import { MAIN_TABS, DEFAULT_TAB, resolveInsightTab, isHiddenTab, hiddenTabLabel } from '../../utils/insightTabs'
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
 import { loadLatestSparkAuth } from '../../data/gmvmaxSparkAuth'
-
-const TABS = [
-  { id: 'di', label: 'Decision Intelligence' },
-  { id: 'exp', label: 'Eksperimen' },
-  { id: 'luar', label: 'Di luar aplikasi' },
-  { id: 'insight', label: 'Insight' },
-  { id: 'plan', label: 'Rekomendasi Aksi' },
-  { id: 'framework', label: 'Winning Framework' },
-]
 
 const ACTION_BADGE = {
   scale: { text: '★ SCALE', cls: 'text-emerald-500 border-emerald-500/40' },
@@ -33,7 +28,9 @@ const ACTION_BADGE = {
 
 export default function InsightPage({ onOpenUpload, onNavigate }) {
   const { insights, hasData, videos, thresholds, periodName, productNames } = useGmvMax()
-  const [tab, setTab] = useState('insight')
+  // Deep-link `?tab=` dibaca saat render pertama — App.jsx membersihkan query di
+  // efeknya, dan efek anak berjalan lebih dulu, jadi jangan pindahkan ke useEffect.
+  const [tab, setTab] = useState(() => resolveInsightTab(new URLSearchParams(window.location.search).get('tab')))
   const [expDraft, setExpDraft] = useState(null)   // draft eksperimen dari DecisionPanel
 
   // Bahan rekomendasi yang TIDAK ada di context: setelan campaign (utk campaign
@@ -87,26 +84,37 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />
 
-  // Tombol "Jadikan eksperimen" di DecisionPanel → bawa draft ke tab Eksperimen.
-  const startExperiment = (draft) => { setExpDraft(draft); setTab('exp') }
+  // Tombol "Jadikan eksperimen" di DecisionPanel → bawa draft ke tab buktinya.
+  const startExperiment = (draft) => { setExpDraft(draft); setTab('bukti') }
 
   return (
     <div className="p-6 space-y-5">
       <p className="text-sm text-ink-faint -mt-2">Analisis pola data GMV MAX — bukan model AI eksternal.</p>
       <div className="flex gap-1.5 flex-wrap">
-        {TABS.map(t => (
+        {MAIN_TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
               ${tab === t.id ? 'bg-accent/15 text-accent' : 'text-ink-muted hover:bg-fill/5'}`}>{t.label}</button>
         ))}
       </div>
 
-      {tab === 'di' && <DecisionPanel onExperiment={startExperiment} />}
-      {tab === 'exp' && <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} onNavigate={onNavigate} />}
-      {tab === 'luar' && <OutOfBandPanel />}
-      {tab === 'insight' && <InsightCards cards={insights.cards} />}
-      {tab === 'plan' && (
-        <div className="space-y-6">
+      {/* Panel diagnostik yang dibuka lewat ?tab= — beri tahu di mana pengguna
+          berada, dan jalan pulangnya, karena tabnya tak ada di baris di atas. */}
+      {isHiddenTab(tab) && (
+        <div className="flex items-center gap-3 flex-wrap rounded-xl border border-line/25 bg-fill/5 px-3 py-2">
+          <p className="text-xs text-ink-muted flex-1">
+            <b className="text-ink">{hiddenTabLabel(tab)}</b> — panel diagnostik, sengaja tak ada di baris tab.
+          </p>
+          <button onClick={() => setTab(DEFAULT_TAB)}
+            className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5">
+            Kembali ke Aksi Hari Ini
+          </button>
+        </div>
+      )}
+
+      {tab === 'aksi' && (
+        <div className="space-y-5">
+          <DecisionVerdictBanner onOpenFull={() => setTab('di')} />
           {queuedMsg && (
             <div className="flex items-start gap-2 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2.5">
               <p className="text-xs text-violet-200 flex-1">{queuedMsg}</p>
@@ -115,12 +123,23 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
           )}
           <ActionCards groups={groups} total={totalActions(groups)} snapshotDate={periodName}
             exec={exec} thresholds={thresholds} />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint mb-2">Panduan umum</p>
-            <ActionPlan steps={insights.plan} />
+        </div>
+      )}
+
+      {/* Urutan disengaja: yang masih berjalan dulu (eksperimen), baru sumber
+          terbesarnya (boost yang dijalankan sendiri di Seller Centre). */}
+      {tab === 'bukti' && (
+        <div className="space-y-6">
+          <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} onNavigate={onNavigate} />
+          <div className="pt-5 border-t border-line/15 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-ink-muted">Terjadi di luar aplikasi</h3>
+            <OutOfBandPanel />
           </div>
         </div>
       )}
+
+      {tab === 'di' && <DecisionPanel onExperiment={startExperiment} />}
+      {tab === 'insight' && <InsightCards cards={insights.cards} />}
       {tab === 'framework' && <Framework items={insights.framework} />}
       {dialog?.kind === 'BOOST' && (
         <VideoBoostDialog video={dialog.video} placement={dialog.placement} storeId={dialog.storeId}
@@ -179,19 +198,10 @@ function Card({ c }) {
   )
 }
 
-function ActionPlan({ steps }) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-      {steps.map(s => (
-        <div key={s.step} className="bg-surface rounded-2xl border border-line/10 p-4 shadow-sm">
-          <p className="text-xs font-bold text-accent tracking-wider">STEP {String(s.step).padStart(2, '0')}</p>
-          <p className="font-semibold text-ink-strong mt-1 mb-2">{s.title}</p>
-          <p className="text-xs text-ink-muted leading-relaxed">{s.detail}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
+// Blok "Panduan umum" (4 langkah dari actionPlan()) DIHAPUS 8 Sep 2026: isinya
+// nasihat statis — "cek ROAS tiap Senin" — yang duduk persis di bawah kartu
+// kerja nyata dan mengencerkannya. Generatornya di utils/gmvmaxInsights.js
+// dibiarkan hidup; context masih menghitungnya, tak ada yang perlu dibongkar.
 
 function Framework({ items }) {
   return (

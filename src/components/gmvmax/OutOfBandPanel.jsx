@@ -55,6 +55,10 @@ function matchExperiment(exps, s) {
 
 export default function OutOfBandPanel() {
   const [state, setState] = useState({ loading: true, sessions: [], changes: [], exps: [], lastSnapshot: null })
+  // Sejak panel ini berbagi tab dengan Eksperimen (8 Sep 2026), riwayat setelan
+  // ditutup dulu: ia blok paling jarang dibuka, tapi satu-satunya yang punya
+  // jejak sejak Juni — jadi disembunyikan, bukan dibuang.
+  const [showChanges, setShowChanges] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -199,9 +203,13 @@ export default function OutOfBandPanel() {
 
       {state.changes.length > 0 && (
         <section className="space-y-2">
-          <SectionTitle right={<span className="text-[11px] text-ink-faint">90 hari terakhir</span>}>
-            Perubahan setelan campaign
-          </SectionTitle>
+          <button onClick={() => setShowChanges(v => !v)} aria-expanded={showChanges}
+            className="w-full flex items-center gap-2 rounded-lg px-1 py-1.5 hover:bg-fill/5 transition-colors">
+            <span className="text-ink-faint text-[10px] w-3">{showChanges ? '▾' : '▸'}</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">Perubahan setelan campaign</span>
+            <span className="ml-auto text-[11px] text-ink-faint">90 hari · {state.changes.length} perubahan</span>
+          </button>
+          {showChanges && (<>
           <TableScroll>
             <table className="w-full text-[11.5px]">
               <thead><tr className="text-left text-ink-faint">
@@ -225,6 +233,7 @@ export default function OutOfBandPanel() {
             </table>
           </TableScroll>
           <Pager {...pgC} unit="perubahan" />
+          </>)}
         </section>
       )}
     </div>
