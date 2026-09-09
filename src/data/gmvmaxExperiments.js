@@ -78,8 +78,21 @@ export async function updateExperiment(id, patch) {
   return data
 }
 
-export async function stopExperiment(id) {
-  return updateExperiment(id, { status: 'STOPPED', conclusion: 'STOPPED' })
+// Tutup catatan eksperimen. TIDAK menyentuh TikTok — boost-nya sendiri
+// dihentikan di Seller Centre, bukan dari sini.
+//
+// Versi lama (stopExperiment) selalu menulis conclusion='STOPPED', sehingga
+// menutup pemenang MENGHAPUS vonis yang sudah susah payah dihitung tiap pagi —
+// kartu yang tadinya "Pemenang berkelanjutan" berubah jadi "Dihentikan" tanpa
+// jejak. Sekarang vonis yang sudah ada dipertahankan dan statusnya jadi
+// CONCLUDED; 'STOPPED' hanya dipakai bila memang belum ada vonis sama sekali.
+export async function closeExperiment(exp) {
+  const id = typeof exp === 'string' ? exp : exp?.id
+  const vonis = typeof exp === 'object' ? exp?.conclusion : null
+  if (!id) throw new Error('eksperimen tak valid')
+  return vonis
+    ? updateExperiment(id, { status: 'CONCLUDED' })
+    : updateExperiment(id, { status: 'STOPPED', conclusion: 'STOPPED' })
 }
 
 export async function deleteExperiment(id) {
