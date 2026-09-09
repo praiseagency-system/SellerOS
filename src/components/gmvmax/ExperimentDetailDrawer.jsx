@@ -1,7 +1,7 @@
 // Drawer detail eksperimen (Opsi B — artifact 0d787418). Semua isi dari data
 // yang sudah ada: checkpoint tersimpan, vonis live + alasannya (classifyOutcome),
 // deret harian loadExperimentDaily, potret sesi boost (migrasi 0048).
-// PENCATATAN MURNI: Hentikan/Hapus hanya mengubah baris eksperimen — TIDAK
+// PENCATATAN MURNI: Tutup/Hapus hanya mengubah baris eksperimen — TIDAK
 // menghentikan boost/campaign di TikTok (eksekusi nyata = jalur approval).
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -431,7 +431,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           )}
         </div>
         <p className="mt-2 text-[11px] text-ink-faint">
-          Hentikan/Hapus hanya mengubah catatan eksperimen — TIDAK menghentikan boost/campaign di TikTok. Menghentikan iklan tetap lewat Seller Centre atau tombol eksekusi ber-approval.
+          Tutup/Hapus hanya mengubah catatan eksperimen — TIDAK menghentikan boost/campaign di TikTok. Menghentikan iklan tetap lewat Seller Centre atau tombol eksekusi ber-approval.
         </p>
       </aside>
     </div>,
