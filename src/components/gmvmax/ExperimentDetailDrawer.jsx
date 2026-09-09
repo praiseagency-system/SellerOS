@@ -12,7 +12,7 @@ import { loadVideoMeta } from '../../data/gmvmaxVideoMeta'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { getThresholds } from '../../data/gmvmaxSettings'
 import {
-  stopExperiment, deleteExperiment, EXPERIMENT_TYPES, CONCLUSION_LABEL,
+  closeExperiment, deleteExperiment, EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
 import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
 import { fmtRp, fmtRpC, fmtRoasX } from './ui'
@@ -423,7 +423,9 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           )}
           {e.status === 'RUNNING' && (
             <span className="ml-auto flex items-center gap-2">
-              <button disabled={busy} onClick={() => act(stopExperiment)} className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1.5 hover:bg-fill/5 disabled:opacity-50">Hentikan</button>
+              <button disabled={busy} onClick={() => act(() => closeExperiment(e))}
+                title="Menutup catatan eksperimen saja — tidak menghentikan iklan di TikTok"
+                className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1.5 hover:bg-fill/5 disabled:opacity-50">Tutup</button>
               <button disabled={busy} onClick={() => { if (confirm('Hapus eksperimen ini?')) act(deleteExperiment) }} className="text-xs text-red-400/80 border border-red-500/20 rounded-lg px-2.5 py-1.5 hover:bg-red-500/5 disabled:opacity-50">Hapus</button>
             </span>
           )}

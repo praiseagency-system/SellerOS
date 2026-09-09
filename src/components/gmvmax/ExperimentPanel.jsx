@@ -4,11 +4,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { EmptyState } from './ui'
 import {
-  listExperiments, createExperiment, stopExperiment, deleteExperiment,
+  listExperiments, createExperiment, closeExperiment, deleteExperiment,
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
+import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
 import { getThresholds, saveExperimentRoiFloor } from '../../data/gmvmaxSettings'
 import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
+import { experimentAlerts, indexSessions, latestSeenOf } from '../../utils/gmvmaxExperimentAlerts'
 import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
@@ -31,6 +33,9 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   const [showForm, setShowForm] = useState(!!draft)
   const [roiFloor, setRoiFloor] = useState(null)
   const [detail, setDetail] = useState(null) // eksperimen yang dibuka di drawer
+  // Potret sesi boost — dipakai HANYA untuk peringatan "boost tak terlihat lagi".
+  // Gagal memuat sengaja didiamkan: peringatan itu tambahan, bukan syarat panel.
+  const [sessions, setSessions] = useState([])
 
   const reload = useCallback(() => {
     setState(s => ({ ...s, loading: true }))
@@ -39,6 +44,7 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { reload() }, [reload])
   useEffect(() => { getThresholds().then(t => setRoiFloor(t.experimentRoiFloor ?? null)).catch(() => {}) }, [])
+  useEffect(() => { loadBoostSessions({ days: 60 }).then(setSessions).catch(() => {}) }, [])
 
   if (state.loading) return <p className="text-sm text-ink-muted py-10 text-center">Memuat eksperimen…</p>
   if (state.error) return <EmptyState title="Gagal memuat" desc={state.error} />
@@ -47,11 +53,22 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   const rows = state.rows || []
   const running = rows.filter(r => r.status === 'RUNNING')
   const done = rows.filter(r => r.status !== 'RUNNING')
+  const bySession = indexSessions(sessions)
+  const latestSeen = latestSeenOf(sessions)
+  const alertsFor = (e) => experimentAlerts({
+    exp: e, session: e.source_session_id ? bySession.get(String(e.source_session_id)) : null, latestSeen,
+  })
+  const perluDitutup = running.filter(e => alertsFor(e).length > 0).length
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm text-ink-muted">{running.length} berjalan · {done.length} selesai</p>
+        <p className="text-sm text-ink-muted">
+          {running.length} berjalan · {done.length} selesai
+          {perluDitutup > 0 && (
+            <span className="text-amber-400"> · {perluDitutup} kemungkinan sudah usai</span>
+          )}
+        </p>
         <button onClick={() => setShowForm(v => !v)} className="text-sm px-3 py-1.5 rounded-lg bg-accent/15 text-accent font-medium hover:bg-accent/20">
           {showForm ? 'Tutup form' : '+ Eksperimen baru'}
         </button>
@@ -67,11 +84,14 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
 
       {running.length > 0 && <div className="space-y-2">
         <h4 className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Berjalan</h4>
-        {running.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} onChanged={reload} onOpen={() => setDetail(e)} />)}
+        {running.map(e => (
+          <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} alerts={alertsFor(e)}
+            onChanged={reload} onOpen={() => setDetail(e)} />
+        ))}
       </div>}
       {done.length > 0 && <div className="space-y-2">
         <h4 className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Selesai</h4>
-        {done.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} onChanged={reload} onOpen={() => setDetail(e)} />)}
+        {done.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} alerts={[]} onChanged={reload} onOpen={() => setDetail(e)} />)}
       </div>}
 
       {detail && (
@@ -138,7 +158,40 @@ function ExperimentForm({ draft, onDone, onCancel }) {
   )
 }
 
-function ExperimentCard({ e, roiFloor, onChanged, onOpen }) {
+// Peringatan pada kartu. SENGAJA tak mengubah status apa pun: mesin memberi
+// tahu, pemilik yang memutuskan (lihat gmvmaxExperimentAlerts.js).
+function AlertRow({ alerts, conclusion, busy, onClose }) {
+  if (!alerts.length) return null
+  const ended = alerts.find(a => a.kind === 'BOOST_ENDED')
+  const passed = alerts.find(a => a.kind === 'WINDOW_PASSED')
+  return (
+    <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2">
+      <span className="text-amber-400 text-xs leading-5">⚠</span>
+      <div className="flex-1 min-w-0">
+        {ended && (
+          <p className="text-[11.5px] text-amber-200/90 leading-relaxed">
+            Boost-nya <b>tak terlihat lagi</b> pada potret {fmtD(ended.latestSeen)} — terakhir terlihat {fmtD(ended.lastSeen)}.
+            Kemungkinan sudah ditarik di Seller Centre.
+          </p>
+        )}
+        {passed && (
+          <p className="text-[11.5px] text-amber-200/90 leading-relaxed">
+            Jendela 7 hari sudah lewat — eksperimen ini berumur {passed.days} hari
+            {conclusion ? <> dan vonisnya sudah keluar: <b>{CONCLUSION_LABEL[conclusion] || conclusion}</b>.</> : '.'}
+          </p>
+        )}
+        <p className="text-[10.5px] text-ink-faint mt-1">Statusnya tetap kubiarkan RUNNING — kamu yang menutup.</p>
+      </div>
+      <button disabled={busy} onClick={onClose}
+        title="Menutup catatan eksperimen saja — tidak menghentikan iklan di TikTok"
+        className="shrink-0 text-[11px] font-medium text-amber-200 border border-amber-500/40 rounded-lg px-2.5 py-1 hover:bg-amber-500/10 disabled:opacity-50">
+        Tutup
+      </button>
+    </div>
+  )
+}
+
+function ExperimentCard({ e, roiFloor, alerts = [], onChanged, onOpen }) {
   const [busy, setBusy] = useState(false)
   const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
   // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
@@ -172,9 +225,14 @@ function ExperimentCard({ e, roiFloor, onChanged, onOpen }) {
           ))}
         </div>
       )}
+      <AlertRow alerts={alerts} conclusion={oc.conclusion !== 'DATA_INSUFFICIENT' ? oc.conclusion : null}
+        busy={busy} onClose={(ev) => { ev.stopPropagation(); act(() => closeExperiment(e)) }} />
+
       {e.status === 'RUNNING' && (
         <div className="mt-2.5 flex items-center gap-2">
-          <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); act(stopExperiment) }} className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5 disabled:opacity-50">Hentikan</button>
+          <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); act(() => closeExperiment(e)) }}
+            title="Menutup catatan eksperimen saja — tidak menghentikan iklan di TikTok"
+            className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5 disabled:opacity-50">Tutup</button>
           <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); if (confirm('Hapus eksperimen ini?')) act(deleteExperiment) }} className="text-xs text-red-400/80 border border-red-500/20 rounded-lg px-2.5 py-1 hover:bg-red-500/5 disabled:opacity-50">Hapus</button>
         </div>
       )}
