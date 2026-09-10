@@ -13,6 +13,75 @@ import { requestCreativeExclude, requestBoostSession, requestSessionStop, reques
 import SessionSchedule from './SessionSchedule'
 import { defaultSchedule } from '../../utils/gmvmaxSchedule'
 import { blankAgg, addInto, finalize } from '../../utils/gmvmaxRollup'
+import { loadCampaignSettingsHistory } from '../../data/gmvmaxCampaignSettings'
+import { membershipForCampaign } from '../../utils/gmvmaxProductMembership'
+
+// ── Keanggotaan produk di campaign ──────────────────────────────────────────
+// Jam diambil dari modify_time TikTok BILA ADA; itu cap perubahan TERAKHIR pada
+// campaign, jadi kalimatnya menyebut tanggal potret sebagai fakta utama dan jam
+// sebagai tambahan — bukan sebaliknya.
+const fmtTgl = (d) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '—')
+const fmtJam = (iso) => (iso
+  ? new Date(iso).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + ' WIB'
+  : null)
+
+function MembershipChip({ entry, first }) {
+  if (!entry) return null
+  const cls = 'ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-medium align-middle whitespace-nowrap'
+  if (entry.present && entry.sinceFirstSnapshot) {
+    return (
+      <span className={`${cls} border border-line/20 text-ink-faint`}
+        title={`Sudah ada di potret pertama kami (${fmtTgl(first)}) — tanggal pastinya ditambahkan tidak kami ketahui`}>
+        sejak {fmtTgl(first)}
+      </span>
+    )
+  }
+  if (entry.present && entry.addedOn) {
+    const jam = fmtJam(entry.addedModifyTime)
+    return (
+      <span className={`${cls} border border-emerald-500/30 text-emerald-400`}
+        title={jam ? `Terlihat masuk pada potret ${fmtTgl(entry.addedOn)}; jam ${jam} adalah perubahan terakhir campaign hari itu menurut TikTok` : 'Terlihat masuk pada potret ini'}>
+        + ditambahkan {fmtTgl(entry.addedOn)}{jam ? ` · ${jam}` : ''}
+      </span>
+    )
+  }
+  if (!entry.present && entry.removedOn) {
+    const jam = fmtJam(entry.removedModifyTime)
+    return (
+      <span className={`${cls} border border-red-500/30 text-red-400`}
+        title={jam ? `Sudah tak ada pada potret ${fmtTgl(entry.removedOn)}; jam ${jam} adalah perubahan terakhir campaign hari itu menurut TikTok` : 'Sudah tak ada pada potret ini'}>
+        − dicabut {fmtTgl(entry.removedOn)}{jam ? ` · ${jam}` : ''}
+      </span>
+    )
+  }
+  return null
+}
+
+// Produk yang dicabut TAPI tak punya baris di tabel performa (tak ada belanja
+// pada periode terpilih) — tanpa baris ini mereka lenyap tanpa jejak.
+function RemovedProducts({ membership, shown, nameOf }) {
+  const hilang = [...membership.byProduct.values()]
+    .filter(e => !e.present && e.removedOn && !shown.has(String(e.pid)))
+    .sort((a, b) => String(b.removedOn).localeCompare(String(a.removedOn)))
+  if (!hilang.length) return null
+  return (
+    <div className="mb-5 rounded-lg border border-line/15 bg-fill/[0.03] px-3 py-2">
+      <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1.5">Dicabut dari campaign</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {hilang.map(e => (
+          <span key={e.pid} className="text-[11px] text-ink-muted" title={String(e.pid)}>
+            {nameOf(e.pid)}
+            <span className="text-ink-faint"> · {fmtTgl(e.removedOn)}{fmtJam(e.removedModifyTime) ? ` ${fmtJam(e.removedModifyTime)}` : ''}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-[10px] text-ink-faint mt-1.5">
+        Tak berbelanja pada periode terpilih, jadi tak muncul di tabel di atas. Riwayat mulai {fmtTgl(membership.first)}
+        {membership.gaps > 0 ? ` · ${membership.gaps} hari tak terpotret` : ''}.
+      </p>
+    </div>
+  )
+}
 
 // Urutan kolom mengikuti siklus GMV Max Pro (mockup terpilih).
 const COLS = [
@@ -96,6 +165,20 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
     fetchSessions(campaign.campaign_id).then(x => { if (alive) setSessions(x) }).catch(() => { if (alive) setSessions([]) })
     return () => { alive = false }
   }, [campaign])
+
+  // Riwayat keanggotaan produk (kapan masuk/keluar campaign). 120 hari: potret
+  // setting terkumpul sejak 22 Jun 2026, dan pertanyaannya justru sering soal
+  // produk yang dicabut lama. Gagal muat didiamkan — ini keterangan tambahan,
+  // bukan syarat tabelnya tampil.
+  const [csRows, setCsRows] = useState(null)
+  useEffect(() => {
+    let alive = true
+    loadCampaignSettingsHistory({ days: 120 }).then(r => { if (alive) setCsRows(r) }).catch(() => { if (alive) setCsRows([]) })
+    return () => { alive = false }
+  }, [])
+  const membership = useMemo(
+    () => membershipForCampaign(csRows || [], campaign?.campaign_id),
+    [csRows, campaign])
 
   async function submitBoost() {
     setBoostBusy(true); setSessMsg(null)
@@ -287,6 +370,12 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
 
   // Hook wajib dipanggil sebelum early-return di bawah; saat campaign null
   // memo `data` belum tentu terisi, jadi dijaga dengan fallback array kosong.
+  // pid yang PUNYA baris di tabel performa — produk dicabut yang tak ada di sini
+  // tak boleh hilang diam-diam, jadi dilaporkan terpisah di bawah tabel.
+  const perfPids = useMemo(
+    () => new Set((data?.perf || []).map(x => String(x.pid))),
+    [data])
+  const pidName = (pid) => productNames[pid] || `…${String(pid).slice(-8)}`
   const pgPerf = usePaged(data?.perf || [])
   const pgItems = usePaged(data?.items || [])
 
@@ -421,6 +510,7 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
                 <tr key={it.pid} className="border-t border-line/8">
                   <td className="py-2.5 pr-3 text-ink-strong font-medium max-w-[260px]" title={String(it.pid)}>
                     <span className="truncate inline-block max-w-[200px] align-middle">{it.name}</span>
+                    {!it.isCard && <MembershipChip entry={membership.byProduct.get(String(it.pid))} first={membership.first} />}
                     {!it.isCard && campaignOn && (
                       <button onClick={() => { setBoostFor({ kind: 'MAX_DELIVERY', spuId: it.pid, name: it.name }); setBoostBudget(String(SESSION_MIN_BUDGET_IDR.MAX_DELIVERY)); setSessMsg(null) }}
                         title="Max Delivery utk produk ini — bakar budget tambahan demi volume (via 🔔)"
@@ -472,6 +562,8 @@ export default function CampaignStatusMatrix({ campaign, onClose, inline = false
         )}
         </>
         )}
+
+        <RemovedProducts membership={membership} shown={perfPids} nameOf={pidName} />
 
         <p className="text-[10px] uppercase tracking-widest text-ink-faint font-semibold mb-1">Matriks status materi</p>
         <div className="">
