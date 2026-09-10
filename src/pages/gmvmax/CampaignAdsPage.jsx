@@ -160,7 +160,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
         )
       })()}
 
-      <ChangeLog changes={changes} />
+      <ChangeLog changes={changes} productNames={productNames} />
 
       {dialog && dialog.action !== 'PRODUCTS' && (
         <CampaignActionDialog action={dialog.action} campaign={dialog.campaign}
@@ -331,7 +331,7 @@ function DeltaChange({ c }) {
   )
 }
 
-function ChangeLog({ changes }) {
+function ChangeLog({ changes, productNames = {} }) {
   const fmtVal = (v, money) => (v == null || v === '' ? '—' : money ? fmtRp(Number(v)) : String(v))
   return (
     <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
@@ -339,7 +339,7 @@ function ChangeLog({ changes }) {
         <History className="w-4 h-4 text-blue-400" /> Perubahan setting
       </h3>
       <p className="text-[11px] text-ink-faint mb-3">
-        Terdeteksi otomatis dari perbandingan snapshot harian. Muncul juga di Log Optimasi.
+        Terdeteksi otomatis dari perbandingan snapshot harian pukul 07:30 WIB — bukan catatan waktu dari TikTok.
       </p>
       {changes.length === 0 ? (
         <p className="text-xs text-ink-faint py-4 text-center">
@@ -358,6 +358,23 @@ function ChangeLog({ changes }) {
                   <DeltaChange c={c} />
                   <span className="text-ink-faint"> · {c.campaign_name}</span>
                 </p>
+                {/* Produk: diffSettings sudah menghitung `added`/`removed` sejak
+                    hari pertama, tapi kartunya cuma menampilkan jumlah ("2 produk
+                    → 3 produk") — sehingga "produk mana" harus ditebak sendiri. */}
+                {(c.added?.length || c.removed?.length) ? (
+                  <p className="text-[11px] mt-0.5 leading-relaxed">
+                    {c.added?.map(pid => (
+                      <span key={`a${pid}`} className="text-emerald-400 mr-2" title={String(pid)}>
+                        + {productNames[pid] || `…${String(pid).slice(-8)}`}
+                      </span>
+                    ))}
+                    {c.removed?.map(pid => (
+                      <span key={`r${pid}`} className="text-red-400 mr-2" title={String(pid)}>
+                        − {productNames[pid] || `…${String(pid).slice(-8)}`}
+                      </span>
+                    ))}
+                  </p>
+                ) : null}
                 <p className="text-[10px] text-ink-faint">{c.date}</p>
               </div>
             </div>
