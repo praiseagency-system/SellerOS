@@ -16,7 +16,7 @@ import { systemPrompt } from '../_lib/assistant/prompt.js'
 import { MAX_THREADS, threadTitleFromMessage, sanitizeMessages } from '../../src/utils/assistantThread.js'
 
 const MODEL = (process.env.ASSISTANT_MODEL || '').trim() || 'claude-haiku-4-5'
-const MAX_TOOL_ROUNDS = 6
+const MAX_TOOL_ROUNDS = 8
 const MAX_PERSIST = 60     // pesan per thread yang disimpan
 const HISTORY_TURNS = 12   // giliran terakhir yang dikirim ke model
 const MAX_CHARS = 2000
@@ -115,6 +115,8 @@ export default async function handler(req, res) {
   const client = new Anthropic()
   const messages = history.map(m => ({ role: m.role, content: m.content }))
 
+  const t0 = Date.now()
+  const trace = [] // ringkasan tiap putaran → log Vercel: tool apa, berapa byte, error apa
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       // Streaming lalu dirakit jadi satu Message: wajib untuk gateway 9router
@@ -128,6 +130,7 @@ export default async function handler(req, res) {
       const toolUses = response.content.filter(b => b.type === 'tool_use')
       if (response.stop_reason !== 'tool_use' || toolUses.length === 0) {
         const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+        console.log('[assistant] done', JSON.stringify({ ws: workspaceId, rounds: round, ms: Date.now() - t0, stop: response.stop_reason, trace }))
         return respond(text || '(tidak ada jawaban)')
       }
 
@@ -144,12 +147,27 @@ export default async function handler(req, res) {
           resultText = JSON.stringify({ error: e?.message || 'Tool gagal.' }); isError = true
         }
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: resultText, is_error: isError })
+        trace.push({ r: round, tool: tu.name, bytes: resultText.length, err: isError ? resultText.slice(0, 120) : undefined })
       }
       messages.push({ role: 'user', content: toolResults })
     }
-    return respond('Maaf, butuh terlalu banyak langkah untuk menjawab itu. Coba pertanyaan yang lebih spesifik ya.')
+
+    // Jatah putaran habis: JANGAN buang data yang sudah terkumpul. Satu panggilan
+    // terakhir TANPA tools memaksa model merangkum apa yang ada (Pikat langsung
+    // minta maaf di sini; di SellerOS pertanyaan strategis lazim butuh 5-6 tool
+    // berurutan, jadi jawaban parsial jauh lebih berguna daripada penolakan).
+    messages.push({
+      role: 'user',
+      content: 'Jatah pemanggilan tool sudah habis. Jawab SEKARANG dari data yang sudah kamu dapat di atas, tanpa memanggil tool lagi. Sebutkan singkat kalau ada bagian yang belum sempat dicek.',
+    })
+    const final = await client.messages
+      .stream({ model: MODEL, max_tokens: 2048, system: systemPrompt(new Date(), promptCtx), messages })
+      .finalMessage()
+    const text = final.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+    console.log('[assistant] done-after-limit', JSON.stringify({ ws: workspaceId, rounds: MAX_TOOL_ROUNDS, ms: Date.now() - t0, trace }))
+    return respond(text || 'Maaf, butuh terlalu banyak langkah untuk menjawab itu. Coba pertanyaan yang lebih spesifik ya.')
   } catch (e) {
-    console.error('[assistant] error', e)
+    console.error('[assistant] error', e, JSON.stringify({ ws: workspaceId, ms: Date.now() - t0, trace }))
     const desc = e instanceof Anthropic.APIError ? `AI error (${e.status})` : 'Terjadi kesalahan internal.'
     res.status(500).json({ error: 'assistant_failed', error_description: desc })
   }
