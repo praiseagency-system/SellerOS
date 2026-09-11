@@ -103,7 +103,16 @@ begin
       order by a.attnum
     loop
       cols := cols||', '||quote_ident(col.attname);
-      vals := vals||', '||pg_temp.isi(t.t, col.attname, col.ty);
+      -- Tabel per-orang (mis. ai_conversations sejak 0059) mengikat baris ke
+      -- user_id DAN workspace. Baris uji diberikan kepada si viewer supaya
+      -- klaim (2) "anggota melihat barisnya" tetap bermakna: policy yang benar
+      -- meloloskan pemiliknya, orang luar tetap buta, dan viewer tetap tak
+      -- bisa menghapus (uji 3) karena tulis butuh can_ws_write.
+      if col.attname = 'user_id' then
+        vals := vals||', '||quote_literal('11110000-0000-0000-0000-000000000002')||'::uuid';
+      else
+        vals := vals||', '||pg_temp.isi(t.t, col.attname, col.ty);
+      end if;
     end loop;
     execute format('insert into public.%I (%s) values (%s)', t.t, cols, vals);
   end loop;

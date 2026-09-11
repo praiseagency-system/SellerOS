@@ -10,6 +10,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HeaderControls from './HeaderControls'
 import ApprovalBell from './gmvmax/ApprovalBell'
 import HistoryPanel from './HistoryPanel'
+import AiAssistant from './AiAssistant'
 import { useLang } from '../contexts/LanguageContext'
 import { useQuadrant } from '../contexts/QuadrantContext'
 
@@ -469,6 +470,9 @@ export default function Layout({
           onLoad={handleLoadSession}
         />
       )}
+
+      {/* AI Assistant — tombol melayang + panel chat, global di semua halaman */}
+      <AiAssistant key={currentWorkspace?.id ?? 'none'} currentPage={currentPage} currentWorkspace={currentWorkspace} />
     </div>
   )
 }

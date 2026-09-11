@@ -175,3 +175,32 @@ html.light .hover-lift:hover { box-shadow: 0 8px 28px rgba(0, 0, 0, 0.09); }
 .tbl-sticky-first tbody tr:hover td:first-child {
   background: color-mix(in srgb, rgb(var(--c-fill)) 5%, rgb(var(--c-surface)));
 }
+
+/* ===== Maskot AI Assistant (disalin dari globals.css Pikat): kepala mengangguk
+   + mata lirik & berkedip + lampu antena berdenyut. ===== */
+@keyframes robot-nod {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(6deg); }
+  65% { transform: rotate(-4deg); }
+}
+.robot-nod { transform-origin: 50% 82%; animation: robot-nod 3s ease-in-out infinite; }
+@keyframes robot-look {
+  0%, 25% { transform: translateX(0); }
+  45%, 65% { transform: translateX(3.5px); }
+  80%, 100% { transform: translateX(-2.5px); }
+}
+.robot-eyes { transform-box: fill-box; transform-origin: center; animation: robot-look 3.4s ease-in-out infinite; }
+@keyframes robot-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  93%, 96% { transform: scaleY(0.12); }
+}
+.robot-eye { transform-box: fill-box; transform-origin: center; animation: robot-blink 3.6s ease-in-out infinite; }
+.robot-eye-2 { animation-delay: 60ms; }
+@keyframes robot-antenna {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.robot-antenna { animation: robot-antenna 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .robot-nod, .robot-eyes, .robot-eye, .robot-antenna { animation: none; }
+}
