@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickBoostTarget, undecidedReason } from '../gmvmaxBoostTarget'
+import { pickBoostTarget, pickExcludeTarget, undecidedReason } from '../gmvmaxBoostTarget'
 
 const pl = (o) => ({
   campaignId: o.c, campaignName: o.cn || `campaign ${o.c}`, productId: o.p,
@@ -92,5 +92,60 @@ describe('undecidedReason', () => {
   it('membedakan kasus belum ada omzet sama sekali', () => {
     expect(undecidedReason([pl({ c: '1', p: 'A' }), pl({ c: '2', p: 'B' })]))
       .toMatch(/belum ada omzet di 2 campaign/)
+  })
+})
+
+// Sasaran EXCLUDE mengikuti jejak BELANJA. Kasus nyata yang melahirkan tangga
+// ini: video 7681339687058885906 (11 Sep 2026) — 100% omzetnya lahir di Glance
+// & Custom (cost 0), tapi Rp96.810 terbakar di Exotic Blue. Tangga boost memilih
+// Glance, TikTok menerima perintahnya, dan pemborosannya jalan terus.
+describe('pickExcludeTarget', () => {
+  it('memilih campaign tempat UANG TERBAKAR, bukan tempat omzet lahir', () => {
+    const video = vid([
+      pl({ c: 'glance', p: 'A', rev: 133000, cost: 0 }),
+      pl({ c: 'exotic', p: 'B', rev: 0, cost: 96810 }),
+    ])
+    expect(pickBoostTarget({ video }).placement.campaignId).toBe('glance')   // benar untuk boost
+    const r = pickExcludeTarget({ video })
+    expect(r.confident).toBe(true)
+    expect(r.placement.campaignId).toBe('exotic')
+    expect(r.reason).toMatch(/belanja/)
+  })
+
+  it('satu pasangan saja → langsung, tanpa bertanya', () => {
+    const r = pickExcludeTarget({ video: vid([pl({ c: '1', p: 'A', cost: 50000 })]) })
+    expect(r.confident).toBe(true)
+    expect(r.placement.campaignId).toBe('1')
+  })
+
+  it('belanja terbagi rata → menyerah dengan jujur, user yang memilih', () => {
+    const r = pickExcludeTarget({ video: vid([
+      pl({ c: '1', p: 'A', cost: 50000 }), pl({ c: '2', p: 'B', cost: 50000 }),
+    ]) })
+    expect(r.confident).toBe(false)
+    expect(r.options).toHaveLength(2)
+  })
+
+  it('belum ada belanja di mana pun → jatuh ke satu-satunya yang tayang', () => {
+    const r = pickExcludeTarget({ video: vid([
+      pl({ c: '1', p: 'A', st: 'DELIVERING' }), pl({ c: '2', p: 'B', st: 'EXCLUDED' }),
+    ]) })
+    expect(r.confident).toBe(true)
+    expect(r.placement.campaignId).toBe('1')
+  })
+
+  it('menghormati saringan eligible — campaign nonaktif tak pernah jadi sasaran', () => {
+    const r = pickExcludeTarget({
+      video: vid([pl({ c: 'mati', p: 'A', cost: 900000 }), pl({ c: 'hidup', p: 'B', cost: 100000 })]),
+      eligible: (p) => p.campaignId !== 'mati',
+    })
+    expect(r.placement.campaignId).toBe('hidup')
+  })
+
+  it('alasan "belum pasti" menyebut belanja, bukan omzet', () => {
+    expect(undecidedReason([pl({ c: '1', p: 'A', cost: 5 }), pl({ c: '2', p: 'B', cost: 5 })], 'EXCLUDE'))
+      .toBe('belanjanya terbagi di 2 campaign')
+    expect(undecidedReason([pl({ c: '1', p: 'A' }), pl({ c: '2', p: 'B' })], 'EXCLUDE'))
+      .toMatch(/belum ada belanja di 2 campaign/)
   })
 })

@@ -11,19 +11,30 @@
 //
 // PENONJOLAN ANGKA. Godaannya membesarkan ROAS — ia paling dramatis. Tapi ROAS
 // adalah rasio, dan pada data nyata 512,8x lahir dari cost Rp2.391: penyebut
-// sekecil itu membuatnya berayun liar. Yang kokoh adalah ORDER (konversi
-// berulang) dan OMZET (uang yang betul-betul masuk). Maka dua itu yang
-// dibesarkan; ROAS diberi warna menurut TINGKATnya, bukan menurut besarnya.
+// sekecil itu membuatnya berayun liar. Yang kokoh adalah angka rupiah. Maka
+// yang ditebalkan adalah angka yang menjawab pertanyaan kartunya: COST di kartu
+// "video boros" (berapa yang terbakar), OMZET di kartu kandidat boost (uang yang
+// betul-betul masuk). ROAS selalu diberi warna menurut TINGKATnya, bukan besarnya.
+//
+// THUMBNAIL. Judul TikTok kerap caption berulang — pada data 12 Sep 2026 ada
+// baris yang judulnya cuma "#parfum #parfume #parfumereccomended" dan satu lagi
+// yang judulnya ID telanjang. Deretan begitu tampak kembar dan salah-klik jadi
+// mudah; gambar 48×72 membedakannya sebelum satu kata pun dibaca.
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Copy, Check } from 'lucide-react'
-import { useSortableRows, SortTh, tiktokVideoUrl } from './ui'
+import { X, Copy, Check, Bell } from 'lucide-react'
+import { useSortableRows, SortTh, tiktokVideoUrl, VideoIdLink } from './ui'
 import { VideoExecCell } from './VideoExecActions'
-import { pickBoostTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
+import VideoThumb from './VideoThumb'
+import { pickBoostTarget, pickExcludeTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
 import TargetChooserRow from './TargetChooserRow'
 
 const n = (v) => Math.round(Number(v) || 0).toLocaleString('id-ID')
 const KOLOM_VIDEO = new Set(['BOOST_CANDIDATE', 'WASTEFUL', 'AUTH_NEEDED_EARNING'])
+// Pekerjaan kartu menentukan jejak mana yang dipakai memilih campaign sasaran:
+// menaikkan belanja mengikuti OMZET, menghentikan belanja mengikuti BELANJA.
+const KIND_OF = { WASTEFUL: 'EXCLUDE' }
+const kindOf = (key) => KIND_OF[key] || 'BOOST'
 
 // Warna ROAS menurut tingkatnya. Ambangnya sama dengan yang dipakai di seluruh
 // aplikasi supaya "hijau" berarti hal yang sama di mana pun.
@@ -39,27 +50,41 @@ const ACC_VIDEO = {
 const ACC_EXPIRED = { habis: (it) => Date.parse(it.rawEnd || 0) || 0 }
 const ACC_IDLE = { budget: (it) => it.budget ?? 0 }
 
-function TargetCell({ video, exec, onGanti }) {
-  const t = pickBoostTarget({
-    video, anchorSpu: exec.anchorOf?.(video.videoId) || null, eligible: (p) => !!exec.resolve(p),
-  })
+function TargetCell({ video, exec, kind, onGanti }) {
+  const eligible = (p) => !!exec.resolve(p)
+  const t = kind === 'EXCLUDE'
+    ? pickExcludeTarget({ video, eligible })
+    : pickBoostTarget({ video, anchorSpu: exec.anchorOf?.(video.videoId) || null, eligible })
   if (!t.options.length) return null
+  // SATU BARIS, selalu. Nama produk GMV Max panjang ("AsterixSty Exotic Blue -
+  // Extrait de Parfum Aroma Fresh Pear Juicy …") dan saat dibiarkan membungkus
+  // ia menambah dua baris pada SETIAP baris tabel — daftar 6 video jadi setinggi
+  // layar. Teksnya dipotong, versi utuhnya ada di tooltip; tombolnya di luar
+  // potongan supaya tak ikut terpangkas.
   if (!t.confident) {
+    const teks = `Sasaran belum pasti — ${undecidedReason(t.options, kind)}`
     return (
-      <span className="block text-[10px] text-ink-faint mt-1 break-words">
-        Sasaran belum pasti — {undecidedReason(t.options)} ·{' '}
-        <button onClick={onGanti} className="text-blue-300 hover:underline">pilih sasaran</button>
+      <span className="flex items-center gap-1 mt-1 text-[11px] min-w-0">
+        <span className="truncate text-ink-faint" title={teks}>{teks} ·</span>
+        <button onClick={onGanti} className="shrink-0 text-blue-300 hover:underline">pilih sasaran</button>
       </span>
     )
   }
   const nama = exec.productName?.(t.placement.productId) || t.placement.productId
+  const campaign = t.placement.campaignName || t.placement.campaignId
   return (
-    <span className="block text-[10px] mt-1 break-words">
-      <span className="text-blue-300">→ {t.placement.campaignName || t.placement.campaignId}</span>
-      <span className="text-ink-muted"> · {nama}</span>
-      <span className="text-ink-faint"> — {t.reason}</span>
+    <span className="flex items-center gap-1 mt-1 text-[11px] min-w-0">
+      {/* Urutan bagian PENTING: campaign → ALASAN → nama produk. Nama produk
+          GMV Max paling panjang, jadi bila ia diletakkan sebelum alasan, justru
+          alasannya yang hilang ditelan potongan — padahal "kenapa campaign ini"
+          adalah satu-satunya bagian yang membuat sasaran bisa dipercaya. */}
+      <span className="truncate" title={`→ ${campaign} — ${t.reason} · ${nama}`}>
+        <span className="text-blue-300">→ {campaign}</span>
+        <span className="text-ink-faint"> — {t.reason}</span>
+        <span className="text-ink-muted"> · {nama}</span>
+      </span>
       {t.options.length > 1 && (
-        <> · <button onClick={onGanti} className="text-blue-300 hover:underline">ganti</button></>
+        <button onClick={onGanti} className="shrink-0 text-blue-300 hover:underline">ganti</button>
       )}
     </span>
   )
@@ -69,6 +94,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
   const [chooser, setChooser] = useState(null)   // { id, kind }
   const [copied, setCopied] = useState(false)
   const isVideo = KOLOM_VIDEO.has(group.key)
+  const kind = kindOf(group.key)
   const acc = isVideo ? ACC_VIDEO : group.key === 'AUTH_EXPIRED' ? ACC_EXPIRED : ACC_IDLE
   const { sorted, sort, toggle } = useSortableRows(group.items, acc)
 
@@ -85,13 +111,13 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
-        className="glass-modal w-full max-w-5xl max-h-[85vh] flex flex-col rounded-2xl border border-line/15 shadow-2xl">
+        className="glass-modal w-full max-w-6xl max-h-[90vh] flex flex-col rounded-2xl border border-line/15 shadow-2xl">
 
-        <div className="flex items-start gap-3 px-5 py-4 border-b border-line/10">
+        <div className="flex items-start gap-3 px-6 py-4 border-b border-line/10">
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-ink-strong">{group.title}</h3>
-            <p className="text-xs text-ink-muted mt-0.5">{group.items.length} baris · {group.subtitle}</p>
-            {group.footnote && <p className="text-[11px] text-ink-faint mt-1">{group.footnote}</p>}
+            <h3 className="text-[15px] font-semibold text-ink-strong">{group.title}</h3>
+            <p className="text-[13px] text-ink-muted mt-1">{group.items.length} baris · {group.subtitle}</p>
+            {group.footnote && <p className="text-[12px] text-ink-faint mt-1.5">{group.footnote}</p>}
           </div>
           {group.key === 'AUTH_EXPIRED' && (
             <button onClick={copyOutreach}
@@ -103,7 +129,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
           <button onClick={onClose} className="text-ink-faint hover:text-ink p-1"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="flex-1 overflow-auto px-5 py-3">
+        <div className="flex-1 overflow-auto px-6 py-3">
           {/* table-fixed WAJIB: pada tata letak otomatis, max-width sel diabaikan
               dan baris sasaran yang panjang membuat kolom melar sampai tabelnya
               melampaui jendela (judul video ikut terdorong keluar layar).
@@ -112,15 +138,19 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
               tetap bisa melebihi lebar tabel dan meluber lagi.
               min-w menjaga angka tetap terbaca di layar sempit: biar wadahnya
               yang menggeser, bukan kolomnya yang gepeng. */}
-          <table className="w-full text-sm table-fixed min-w-[740px]">
+          <table className="w-full text-sm table-fixed min-w-[820px]">
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/10">
                 <th className="py-2.5 pr-3 font-medium">{group.key === 'CAMPAIGN_IDLE_BUDGET' ? 'CAMPAIGN' : 'VIDEO'}</th>
+                {/* Urutan kolom: COST → OMZET → ROAS → ORDER (permintaan user,
+                    12 Sep 2026). Uang yang keluar dibaca lebih dulu, baru uang
+                    yang masuk, lalu rasionya; jumlah order jadi penutup karena
+                    paling jarang menentukan keputusan di layar ini. */}
                 {isVideo && <>
-                  <SortTh label="ORDER" sortKey="orders" sort={sort} onSort={toggle} className="w-16" />
+                  <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} className="w-28" />
                   <SortTh label="OMZET" sortKey="revenue" sort={sort} onSort={toggle} className="w-28" />
-                  <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} className="w-32" />
-                  <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} className="w-20" />
+                  <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} className="w-16" />
+                  <SortTh label="ORDER" sortKey="orders" sort={sort} onSort={toggle} className="w-14" />
                 </>}
                 {group.key === 'AUTH_EXPIRED' && <>
                   <th className="py-2.5 px-3 font-medium">AKUN</th>
@@ -137,35 +167,61 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
               {sorted.map(it => {
                 const m = it.video?.lifetime
                 const baris = (
-                  <tr key={it.id} className="border-b border-line/5 align-top">
+                  <tr key={it.id} className="border-b border-line/5 align-top hover:bg-fill/[0.025] transition-colors">
                     <td className="py-3 pr-3 align-top">
-                      <a href={tiktokVideoUrl(it.id, it.akun) || '#'} target="_blank" rel="noreferrer"
-                        title={it.judul}
-                        className="block text-xs text-ink hover:text-ink-strong truncate">{it.judul}</a>
-                      {it.akun && group.key !== 'AUTH_EXPIRED' && (
-                        <span className="block text-[10px] text-ink-faint">@{it.akun}</span>
-                      )}
-                      {isVideo && it.video && exec && (
-                        <TargetCell video={it.video} exec={exec}
-                          onGanti={() => setChooser({ id: it.id, kind: 'BOOST' })} />
-                      )}
+                      <div className="flex items-start gap-3">
+                        {/* Thumbnail = pengenalan materi tanpa membaca. Judul TikTok
+                            sering caption berulang ("#parfum #parfume …") sehingga
+                            deretan baris tampak kembar; gambarnya yang membedakan.
+                            Baris campaign tak punya video, jadi tak punya gambar. */}
+                        {group.key !== 'CAMPAIGN_IDLE_BUDGET' && (
+                          <VideoThumb videoId={it.id} account={it.akun} title={it.judul} size="row" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <a href={tiktokVideoUrl(it.id, it.akun) || '#'} target="_blank" rel="noreferrer"
+                            title={it.judul}
+                            className="block text-[13px] leading-snug text-ink hover:text-ink-strong truncate">{it.judul}</a>
+                          {/* ID video dibawa serta, bukan hanya judulnya: judul bisa
+                              sama persis antar-video (caption yang diulang kreator)
+                              dan cuma ID yang bisa dicocokkan ke Ads Manager, spark
+                              code, atau baris approval saat mengecek. */}
+                          {group.key !== 'CAMPAIGN_IDLE_BUDGET' && (
+                            <span className="flex items-center gap-1 text-[11px] text-ink-faint mt-1">
+                              {it.akun && group.key !== 'AUTH_EXPIRED' && <span>@{it.akun} ·</span>}
+                              <VideoIdLink videoId={it.id} account={it.akun} full />
+                            </span>
+                          )}
+                          {isVideo && it.video && exec && (
+                            <TargetCell video={it.video} exec={exec} kind={kind}
+                              onGanti={() => setChooser({ id: it.id, kind })} />
+                          )}
+                        </div>
+                      </div>
                     </td>
 
                     {isVideo && <>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-sm font-bold text-ink-strong">{m?.orders || 0}</td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-sm font-bold text-ink-strong">{n(m?.revenue)}</td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-xs text-ink-faint whitespace-nowrap">
+                      {/* COST ditebalkan di kartu boros: di sanalah pertanyaannya
+                          ("berapa yang terbakar"). Di kartu lain OMZET yang tebal
+                          — fakta uang masuk, bukan rasio yang bisa berayun. */}
+                      <td className={`py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap ${kind === 'EXCLUDE' ? 'text-[15px] font-bold text-ink-strong' : 'text-[13px] text-ink-faint'}`}>
                         {n(m?.cost)}
                         {it.thin && (
                           <span className="ml-1.5 px-1.5 py-px rounded text-[9px] bg-amber-500/15 text-amber-400"
                             title={`Cost di bawah ${n(group.minSpend)} — ROAS-nya belum bisa dipercaya, tapi ordernya yang berulang tetap membuatnya layak`}>tipis</span>
                         )}
                       </td>
-                      <td className={`py-3 px-3 text-right font-mono tabular-nums text-xs ${roasTone(m?.roas, thresholds.roasGood, thresholds.roasBad)}`}>
+                      <td className={`py-2.5 px-3 text-right font-mono tabular-nums ${kind === 'EXCLUDE' ? 'text-[13px] text-ink-muted' : 'text-[15px] font-bold text-ink-strong'}`}>{n(m?.revenue)}</td>
+                      <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-[13px] ${roasTone(m?.roas, thresholds.roasGood, thresholds.roasBad)}`}>
                         {m?.roas == null ? '—' : `${m.roas.toFixed(1)}×`}
                       </td>
-                      <td className="py-3 pl-3 text-right whitespace-nowrap">
-                        {exec && (
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-[13px] text-ink-muted">{m?.orders || 0}</td>
+                      <td className="py-2.5 pl-3 text-right whitespace-nowrap">
+                        {it.pending ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-amber-500/30 text-amber-400"
+                            title="Exclude untuk video ini sudah diajukan dan masih menunggu persetujuanmu di 🔔">
+                            <Bell className="w-2.5 h-2.5" /> menunggu
+                          </span>
+                        ) : exec && (
                           <VideoExecCell video={it.video} resolve={exec.resolve}
                             onBoost={exec.onBoost} onExclude={exec.onExclude}
                             anchorOf={exec.anchorOf} productName={exec.productName}
@@ -199,7 +255,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
           </table>
         </div>
 
-        <div className="px-5 py-3 border-t border-line/10">
+        <div className="px-6 py-3 border-t border-line/10">
           <p className="text-[11px] text-ink-faint">
             Semua aksi lewat antrean 🔔 — tak ada yang menyentuh TikTok tanpa persetujuanmu.
           </p>

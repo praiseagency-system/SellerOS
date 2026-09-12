@@ -12,6 +12,7 @@ import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gm
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
 import { listActionLog, addActionLog, deleteActionLog } from '../data/gmvmaxActionLog'
+import { APPROVAL_EVENT } from '../data/gmvmaxApprovals'
 import { listBoost, upsertBoost, deleteBoost } from '../data/gmvmaxBoost'
 import { loadVideoMeta, saveVideoMeta } from '../data/gmvmaxVideoMeta'
 import { listProducts } from '../data/calcProducts'
@@ -119,6 +120,17 @@ export function GmvMaxProvider({ children }) {
     })()
     return () => { active = false }
   }, [reload])
+
+  // Keputusan di 🔔 menulis jurnal langsung ke DB (bukan lewat logAction), jadi
+  // state ini tak ikut berubah sendiri. Dengarkan sinyalnya: tanpa ini halaman
+  // Log Optimasi tampak "tak mencatat apa-apa" sampai browser di-refresh.
+  useEffect(() => {
+    const onChanged = () => {
+      listActionLog().then(setActionLog).catch(() => { /* biarkan daftar lama */ })
+    }
+    window.addEventListener(APPROVAL_EVENT, onChanged)
+    return () => window.removeEventListener(APPROVAL_EVENT, onChanged)
+  }, [])
 
   // ── Kesegaran: segarkan daftar snapshot di latar ────────────────────────────
   // Daftar imports dimuat sekali saat app dibuka; tab yang dibiarkan terbuka tak

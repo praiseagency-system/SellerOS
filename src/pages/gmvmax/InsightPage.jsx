@@ -18,6 +18,7 @@ import { buildRecommendations, totalActions } from '../../utils/gmvmaxRecommenda
 import { MAIN_TABS, DEFAULT_TAB, resolveInsightTab, isHiddenTab, hiddenTabLabel } from '../../utils/insightTabs'
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
 import { loadLatestSparkAuth } from '../../data/gmvmaxSparkAuth'
+import { loadCreativeExcludeState, APPROVAL_EVENT } from '../../data/gmvmaxApprovals'
 
 const ACTION_BADGE = {
   scale: { text: '★ SCALE', cls: 'text-emerald-500 border-emerald-500/40' },
@@ -37,6 +38,7 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
   // mati ber-budget + store_id/status eksekusi) & potret otorisasi spark.
   const [settings, setSettings] = useState(null)
   const [sparkAuth, setSparkAuth] = useState([])
+  const [excludes, setExcludes] = useState(null)
   const [dialog, setDialog] = useState(null)
   const [queuedMsg, setQueuedMsg] = useState(null)
 
@@ -50,6 +52,18 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
     loadLatestSparkAuth().then(r => { if (alive) setSparkAuth(r) }).catch(() => {})
     return () => { alive = false }
   }, [])
+
+  // Jejak antrean 🔔 — dimuat sekali, lalu DIBACA ULANG tiap ada aksi diajukan
+  // atau diputuskan. Inilah yang membuat baris hilang dari daftar begitu kamu
+  // menyetujui exclude-nya, tanpa menunggu snapshot besok pagi.
+  const muatExcludes = useCallback(() => {
+    loadCreativeExcludeState().then(setExcludes).catch(() => {})
+  }, [])
+  useEffect(() => {
+    muatExcludes()
+    window.addEventListener(APPROVAL_EVENT, muatExcludes)
+    return () => window.removeEventListener(APPROVAL_EVENT, muatExcludes)
+  }, [muatExcludes])
 
   const cset = useMemo(
     () => (settings ? new Map(settings.map(r => [r.campaign_id, r])) : null),
@@ -78,8 +92,8 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
   } : null), [cset, resolve, anchor, productNames])
 
   const groups = useMemo(
-    () => buildRecommendations({ videos, thresholds, settings: settings || [], sparkAuth }),
-    [videos, thresholds, settings, sparkAuth])
+    () => buildRecommendations({ videos, thresholds, settings: settings || [], sparkAuth, excludes }),
+    [videos, thresholds, settings, sparkAuth, excludes])
 
   if (!hasData) return <EmptyState title="Belum ada data" desc="Upload dulu di Input Data."
     action={<button onClick={onOpenUpload} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">Upload Data</button>} />

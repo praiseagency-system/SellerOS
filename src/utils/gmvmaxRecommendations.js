@@ -43,9 +43,35 @@ const sig = (o) => o   // penanda niat: objek ini disimpan apa adanya ke approva
 // thresholds  : { roasGood, roasBad, spendFloor }
 // settings    : baris campaign_settings terbaru per campaign
 // sparkAuth   : baris gmvmax_spark_auth potret terbaru
+// excludes    : { keluar:Set, menunggu:Set } kunci `${videoId}|${campaignId}`
+//               dari loadCreativeExcludeState() — jejak antrean 🔔.
 export function buildRecommendations({
-  videos = [], thresholds = {}, settings = [], sparkAuth = [], now = Date.now(),
+  videos = [], thresholds = {}, settings = [], sparkAuth = [], excludes = null, now = Date.now(),
 } = {}) {
+  const keluar = excludes?.keluar || new Set()
+  const menunggu = excludes?.menunggu || new Set()
+
+  // Sebuah PENEMPATAN (video × campaign) dianggap sudah keluar rotasi bila
+  // TikTok sudah melaporkannya EXCLUDED, ATAU perintahnya sudah disetujui di 🔔.
+  // Dua sumber, bukan satu, karena keduanya datang pada waktu berbeda: approval
+  // detik ini, snapshot besok pagi.
+  const tempatKeluar = (videoId, p) =>
+    String(p.delivery || '').toUpperCase() === 'EXCLUDED' || keluar.has(`${videoId}|${p.campaignId}`)
+  const berbelanja = (v) => (v.placements || []).filter(p => (p.cost || 0) > 0)
+
+  // Video dianggap selesai dikerjakan hanya bila SEMUA penempatan yang masih
+  // membelanjakan uang sudah dihentikan. Video yang ikut dua campaign dan baru
+  // dikeluarkan dari satu masih membakar uang di sisanya — ia tetap ditagih.
+  const sudahDihentikan = (v) => {
+    const bs = berbelanja(v)
+    if (bs.length) return bs.every(p => tempatKeluar(v.videoId, p))
+    return String(v.delivery || '').toUpperCase() === 'EXCLUDED'
+  }
+  const sedangDiantre = (v) => {
+    const bs = berbelanja(v)
+    const list = bs.length ? bs : (v.placements || [])
+    return list.some(p => menunggu.has(`${v.videoId}|${p.campaignId}`))
+  }
   const floor = Number(thresholds.spendFloor) || 50000
   const good = Number(thresholds.roasGood) || 6
   const bad = Number(thresholds.roasBad) || 4
@@ -128,11 +154,21 @@ export function buildRecommendations({
     }))
 
   // 5) Boros — belanja sudah besar tapi tak menghasilkan.
-  const wasteful = videos
+  const borosSemua = videos
     .filter(v => v.lifetime.cost >= floor && (v.lifetime?.roas ?? 0) < bad)
     .sort((a, b) => b.lifetime.cost - a.lifetime.cost)
+  // Yang sudah dihentikan DIKELUARKAN dari daftar kerja — bukan disembunyikan
+  // diam-diam: jumlahnya diungkap di catatan kaki. Cost & ROAS-nya tetap besar
+  // (angka sebulan tak bisa ditarik kembali), jadi tanpa saringan ini baris itu
+  // akan menagih selamanya pekerjaan yang sudah beres.
+  const borosSelesai = borosSemua.filter(sudahDihentikan)
+  const wasteful = borosSemua
+    .filter(v => !sudahDihentikan(v))
     .map(v => ({
       id: v.videoId, judul: v.title || v.videoId, akun: v.account, video: v,
+      // Sudah diajukan tapi belum kamu setujui — barisnya tetap tampil (uangnya
+      // masih terbakar) tapi tombolnya diganti keterangan supaya tak diantre dua kali.
+      pending: sedangDiantre(v),
       detail: `cost ${Math.round(v.lifetime.cost).toLocaleString('id-ID')} · ROAS ${v.lifetime.roas == null ? '—' : v.lifetime.roas.toFixed(1) + '×'}`,
       signature: sig({
         aksi: 'CREATIVE_EXCLUDE', status: v.delivery || null,
@@ -163,7 +199,12 @@ export function buildRecommendations({
       title: 'Video boros yang perlu dihentikan',
       subtitle: wasteful.length ? `cost ≥${rp(floor)} tapi ROAS di bawah ${bad} · total ${rp(costBoros)}` : `cost ≥${rp(floor)} tapi ROAS di bawah ${bad}`,
       actionLabel: 'Buka daftar',
-      emptyNote: 'Tidak ada — cost besar semuanya masih menghasilkan.' },
+      footnote: borosSelesai.length
+        ? `${borosSelesai.length} video disembunyikan: sudah keluar dari rotasi (${rp(borosSelesai.reduce((s, v) => s + (v.lifetime?.cost || 0), 0))} cost bulan ini sudah berhenti). Tak ada lagi yang bisa dikerjakan di sana.`
+        : null,
+      emptyNote: borosSelesai.length
+        ? `Semua video boros sudah dikeluarkan dari rotasi — ${borosSelesai.length} disembunyikan.`
+        : 'Tidak ada — cost besar semuanya masih menghasilkan.' },
 
     { key: 'AUTH_NEEDED_EARNING', tone: 'amber', items: earning,
       title: 'Butuh izin, tapi sudah menghasilkan omzet',
