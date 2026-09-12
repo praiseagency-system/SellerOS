@@ -90,7 +90,7 @@ export default function ActionCards({ groups, total, snapshotDate, exec, thresho
 
       {openGroup && (
         <ActionListWindow group={openGroup} exec={exec} thresholds={thresholds}
-          onClose={() => setOpenKey(null)} />
+          periodLabel={snapshotDate} onClose={() => setOpenKey(null)} />
       )}
     </div>
   )

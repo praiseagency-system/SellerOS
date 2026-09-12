@@ -90,7 +90,7 @@ function TargetCell({ video, exec, kind, onGanti }) {
   )
 }
 
-export default function ActionListWindow({ group, exec, thresholds = {}, onClose }) {
+export default function ActionListWindow({ group, exec, thresholds = {}, periodLabel = null, onClose }) {
   const [chooser, setChooser] = useState(null)   // { id, kind }
   const [copied, setCopied] = useState(false)
   const isVideo = KOLOM_VIDEO.has(group.key)
@@ -117,6 +117,19 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
           <div className="min-w-0 flex-1">
             <h3 className="text-[15px] font-semibold text-ink-strong">{group.title}</h3>
             <p className="text-[13px] text-ink-muted mt-1">{group.items.length} baris · {group.subtitle}</p>
+            {/* RENTANG DISEBUT EKSPLISIT. Tanpa ini daftar tampak seperti daftar
+                tetap, padahal cost/omzet/ROAS-nya dijumlah HANYA untuk rentang
+                terpilih — dan video yang sama bisa lolos di satu rentang lalu
+                hilang di rentang lain. Kejadian nyata 12 Sep 2026: @abarrr ber-ROAS
+                1,2 pada 5–11 Sep (boros) tapi 7,73 pada 1–11 Sep (tidak boros),
+                karena omzet 2 jutanya lahir di 1–4 Sep. Itu bukan data hilang,
+                tapi tak ada apa pun di layar yang mengatakannya. */}
+            {periodLabel && (
+              <p className="text-[12px] text-ink-faint mt-1.5">
+                Dinilai atas <span className="text-ink-muted">{periodLabel}</span> — angka & vonisnya ikut rentang ini,
+                jadi video yang sama bisa masuk daftar di satu rentang dan tidak di rentang lain.
+              </p>
+            )}
             {group.footnote && <p className="text-[12px] text-ink-faint mt-1.5">{group.footnote}</p>}
           </div>
           {group.key === 'AUTH_EXPIRED' && (
