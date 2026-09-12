@@ -157,20 +157,24 @@ const range = arr => (arr.length ? { min: Math.min(...arr), max: Math.max(...arr
 export function priceStats(items, productMap) {
   const act = activeItems(items)
   const originals = [], camps = [], discs = []
-  let missingOriginal = 0
+  let missingOriginal = 0, above = 0
   for (const it of act) {
     const price = +it.price || 0
     if (price > 0) camps.push(price)
     const normal = originalPrice(it, productMap)
     if (normal) originals.push(normal); else missingOriginal++
     const d = discountPct(it, productMap)
-    if (d != null) discs.push(d)
+    // Rentang diskon hanya dari varian yang MEMANG turun harga; varian yang
+    // harga campaign-nya di atas harga normal dihitung terpisah supaya
+    // ringkasannya tak jadi "diskon −101–42%" yang tak terbaca.
+    if (d != null) { if (d >= 0.5) discs.push(d); else if (d <= -0.5) above++ }
   }
   return {
     count: act.length,
     original: range(originals),
     campaign: range(camps),
     discount: range(discs),
+    above,
     missingOriginal,
   }
 }

@@ -93,8 +93,17 @@ describe('rentang harga untuk ringkasan kartu', () => {
     expect(s.campaign.min).toBe(50000)
   })
 
+  it('varian yang harga campaign-nya di atas harga normal dihitung terpisah', () => {
+    const s = priceStats([IT(0, 127001), IT(0, 160000)], MAP)
+    expect(s.above).toBe(1)
+    // rentang diskon hanya dari yang benar-benar turun harga
+    expect(Math.round(s.discount.min)).toBe(15)
+    expect(Math.round(s.discount.max)).toBe(15)
+  })
+
   it('rentang null bila tak ada data sama sekali', () => {
     const s = priceStats([], MAP)
+    expect(s.above).toBe(0)
     expect(s.original).toBeNull()
     expect(s.campaign).toBeNull()
     expect(s.discount).toBeNull()
