@@ -23,7 +23,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Copy, Check, Bell } from 'lucide-react'
-import { useSortableRows, SortTh, tiktokVideoUrl, VideoIdLink } from './ui'
+import { useSortableRows, SortTh, tiktokVideoUrl, VideoIdLink, DeliveryBadge } from './ui'
 import { VideoExecCell } from './VideoExecActions'
 import VideoThumb from './VideoThumb'
 import { pickBoostTarget, pickExcludeTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
@@ -138,7 +138,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
               tetap bisa melebihi lebar tabel dan meluber lagi.
               min-w menjaga angka tetap terbaca di layar sempit: biar wadahnya
               yang menggeser, bukan kolomnya yang gepeng. */}
-          <table className="w-full text-sm table-fixed min-w-[820px]">
+          <table className="w-full text-sm table-fixed min-w-[920px]">
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/10">
                 <th className="py-2.5 pr-3 font-medium">{group.key === 'CAMPAIGN_IDLE_BUDGET' ? 'CAMPAIGN' : 'VIDEO'}</th>
@@ -146,7 +146,12 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                     12 Sep 2026). Uang yang keluar dibaca lebih dulu, baru uang
                     yang masuk, lalu rasionya; jumlah order jadi penutup karena
                     paling jarang menentukan keputusan di layar ini. */}
+                {/* TAHAP = status pengiriman menurut snapshot TERBARU. Diminta user
+                    12 Sep 2026: kandidat boost tak bisa dinilai tanpa tahu ia sudah
+                    tayang, masih belajar, atau malah sudah dikecualikan — "naikkan
+                    belanjanya" berarti hal yang berbeda di tiap tahap. */}
                 {isVideo && <>
+                  <th className="py-2.5 px-3 font-medium w-28">TAHAP</th>
                   <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} className="w-28" />
                   <SortTh label="OMZET" sortKey="revenue" sort={sort} onSort={toggle} className="w-28" />
                   <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} className="w-16" />
@@ -200,6 +205,9 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                     </td>
 
                     {isVideo && <>
+                      <td className="py-2.5 px-3 align-top">
+                        <DeliveryBadge delivery={it.video?.delivery} compact />
+                      </td>
                       {/* COST ditebalkan di kartu boros: di sanalah pertanyaannya
                           ("berapa yang terbakar"). Di kartu lain OMZET yang tebal
                           — fakta uang masuk, bukan rasio yang bisa berayun. */}
@@ -225,6 +233,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                           <VideoExecCell video={it.video} resolve={exec.resolve}
                             onBoost={exec.onBoost} onExclude={exec.onExclude}
                             anchorOf={exec.anchorOf} productName={exec.productName}
+                            showBlockHint={false}
                             onOpenChange={(k) => setChooser(k ? { id: it.id, kind: k } : null)} />
                         )}
                       </td>
@@ -243,7 +252,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                 )
                 return [baris, chooser?.id === it.id && it.video && exec ? (
                   <TargetChooserRow key={`${it.id}-pilih`} video={it.video} exec={exec}
-                    kind={chooser.kind} colSpan={isVideo ? 6 : 3}
+                    kind={chooser.kind} colSpan={isVideo ? 7 : 3}
                     onPick={(pp) => {
                       setChooser(null)
                       ;(chooser.kind === 'BOOST' ? exec.onBoost : exec.onExclude)(it.video, pp)

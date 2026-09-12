@@ -34,7 +34,7 @@ const BLOCK_HINT = {
 // layout 'cell'   → hanya tombol (tabel padat)
 //        'inline' → tombol + baris sasaran & alasannya (daftar rekomendasi)
 export function VideoExecCell({
-  video, resolve, onBoost, onExclude, anchorOf, onOpenChange,
+  video, resolve, onBoost, onExclude, anchorOf, onOpenChange, showBlockHint = true,
 }) {
   // Sel ini TIDAK menggambar menu pemilih. Elemen ber-posisi absolut di dalam
   // tabel bergulir pasti dipotong wadahnya (bug nyata yang dilaporkan user),
@@ -75,8 +75,13 @@ export function VideoExecCell({
 
   return (
     <div className="inline-flex items-center gap-1">
-      {blocked ? (
-        <span className="text-[10px] text-ink-faint whitespace-nowrap">{BLOCK_HINT[video.delivery] || '—'}</span>
+      {/* Keterangan "kenapa tak bisa di-boost" HANYA bila pemanggil tak punya
+          kolom tahap sendiri. Di jendela daftar aksi kolom TAHAP sudah bilang
+          "Butuh spark"/"Dikecualikan"; mengulanginya di sel aksi membuat satu
+          baris menyebut keadaan yang sama dua kali. */}
+      {blocked ? (showBlockHint
+        ? <span className="text-[10px] text-ink-faint whitespace-nowrap">{BLOCK_HINT[video.delivery] || '—'}</span>
+        : null
       ) : (
         <button onClick={() => go('BOOST')} disabled={perluPemilih(tBoost)}
           title={perluPemilih(tBoost)

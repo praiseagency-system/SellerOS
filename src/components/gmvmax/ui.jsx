@@ -74,7 +74,18 @@ export function RoasBadge({ roas, thresholds, showLabel = true }) {
 
 // Badge status PENGIRIMAN TikTok mentah (Delivering/Excluded/Learning/…).
 // Beda dari StatusBadge (yang = tier penilaian Scale/Watch/Kill).
-export function DeliveryBadge({ delivery }) {
+// Label pendek berbahasa manusia untuk baris padat. Di tabel lebar, teks mentah
+// TikTok ("AUTHORIZATION_NEEDED") masih muat dan lebih tepat untuk dicocokkan ke
+// Ads Manager; di daftar aksi ia memakan seperempat baris, jadi dipendekkan.
+// Kosakatanya disamakan dengan BLOCK_HINT di VideoExecActions supaya satu
+// keadaan tidak punya dua nama di dua layar.
+const DELIVERY_PENDEK = {
+  DELIVERING: 'Tayang', LEARNING: 'Belajar', IN_QUEUE: 'Antre',
+  AUTHORIZATION_NEEDED: 'Butuh spark', EXCLUDED: 'Dikecualikan',
+  REJECTED: 'Ditolak', UNAVAILABLE: 'Tak tersedia', NOT_DELIVERING: 'Tak tayang',
+}
+
+export function DeliveryBadge({ delivery, compact = false }) {
   if (!delivery) return <span className="text-ink-faint text-xs">—</span>
   const t = delivery.toLowerCase()
   const del = (t.includes('deliver') || t.includes('ditayangkan')) && !t.includes('not') && !t.includes('tidak')
@@ -83,9 +94,13 @@ export function DeliveryBadge({ delivery }) {
     : (t.includes('queue') || t.includes('antrean')) ? 'amber'
     : (t.includes('exclud') || t.includes('dikecualikan')) ? 'red'
     : 'muted'
+  const label = compact
+    ? (DELIVERY_PENDEK[String(delivery).toUpperCase().replace(/\s+/g, '_')] || delivery)
+    : delivery
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold ${TONE[tone]}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />{delivery}
+    <span title={compact ? delivery : undefined}
+      className={`inline-flex items-center gap-1 rounded-md font-semibold ${TONE[tone]} ${compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'}`}>
+      <span className={`${compact ? 'w-1 h-1' : 'w-1.5 h-1.5'} rounded-full bg-current opacity-80`} />{label}
     </span>
   )
 }
