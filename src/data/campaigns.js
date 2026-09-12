@@ -25,6 +25,7 @@ function rowToCampaign(r) {
     approvalAccess: r.approval_access || 'private',
     approvalEmails: Array.isArray(r.approval_emails) ? r.approval_emails : [],
     approvalLog: Array.isArray(r.approval_log) ? r.approval_log : [],
+    portalHidden: !!r.portal_hidden,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
