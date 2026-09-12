@@ -123,6 +123,8 @@ function ApprovalBody({ token, email }) {
     setBusyAll(false)
   }
 
+  const portalToken = portalFromUrl() || c.portalToken || ''
+  const portalLink = portalToken ? `/portal?t=${encodeURIComponent(portalToken)}` : null
   const stats = priceStats(c.items, productMap)
   const worst = worstKnownMargin(c.items, productMap, c.voucherConfig)
   const sum = skuApprovalSummary(c.items, c.approvals)
@@ -130,8 +132,11 @@ function ApprovalBody({ token, email }) {
   return (
     <div>
       <div className="mb-4">
-        {portalFromUrl() && (
-          <a href={`/portal?t=${encodeURIComponent(portalFromUrl())}`}
+        {/* Pintu ke daftar campaign lain: dari portal (?p=) atau — untuk yang
+            dikirimi link satu campaign — dari token portal yang ikut dikirim
+            RPC bila email ini memang anggota portal. */}
+        {portalLink && (
+          <a href={portalLink}
             className="inline-flex items-center gap-1 text-[12px] text-ink-muted hover:text-blue-400 mb-2 transition-colors">
             <ChevronLeft className="w-3.5 h-3.5" /> Semua campaign
           </a>
@@ -209,6 +214,7 @@ function ApprovalBody({ token, email }) {
       </div>
       <p className="text-[11px] text-ink-faint text-center mt-5">
         Masuk sebagai {email}. Keputusan tersimpan otomatis &amp; langsung terlihat tim.
+        {portalLink && <> · <a href={portalLink} className="text-blue-400 hover:text-blue-300">Lihat semua campaign</a></>}
       </p>
     </div>
   )
@@ -224,8 +230,10 @@ function SummaryCard({ stats, worst, sum, pending, disabled, onApproveRest }) {
     <div className="mb-4 bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
       <div className="grid grid-cols-3 gap-2">
         <Tile label="Diskon dari harga asli" value={disc || '—'}
-          hint={!disc ? 'harga normal belum diisi'
-            : stats.missingOriginal > 0 ? `${stats.missingOriginal} SKU tanpa harga normal` : null} />
+          hint={stats.above > 0 ? `${stats.above} SKU di atas harga normal`
+            : !disc ? 'harga normal belum diisi'
+            : stats.missingOriginal > 0 ? `${stats.missingOriginal} SKU tanpa harga normal` : null}
+          hintCls={stats.above > 0 ? 'text-amber-300' : 'text-ink-faint'} />
         <Tile label="Margin terendah" value={worst != null ? `${worst.toFixed(1)}%` : '—'}
           cls={worst != null ? marginCls(worst) : 'text-ink-faint'}
           hint={worst == null ? 'HPP belum diisi' : null} />
@@ -255,12 +263,12 @@ function SummaryCard({ stats, worst, sum, pending, disabled, onApproveRest }) {
   )
 }
 
-function Tile({ label, value, cls = 'text-ink-strong', hint }) {
+function Tile({ label, value, cls = 'text-ink-strong', hint, hintCls = 'text-ink-faint' }) {
   return (
     <div className="bg-fill/5 rounded-xl px-3 py-2.5">
       <p className="text-[11px] text-ink-faint leading-tight">{label}</p>
       <p className={`text-[17px] font-semibold tabular-nums mt-0.5 ${cls}`}>{value}</p>
-      {hint && <p className="text-[10px] text-ink-faint mt-0.5">{hint}</p>}
+      {hint && <p className={`text-[10px] mt-0.5 ${hintCls}`}>{hint}</p>}
     </div>
   )
 }
@@ -280,7 +288,9 @@ function summaryBadge(s) {
 function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled, defaultOpen, onActItems }) {
   const [open, setOpen] = useState(!!defaultOpen)
   const [openRow, setOpenRow] = useState(null)   // `${varIdx}:fee` | `${varIdx}:voucher`
-  // Mode per SKU: default tertutup — keputusan cepat untuk semua SKU sekaligus.
+  // Tombol setujui/tolak per SKU SELALU tampil untuk produk multi-varian.
+  // `perSku` hanya menambah kolom centang untuk memutuskan beberapa SKU
+  // sekaligus (mis. menolak 10 dari 44) — default tertutup supaya tabel bersih.
   const [perSku, setPerSku] = useState(false)
   const [sel, setSel] = useState(() => new Set())
   const [note, setNote] = useState('')
@@ -325,7 +335,10 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled
           <p className="text-[13px] font-semibold text-ink-strong truncate">
             {p ? p.name : '(produk dihapus)'} <span className="text-ink-faint font-normal">· {its.length} SKU</span>
           </p>
-          <p className="text-[11px] text-ink-faint truncate">{sub}{discTxt ? ` · diskon ${discTxt}` : ''}</p>
+          <p className="text-[11px] text-ink-faint truncate">
+            {sub}{discTxt ? ` · diskon ${discTxt}` : ''}
+            {stats.above > 0 && <span className="text-amber-300"> · {stats.above} SKU di atas harga normal</span>}
+          </p>
         </div>
         {badge && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${badge.cls}`}>{badge.label}</span>}
       </button>
@@ -350,7 +363,7 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled
                 <th className="text-right font-normal px-2 py-1.5 text-[11px]">Harga campaign</th>
                 {showCust && <th className="text-right font-normal px-2 py-1.5 text-[11px]">Harga customer</th>}
                 <th className="text-right font-normal px-2 py-1.5 text-[11px]">Margin</th>
-                <th className="text-right font-normal px-4 py-1.5 text-[11px]">{perSku && !single ? 'Putusan' : 'Status'}</th>
+                <th className="text-right font-normal px-4 py-1.5 text-[11px]">{single ? 'Status' : 'Putusan'}</th>
               </tr>
             </thead>
             <tbody>
@@ -457,8 +470,8 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled
                       {m != null ? `${m.toFixed(1)}%` : <span className="text-ink-faint font-normal" title="HPP varian belum diisi — margin tak bisa dihitung">—</span>}
                     </td>
                     <td className="px-4 py-2 text-right">
-                      {perSku && !single ? (
-                        <span className="inline-flex items-center gap-1">
+                      {!single ? (
+                        <span className="inline-flex items-center gap-1" title={own ? `${APPROVAL[ist].label} — khusus SKU ini` : APPROVAL[ist].label}>
                           <button onClick={() => run([it], 'approved')} disabled={disabled || busy} title={`Setujui ${vname}`}
                             className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${ist === 'approved' ? 'bg-green-600 text-white' : 'border border-line/15 text-green-400 hover:bg-green-500/10'}`}>
                             <Check className="w-3.5 h-3.5" />
@@ -500,8 +513,9 @@ function ProductApprovalCard({ c, productId, its, productMap, vouchers, disabled
             </button>
             {!single && (
               <button onClick={() => { setPerSku(v => !v); setSel(new Set()) }}
+                title="Centang beberapa SKU lalu putuskan sekaligus"
                 className="ml-auto flex items-center gap-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 transition-colors">
-                Atur per SKU {perSku ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                Pilih beberapa SKU {perSku ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               </button>
             )}
           </div>

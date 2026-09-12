@@ -94,10 +94,11 @@ create or replace function public.campaign_by_share_token(p_token uuid)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
-  c        public.campaigns;
-  prods    jsonb;
-  email    text := lower(coalesce(auth.jwt() ->> 'email', ''));
-  is_owner boolean;
+  c          public.campaigns;
+  prods      jsonb;
+  email      text := lower(coalesce(auth.jwt() ->> 'email', ''));
+  is_owner   boolean;
+  portal_tok uuid;
 begin
   if p_token is null then raise exception 'invalid token'; end if;
   select * into c from public.campaigns where share_token = p_token;
@@ -115,9 +116,18 @@ begin
     from public.calc_products cp
     where cp.id in (select (jsonb_array_elements_text(c.product_ids))::uuid);
 
+  -- Token portal ikut dikirim HANYA bila pemanggil memang boleh melihat portal
+  -- (owner atau anggota portal). Dengan begitu satu link approval saja sudah
+  -- jadi pintu ke daftar campaign lain, tanpa membocorkannya ke approver yang
+  -- cuma diundang ke satu campaign.
+  if is_owner or public.portal_can_view(c.workspace_id) then
+    select w.portal_token into portal_tok from public.workspaces w where w.id = c.workspace_id;
+  end if;
+
   return jsonb_build_object(
     'campaign', jsonb_build_object(
       'id', c.id, 'name', c.name, 'parentCampaign', c.parent_campaign,
+      'portalToken', portal_tok,
       'platform', c.platform, 'description', c.description, 'detail', c.detail, 'link', c.link,
       'startDate', c.start_date, 'endDate', c.end_date, 'periods', coalesce(c.periods, '[]'::jsonb),
       'items', c.items, 'voucherConfig', c.voucher_config,
