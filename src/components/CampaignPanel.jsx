@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
+  Users, Eye, EyeOff,
 } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings } from '../data/campaigns'
+import { getPortalSettings, updatePortalSettings, ensurePortalToken, regeneratePortalToken, setCampaignPortalHidden } from '../data/campaignPortal'
 import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
 import { productFees, productVariations } from '../utils/product'
@@ -116,6 +118,7 @@ export default function CampaignPanel({ products }) {
   const [editing, setEditing]   = useState(null)  // campaign / {} (baru) / null
   const [expanded, setExpanded] = useState(null)
   const [sharing, setSharing]   = useState(null)  // campaign yang dibagikan (modal)
+  const [portalOpen, setPortalOpen] = useState(false)
   const [loadErr, setLoadErr]   = useState(false)
   const [storeLines, setStoreLines] = useState([])
   const [platformTab, setPlatformTab] = useState(null)   // null = ikut isi data
@@ -198,6 +201,11 @@ export default function CampaignPanel({ products }) {
       alert(msg)
     }
   }
+  // Sembunyikan/tampilkan satu campaign di portal client (kolom portal_hidden).
+  async function handleTogglePortal(c) {
+    try { await setCampaignPortalHidden(c.id, !c.portalHidden); await reload() }
+    catch (e) { console.error(e); alert('Gagal mengubah tampilan portal. Pastikan migrasi 0060 sudah dijalankan.') }
+  }
   async function handleDelete(id) {
     if (!confirm('Hapus campaign ini?')) return
     try { await deleteCampaign(id); await reload() }
@@ -219,10 +227,16 @@ export default function CampaignPanel({ products }) {
             return r > 0 ? <> · <span className="text-green-400 font-medium">{r} berjalan</span></> : null })()}
           {' '}· proyeksi margin di harga campaign per varian
         </p>
-        <button onClick={() => setEditing({})}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-          <Plus className="w-4 h-4" /> Campaign Baru
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => setPortalOpen(true)} title="Satu link untuk client melihat semua campaign"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
+            <Users className="w-4 h-4" /> Portal Client
+          </button>
+          <button onClick={() => setEditing({})}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            <Plus className="w-4 h-4" /> Campaign Baru
+          </button>
+        </div>
       </div>
 
       {loadErr && (
@@ -341,6 +355,11 @@ export default function CampaignPanel({ products }) {
                       <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer" title="Buka link campaign"
                         className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>
                     )}
+                    <button title={c.portalHidden ? 'Disembunyikan dari portal client — klik untuk tampilkan' : 'Tampil di portal client — klik untuk sembunyikan'}
+                      onClick={() => handleTogglePortal(c)}
+                      className={`p-1.5 rounded-lg transition-colors hover:bg-fill/8 ${c.portalHidden ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'}`}>
+                      {c.portalHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
                     <button title="Bagikan untuk persetujuan" onClick={() => setSharing(c)} className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><Share2 className="w-3.5 h-3.5" /></button>
                     <button title="Edit" onClick={() => setEditing(c)} className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-fill/8 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                     <button title="Hapus" onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg text-ink-faint hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -419,6 +438,7 @@ export default function CampaignPanel({ products }) {
       )}
 
       {sharing && <ShareApprovalModal campaign={sharing} onClose={() => setSharing(null)} onSaved={reload} />}
+      {portalOpen && <PortalShareModal onClose={() => setPortalOpen(false)} />}
     </div>
   )
 }
@@ -1218,6 +1238,117 @@ function ShareApprovalModal({ campaign, onClose, onSaved }) {
             <ExternalLink className="w-4 h-4" />{busy ? 'Menyimpan…' : copied ? 'Tersalin!' : shareUrl ? 'Simpan & salin link' : 'Simpan & buat link'}
           </button>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+// Modal Portal Client — SATU link untuk seluruh campaign workspace ini. Client
+// melihat mana yang belum di-ACC, sedang berjalan, dan sudah selesai; anggota
+// portal otomatis boleh membuka halaman persetujuan tiap campaign (tak perlu
+// diundang satu per satu). Campaign bisa disembunyikan lewat ikon mata.
+function PortalShareModal({ onClose }) {
+  const [loading, setLoading] = useState(true)
+  const [access, setAccess] = useState('private')
+  const [emailsText, setEmailsText] = useState('')
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [err, setErr] = useState(null)
+
+  const linkOf = t => `${window.location.origin}/portal?t=${t}`
+  const emails = () => [...new Set(emailsText.split(/[\n,;]/).map(e => e.trim().toLowerCase()).filter(Boolean))]
+  function errMsg(e) {
+    const m = e?.message || 'Gagal menyimpan.'
+    if (/portal_|column|does not exist|schema cache/i.test(m))
+      return 'Kolom portal belum ada. Jalankan migrasi 0060_campaign_portal.sql di Supabase → SQL Editor dulu.'
+    return m
+  }
+
+  useEffect(() => {
+    let alive = true
+    getPortalSettings()
+      .then(s => {
+        if (!alive || !s) return
+        setAccess(s.access); setEmailsText((s.emails || []).join('\n'))
+        if (s.token) setUrl(linkOf(s.token))
+      })
+      .catch(e => { console.error(e); if (alive) setErr(errMsg(e)) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [])
+
+  async function saveAndLink() {
+    if (busy) return
+    setBusy(true); setErr(null)
+    try {
+      await updatePortalSettings({ access, emails: emails() })
+      const token = await ensurePortalToken()
+      const link = linkOf(token)
+      setUrl(link)
+      await navigator.clipboard?.writeText(link).catch(() => {})
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+    } catch (e) { console.error(e); setErr(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  async function copyLink() {
+    if (!url) return
+    await navigator.clipboard?.writeText(url).catch(() => {})
+    setCopied(true); setTimeout(() => setCopied(false), 1800)
+  }
+  async function regen() {
+    if (busy || !confirm('Buat link portal baru? Link lama akan berhenti berfungsi.')) return
+    setBusy(true); setErr(null)
+    try { setUrl(linkOf(await regeneratePortalToken())) }
+    catch (e) { console.error(e); setErr(errMsg(e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal title="Portal Client" subtitle="Satu link untuk semua campaign — status jadwal & persetujuan" onClose={onClose} maxWidth="max-w-lg">
+      <div className="p-5 space-y-4">
+        {loading ? (
+          <p className="text-[12px] text-ink-faint py-4 text-center">Memuat pengaturan portal…</p>
+        ) : (<>
+          <div>
+            <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Mode akses</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[['private', 'Private', 'Hanya email yang diundang'], ['public', 'Public', 'Siapa saja yang login via link']].map(([id, label, desc]) => (
+                <button key={id} type="button" onClick={() => setAccess(id)}
+                  className={`text-left px-3 py-2.5 rounded-xl border transition-all ${access === id ? 'bg-blue-600/10 border-blue-500/40' : 'border-line/10 hover:border-line/25'}`}>
+                  <p className={`text-[13px] font-semibold ${access === id ? 'text-blue-300' : 'text-ink-strong'}`}>{label}</p>
+                  <p className="text-[10px] text-ink-faint mt-0.5">{desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+          {access === 'private' && (
+            <div>
+              <label className="block text-[11px] font-medium text-ink-faint mb-1.5">Email yang diundang ke portal <span className="text-ink-faint">(satu per baris / pisah koma)</span></label>
+              <textarea value={emailsText} onChange={e => setEmailsText(e.target.value)} rows={3}
+                placeholder="atasan@perusahaan.com&#10;client@brand.com"
+                className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[13px] text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/40 resize-none" />
+            </div>
+          )}
+          <p className="text-[11px] text-ink-faint">
+            Semua campaign workspace ini tampil di portal, kecuali yang Anda sembunyikan lewat ikon mata di daftar.
+          </p>
+          {err && <p className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{err}</p>}
+          {url && (
+            <div className="flex items-center gap-2">
+              <input readOnly value={url} onFocus={e => e.target.select()}
+                className="flex-1 min-w-0 bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-[11px] text-ink-muted focus:outline-none" />
+              <button type="button" onClick={copyLink} title="Salin" className="p-2 rounded-xl border border-line/15 text-ink-faint hover:text-ink hover:border-line/30 transition-colors"><Copy className="w-3.5 h-3.5" /></button>
+              <button type="button" onClick={regen} disabled={busy} title="Buat link baru (cabut link lama)" className="p-2 rounded-xl border border-line/15 text-ink-faint hover:text-ink hover:border-line/30 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="px-3 py-2 rounded-xl text-sm text-ink-muted hover:text-ink">Tutup</button>
+            <button type="button" onClick={saveAndLink} disabled={busy}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+              <Users className="w-4 h-4" />{busy ? 'Menyimpan…' : copied ? 'Tersalin!' : url ? 'Simpan & salin link' : 'Simpan & buat link'}
+            </button>
+          </div>
+        </>)}
       </div>
     </Modal>
   )

@@ -114,6 +114,75 @@ export function worstProductMargin(its, productMap, voucherCfg) {
   return margins.length ? Math.min(...margins) : null
 }
 
+// ---------------------------------------------------------------------------
+// Harga asli (di luar campaign) — dipakai halaman client supaya approver tahu
+// campaign ini memotong berapa dari harga normal.
+// ---------------------------------------------------------------------------
+
+// Varian mentah sebuah item campaign (tanpa calc). null bila produk/varian hilang.
+export function itemVariation(item, productMap) {
+  const p = productMap[item.productId]
+  if (!p) return null
+  return productVariations(p)[item.varIdx] || null
+}
+
+// Harga jual normal varian: "Harga Jual" di price list, cadangan "Harga Coret".
+// null bila keduanya kosong — jangan tampilkan diskon palsu dari angka 0.
+export function originalPrice(item, productMap) {
+  const v = itemVariation(item, productMap)
+  if (!v) return null
+  return (+v.jual || 0) || (+v.hargaCoret || 0) || null
+}
+
+// Margin hanya bermakna kalau HPP varian sudah diisi; tanpa HPP angkanya jadi
+// "harga dikurangi fee" (mendekati 100%) dan menyesatkan approver.
+export function hasHpp(item, productMap) {
+  const v = itemVariation(item, productMap)
+  return !!v && (+v.hpp || 0) > 0
+}
+
+// Potongan harga campaign terhadap harga normal (persen). Negatif = harga
+// campaign lebih mahal dari harga normal. null bila salah satu harga tak ada.
+export function discountPct(item, productMap) {
+  const normal = originalPrice(item, productMap)
+  const price = +item.price || 0
+  if (!normal || !price) return null
+  return ((normal - price) / normal) * 100
+}
+
+const range = arr => (arr.length ? { min: Math.min(...arr), max: Math.max(...arr) } : null)
+
+// Rentang harga & diskon sekumpulan varian — untuk ringkasan kartu produk dan
+// header campaign, supaya approver tak perlu membuka semua SKU dulu.
+export function priceStats(items, productMap) {
+  const act = activeItems(items)
+  const originals = [], camps = [], discs = []
+  let missingOriginal = 0
+  for (const it of act) {
+    const price = +it.price || 0
+    if (price > 0) camps.push(price)
+    const normal = originalPrice(it, productMap)
+    if (normal) originals.push(normal); else missingOriginal++
+    const d = discountPct(it, productMap)
+    if (d != null) discs.push(d)
+  }
+  return {
+    count: act.length,
+    original: range(originals),
+    campaign: range(camps),
+    discount: range(discs),
+    missingOriginal,
+  }
+}
+
+// Margin terburuk yang BENAR-BENAR terhitung (varian tanpa HPP dilewati).
+// null bila tak ada satu pun varian ber-HPP.
+export function worstKnownMargin(items, productMap, voucherCfg) {
+  const known = activeItems(items).filter(it => hasHpp(it, productMap))
+  if (!known.length) return null
+  return worstProductMargin(known, productMap, voucherCfg)
+}
+
 export function voucherList(voucherConfig) {
   const vs = voucherConfig && Array.isArray(voucherConfig.vouchers) ? voucherConfig.vouchers : []
   return vs.filter(v => (+v.discPct || 0) > 0)
