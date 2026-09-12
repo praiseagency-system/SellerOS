@@ -23,7 +23,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Copy, Check, Bell } from 'lucide-react'
-import { useSortableRows, SortTh, tiktokVideoUrl, VideoIdLink } from './ui'
+import { useSortableRows, SortTh, tiktokVideoUrl, VideoIdLink, DeliveryBadge } from './ui'
 import { VideoExecCell } from './VideoExecActions'
 import VideoThumb from './VideoThumb'
 import { pickBoostTarget, pickExcludeTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
@@ -90,7 +90,7 @@ function TargetCell({ video, exec, kind, onGanti }) {
   )
 }
 
-export default function ActionListWindow({ group, exec, thresholds = {}, onClose }) {
+export default function ActionListWindow({ group, exec, thresholds = {}, periodLabel = null, onClose }) {
   const [chooser, setChooser] = useState(null)   // { id, kind }
   const [copied, setCopied] = useState(false)
   const isVideo = KOLOM_VIDEO.has(group.key)
@@ -117,6 +117,19 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
           <div className="min-w-0 flex-1">
             <h3 className="text-[15px] font-semibold text-ink-strong">{group.title}</h3>
             <p className="text-[13px] text-ink-muted mt-1">{group.items.length} baris · {group.subtitle}</p>
+            {/* RENTANG DISEBUT EKSPLISIT. Tanpa ini daftar tampak seperti daftar
+                tetap, padahal cost/omzet/ROAS-nya dijumlah HANYA untuk rentang
+                terpilih — dan video yang sama bisa lolos di satu rentang lalu
+                hilang di rentang lain. Kejadian nyata 12 Sep 2026: @abarrr ber-ROAS
+                1,2 pada 5–11 Sep (boros) tapi 7,73 pada 1–11 Sep (tidak boros),
+                karena omzet 2 jutanya lahir di 1–4 Sep. Itu bukan data hilang,
+                tapi tak ada apa pun di layar yang mengatakannya. */}
+            {periodLabel && (
+              <p className="text-[12px] text-ink-faint mt-1.5">
+                Dinilai atas <span className="text-ink-muted">{periodLabel}</span> — angka & vonisnya ikut rentang ini,
+                jadi video yang sama bisa masuk daftar di satu rentang dan tidak di rentang lain.
+              </p>
+            )}
             {group.footnote && <p className="text-[12px] text-ink-faint mt-1.5">{group.footnote}</p>}
           </div>
           {group.key === 'AUTH_EXPIRED' && (
@@ -138,7 +151,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
               tetap bisa melebihi lebar tabel dan meluber lagi.
               min-w menjaga angka tetap terbaca di layar sempit: biar wadahnya
               yang menggeser, bukan kolomnya yang gepeng. */}
-          <table className="w-full text-sm table-fixed min-w-[820px]">
+          <table className="w-full text-sm table-fixed min-w-[920px]">
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/10">
                 <th className="py-2.5 pr-3 font-medium">{group.key === 'CAMPAIGN_IDLE_BUDGET' ? 'CAMPAIGN' : 'VIDEO'}</th>
@@ -146,7 +159,12 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                     12 Sep 2026). Uang yang keluar dibaca lebih dulu, baru uang
                     yang masuk, lalu rasionya; jumlah order jadi penutup karena
                     paling jarang menentukan keputusan di layar ini. */}
+                {/* TAHAP = status pengiriman menurut snapshot TERBARU. Diminta user
+                    12 Sep 2026: kandidat boost tak bisa dinilai tanpa tahu ia sudah
+                    tayang, masih belajar, atau malah sudah dikecualikan — "naikkan
+                    belanjanya" berarti hal yang berbeda di tiap tahap. */}
                 {isVideo && <>
+                  <th className="py-2.5 px-3 font-medium w-28">TAHAP</th>
                   <SortTh label="COST" sortKey="cost" sort={sort} onSort={toggle} className="w-28" />
                   <SortTh label="OMZET" sortKey="revenue" sort={sort} onSort={toggle} className="w-28" />
                   <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} className="w-16" />
@@ -200,6 +218,9 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                     </td>
 
                     {isVideo && <>
+                      <td className="py-2.5 px-3 align-top">
+                        <DeliveryBadge delivery={it.video?.delivery} compact />
+                      </td>
                       {/* COST ditebalkan di kartu boros: di sanalah pertanyaannya
                           ("berapa yang terbakar"). Di kartu lain OMZET yang tebal
                           — fakta uang masuk, bukan rasio yang bisa berayun. */}
@@ -225,6 +246,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                           <VideoExecCell video={it.video} resolve={exec.resolve}
                             onBoost={exec.onBoost} onExclude={exec.onExclude}
                             anchorOf={exec.anchorOf} productName={exec.productName}
+                            showBlockHint={false}
                             onOpenChange={(k) => setChooser(k ? { id: it.id, kind: k } : null)} />
                         )}
                       </td>
@@ -243,7 +265,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, onClose
                 )
                 return [baris, chooser?.id === it.id && it.video && exec ? (
                   <TargetChooserRow key={`${it.id}-pilih`} video={it.video} exec={exec}
-                    kind={chooser.kind} colSpan={isVideo ? 6 : 3}
+                    kind={chooser.kind} colSpan={isVideo ? 7 : 3}
                     onPick={(pp) => {
                       setChooser(null)
                       ;(chooser.kind === 'BOOST' ? exec.onBoost : exec.onExclude)(it.video, pp)
