@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, Loader2, Check, X, ShieldAlert } from 'lucide-react'
-import { listApprovals, decideApproval, ACTION_LABELS, getExecutionSettings } from '../../data/gmvmaxApprovals'
+import { listApprovals, decideApproval, ACTION_LABELS, getExecutionSettings, APPROVAL_EVENT } from '../../data/gmvmaxApprovals'
 import { executeSparkBind, executeSparkUnbind } from '../../data/gmvmaxSpark'
 import { executeCampaignAction } from '../../data/gmvmaxCampaignControl'
 import { getCurrentWorkspaceId } from '../../utils/workspace'
@@ -52,6 +52,13 @@ export default function ApprovalBell() {
     const kick = setTimeout(refresh, 0)
     return () => clearTimeout(kick)
   }, [open, refresh])
+
+  // Aksi yang diajukan dari halaman lain (AI Insight, Campaign Ads, Boost Center)
+  // langsung menaikkan badge — menunggu siklus 60 detik membuat 🔔 tampak tuli.
+  useEffect(() => {
+    window.addEventListener(APPROVAL_EVENT, refresh)
+    return () => window.removeEventListener(APPROVAL_EVENT, refresh)
+  }, [refresh])
 
   const [notice, setNotice] = useState(null)
 

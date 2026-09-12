@@ -69,10 +69,51 @@ function byActive(list) {
 }
 
 // Kalimat pendek "kenapa sasaran belum pasti" — supaya barisnya menjelaskan
-// dirinya, bukan sekadar menyodorkan menu tanpa konteks.
-export function undecidedReason(options = []) {
+// dirinya, bukan sekadar menyodorkan menu tanpa konteks. Alasannya menyebut
+// JEJAK YANG DIPAKAI tangga buktinya: omzet untuk boost, belanja untuk exclude.
+export function undecidedReason(options = [], kind = 'BOOST') {
+  if (kind === 'EXCLUDE') {
+    const berbelanja = options.filter(p => (p.cost || 0) > 0)
+    if (berbelanja.length > 1) return `belanjanya terbagi di ${berbelanja.length} campaign`
+    if (!berbelanja.length) return `belum ada belanja di ${options.length} campaign yang memuatnya`
+    return `${options.length} campaign memuat video ini`
+  }
   const berpendapatan = options.filter(p => (p.revenue || 0) > 0)
   if (berpendapatan.length > 1) return `omzetnya terbagi di ${berpendapatan.length} campaign`
   if (!berpendapatan.length) return `belum ada omzet di ${options.length} campaign yang memuatnya`
   return `${options.length} campaign memuat video ini`
+}
+
+// ── Sasaran EXCLUDE ─────────────────────────────────────────────────────────
+// Tangga bukti yang BERBEDA dari boost, dan bedanya bukan selera. Boost mencari
+// tempat menaruh uang → jejaknya OMZET. Exclude mencari tempat menghentikan uang
+// → jejaknya BELANJA. Memakai tangga boost untuk exclude pernah mengirim perintah
+// ke campaign yang tidak membelanjakan sepeser pun (video 7681339687058885906,
+// 11 Sep 2026: omzet 100% di Glance & Custom, tapi Rp96.810 terbakar di Exotic
+// Blue) — TikTok menerima perintahnya, pemborosannya jalan terus.
+//
+// Anchor produk sengaja TIDAK dipakai di sini: keranjang kuning menandakan
+// produk apa yang tertaut di video, bukan campaign mana yang membakar uangnya.
+export function pickExcludeTarget({ video, eligible = () => true } = {}) {
+  const all = (video?.placements || []).filter(p => p.productId).filter(eligible)
+  if (!all.length) return { placement: null, reason: null, confident: false, options: [] }
+  if (all.length === 1) {
+    return { placement: all[0], reason: 'satu-satunya campaign yang memuat video ini', confident: true, options: all }
+  }
+  const biaya = byCost(all)
+  if (biaya) return { ...biaya, options: all }
+  // Belum ada belanja di mana pun (mis. video AUTHORIZATION_NEEDED) → pakai
+  // satu-satunya yang tayang; kalau itu pun tak menjawab, biarkan user memilih.
+  const akt = byActive(all)
+  if (akt) return { ...akt, options: all }
+  return { placement: null, reason: null, confident: false, options: all }
+}
+
+function byCost(list) {
+  const total = list.reduce((s, p) => s + (p.cost || 0), 0)
+  if (total <= 0) return null
+  const top = list.reduce((a, b) => ((b.cost || 0) > (a.cost || 0) ? b : a))
+  const share = (top.cost || 0) / total
+  if (share < DOMINAN) return null
+  return { placement: top, reason: `${Math.round(share * 100)}% belanja video ini terjadi di sana`, confident: true }
 }

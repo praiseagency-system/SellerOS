@@ -21,6 +21,16 @@ export const ACTION_LABELS = {
   SESSION_DELETE: 'Hentikan sesi boost',
 }
 
+// Sinyal lintas-pohon. 🔔 duduk di topbar (Layout, DI LUAR GmvMaxProvider),
+// sedangkan yang perlu menyegarkan diri setelah sebuah keputusan — Log Optimasi
+// dan kartu aksi di AI Insight — hidup di dalamnya. Tanpa sinyal ini keduanya
+// baru berubah setelah browser di-refresh: persis keluhan 12 Sep 2026 ("sudah
+// approve tapi di log optimasi belum masuk"), padahal barisnya sudah di DB.
+export const APPROVAL_EVENT = 'gmvmax:approval-changed'
+export function notifyApprovalChanged(detail = {}) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(APPROVAL_EVENT, { detail }))
+}
+
 // Daftar approval workspace aktif; default hanya yang PENDING & belum lewat TTL.
 // Baris PENDING yang kedaluwarsa ditandai EXPIRED dulu (lazy — tanpa cron).
 export async function listApprovals({ status = 'PENDING', limit = 50 } = {}) {
@@ -35,6 +45,47 @@ export async function listApprovals({ status = 'PENDING', limit = 50 } = {}) {
   const { data, error } = await q
   if (error) throw error
   return data || []
+}
+
+// Keadaan exclude per pasangan video×campaign, dibaca dari jejak approval.
+//
+// Kenapa perlu: snapshot TikTok baru menyusul besok pagi (07:30 WIB), sedangkan
+// pengguna ingin barisnya hilang dari daftar kerja BEGITU ia menyetujui. Tanpa
+// ini, kartu "video boros" menyuruh mengerjakan ulang pekerjaan yang barusan
+// selesai — keluhan nyata 12 Sep 2026.
+//
+// Balik: { keluar, menunggu } berisi kunci `${videoId}|${campaignId}`.
+//   keluar   — REMOVE yang sudah disetujui/dieksekusi & belum dibatalkan ADD.
+//   menunggu — REMOVE yang masih antre di 🔔 (belum terjadi, tapi jangan diantrekan dua kali).
+// REJECTED / EXPIRED / FAILED sengaja TIDAK dihitung: yang gagal berarti video
+// itu masih membakar uang, dan daftar kerja harus tetap menagihnya.
+export async function loadCreativeExcludeState({ limit = 300 } = {}) {
+  const kosong = { keluar: new Set(), menunggu: new Set() }
+  const wsId = getCurrentWorkspaceId()
+  if (!wsId) return kosong
+  const { data, error } = await supabase.from('gmvmax_approvals')
+    .select('target, proposed_value, status, created_at')
+    .eq('workspace_id', wsId)
+    .eq('action_type', 'CREATIVE_EXCLUDE')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+
+  const keluar = new Set(), menunggu = new Set(), diputus = new Set()
+  for (const r of data || []) {          // terbaru dulu → keputusan pertama yang ketemu = yang berlaku
+    const vid = r.target?.video_id, cid = r.target?.campaign_id
+    if (!vid || !cid) continue
+    const key = `${vid}|${cid}`
+    if (r.status === 'PENDING') {
+      if (r.proposed_value?.action === 'REMOVE') menunggu.add(key)
+      continue
+    }
+    if (r.status !== 'APPROVED' && r.status !== 'EXECUTED') continue
+    if (diputus.has(key)) continue
+    diputus.add(key)
+    if (r.proposed_value?.action === 'REMOVE') keluar.add(key)
+  }
+  return { keluar, menunggu }
 }
 
 async function expireStale(wsId) {
@@ -70,6 +121,7 @@ export async function createApproval(entry) {
     expires_at: new Date(Date.now() + ttlMs).toISOString(),
   }).select('*').single()
   if (error) throw error
+  notifyApprovalChanged({ actionType: data.action_type, status: 'PENDING' })
   return data
 }
 
@@ -95,18 +147,28 @@ export async function decideApproval(id, decision) {
     await addActionLog({
       videoId: data.target?.video_id || null,
       videoTitle: data.target?.video_title || null,
+      tiktokAccount: String(data.evidence?.akun || '').replace(/^@/, '') || null,
       actionTag: data.action_type,
       body: autoLogBody(data, decision),
       snapshotDate: null,
       roas: data.evidence?.roas_7d ?? null,
     })
   } catch { /* log gagal tak membatalkan keputusan */ }
+  notifyApprovalChanged({ actionType: data.action_type, status: decision })
   return data
 }
 
+// Nilai bersarang (payload teknis spt `items` pada CREATIVE_EXCLUDE) DILEWATI —
+// dirangkai apa adanya ia menjadi "items:[object Object]" di jurnal, yang tak
+// memberi tahu pembacanya apa pun. Aturan yang sama dipakai kartu 🔔.
 function fmtVal(v) {
   if (v == null) return '—'
-  if (typeof v === 'object') return Object.entries(v).map(([k, x]) => `${k}:${x}`).join(' ')
+  if (typeof v === 'object') {
+    return Object.entries(v)
+      .filter(([, x]) => x == null || typeof x !== 'object')
+      .map(([k, x]) => `${k}:${x}`)
+      .join(' ') || '…'
+  }
   return String(v)
 }
 function autoLogBody(row, decision) {

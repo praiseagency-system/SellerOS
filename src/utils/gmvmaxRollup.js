@@ -12,8 +12,16 @@ const NO_CREATOR = '__toko__' // kunci grup untuk video tanpa kreator
 // Status pengiriman (delivery) GMV Max dari kolom "Status" → 3 bucket yang
 // dipantau tim: Delivering (tayang), In queue (antre), Learning (belajar).
 // Sisanya (Not active, Unavailable, Not delivering, dst.) masuk 'other' & tak
-// ditampilkan. Satu video bisa punya banyak baris/status lintas periode →
-// pakai status periode terbaru; bila periode sama, menang yang paling "aktif".
+// ditampilkan. Satu video bisa punya banyak baris/status lintas HARI →
+// pakai status HARI TERBARU; bila tanggalnya sama, menang yang paling "aktif".
+//
+// TANGGAL DULU, BARU KEAKTIFAN — dan urutan itu mahal harganya kalau terbalik.
+// Dengan aturan lama ("paling aktif menang, tanggal diabaikan"), video
+// 7681842443452419335 yang TikTok tandai EXCLUDED pada 7 Sep 2026 tetap terbaca
+// DELIVERING karena baris 6 Sep-nya lebih "aktif": ia bertahan di kartu "video
+// boros", tombolnya menawarkan Exclude untuk video yang sudah keluar rotasi,
+// dan daftar pekerjaan harian ikut berbohong. Status adalah KEADAAN SEKARANG,
+// jadi yang terbaru yang berlaku.
 const DELIVERY_RANK = { delivering: 3, learning: 2, in_queue: 1, other: 0 }
 export function normDeliveryStatus(s) {
   const t = (s || '').toLowerCase().trim()
@@ -25,6 +33,24 @@ export function normDeliveryStatus(s) {
   return 'other'
 }
 const deliveryRank = (c) => (c == null ? -1 : (DELIVERY_RANK[c] ?? 0))
+
+// Pemenang status: tanggal snapshot lebih baru menang; tanggal sama → yang
+// paling aktif. Baris tanpa snapshotDate (data lama) dianggap paling tua supaya
+// tak pernah menimpa baris bertanggal.
+function statusMenang(slot, row) {
+  if (!row.status) return false
+  const d = row.snapshotDate || ''
+  const rank = deliveryRank(normDeliveryStatus(row.status))
+  if (d > (slot._delDate ?? '')) return true
+  if (d < (slot._delDate ?? '')) return false
+  return rank > slot._delRank
+}
+function simpanStatus(slot, row) {
+  if (!statusMenang(slot, row)) return
+  slot._delDate = row.snapshotDate || ''
+  slot._delRank = deliveryRank(normDeliveryStatus(row.status))
+  slot._delRaw = row.status
+}
 function tallyDelivery(vidStatus) {
   const c = { delivering: 0, in_queue: 0, learning: 0, other: 0 }
   for (const v of vidStatus.values()) if (v.canon) c[v.canon] = (c[v.canon] || 0) + 1
@@ -124,7 +150,8 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
         // dengan campaign & productId di atas supaya trio ini selalu konsisten.
         campaignId: r.campaignId || null,
         timePosted: r.timePosted || null,
-        _delRank: -2,               // rank status pengiriman "paling aktif"
+        _delRank: -2,               // rank status pengiriman di tanggal terbaru
+        _delDate: '',               // tanggal snapshot pemilik status itu
         _delRaw: null,              // teks status mentah (mis. "Delivering", "Excluded")
         _life: blankAgg(),
         _periods: new Map(),
@@ -132,12 +159,8 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
       }
       byId.set(r.videoId, v)
     }
-    // Status pengiriman video = status baris paling "aktif" (delivering > learning
-    // > in_queue > lainnya spt Excluded/Not active). Simpan teks mentahnya.
-    if (r.status) {
-      const rank = deliveryRank(normDeliveryStatus(r.status))
-      if (rank > v._delRank) { v._delRank = rank; v._delRaw = r.status }
-    }
+    // Status pengiriman video = status snapshot TERBARU (lihat catatan di atas).
+    simpanStatus(v, r)
     // Semua tempat video ini ikut (campaign x produk). 3,5% video ada di >1
     // campaign dan 6,3% di >1 produk (diukur pada snapshot 27 Agu), jadi aksi
     // TIDAK boleh menebak satu sasaran — UI menawarkan pilihannya.
@@ -146,7 +169,7 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
       if (!v._places.has(k)) {
         v._places.set(k, {
           campaignId: r.campaignId, campaignName: r.campaignName || '', productId: r.productId || null,
-          _agg: blankAgg(), _delRank: -2, _delRaw: null,
+          _agg: blankAgg(), _delRank: -2, _delDate: '', _delRaw: null,
         })
       }
       // Tiap pasangan memikul angkanya SENDIRI. Tanpa ini tak ada bukti untuk
@@ -154,10 +177,7 @@ export function rollupVideos(rows, thresholds = DEFAULT_THRESHOLDS) {
       // bisa ditebak, dan menebak berarti membakar uang di tempat yang salah.
       const pl = v._places.get(k)
       addInto(pl._agg, r)
-      if (r.status) {
-        const rk = deliveryRank(normDeliveryStatus(r.status))
-        if (rk > pl._delRank) { pl._delRank = rk; pl._delRaw = r.status }
-      }
+      simpanStatus(pl, r)
     }
     addInto(v._life, r)
     const p = periodOf(r)

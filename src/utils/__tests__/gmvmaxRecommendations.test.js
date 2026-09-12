@@ -8,6 +8,10 @@ const vid = (o = {}) => ({
   lifetime: { cost: o.cost ?? 0, revenue: o.revenue ?? 0, orders: o.orders ?? 0, roas: o.roas ?? null },
   placements: o.placements || [],
 })
+const plc = (o = {}) => ({
+  campaignId: o.c || 'c1', campaignName: o.cn || `campaign ${o.c || 'c1'}`, productId: o.p || 'p1',
+  delivery: o.st || 'DELIVERING', cost: o.cost ?? 0, revenue: o.rev ?? 0, orders: o.ord ?? 0,
+})
 const TH = { roasGood: 6, roasBad: 4, spendFloor: 50000 }
 const get = (groups, key) => groups.find(g => g.key === key)
 
@@ -84,6 +88,41 @@ describe('buildRecommendations', () => {
     const g = get(buildRecommendations({ videos, thresholds: TH, now: NOW }), 'WASTEFUL')
     expect(g.items.map(i => i.id)).toEqual(['a'])
     expect(g.items[0].signature.aksi).toBe('CREATIVE_EXCLUDE')
+  })
+
+  it('yang sudah keluar rotasi menurut TikTok tak ditagih lagi — dihitung di catatan kaki', () => {
+    const videos = [
+      vid({ id: 'masih', roas: 2, cost: 80000, revenue: 160000, placements: [plc({ c: '1', cost: 80000 })] }),
+      vid({ id: 'sudah', roas: 2, cost: 90000, revenue: 180000, delivery: 'EXCLUDED',
+        placements: [plc({ c: '1', cost: 90000, st: 'EXCLUDED' })] }),
+    ]
+    const g = get(buildRecommendations({ videos, thresholds: TH, now: NOW }), 'WASTEFUL')
+    expect(g.items.map(i => i.id)).toEqual(['masih'])
+    expect(g.footnote).toMatch(/1 video disembunyikan/)
+  })
+
+  it('exclude yang sudah disetujui di 🔔 langsung menghapus barisnya — tak menunggu snapshot besok', () => {
+    const videos = [vid({ id: 'v1', roas: 1, cost: 96810, revenue: 133000, placements: [plc({ c: 'exotic', cost: 96810 })] })]
+    const excludes = { keluar: new Set(['v1|exotic']), menunggu: new Set() }
+    const g = get(buildRecommendations({ videos, thresholds: TH, excludes, now: NOW }), 'WASTEFUL')
+    expect(g.items).toHaveLength(0)
+    expect(g.emptyNote).toMatch(/sudah dikeluarkan/)
+  })
+
+  it('baru diajukan (belum disetujui) TETAP tampil — uangnya masih terbakar — tapi ditandai', () => {
+    const videos = [vid({ id: 'v1', roas: 1, cost: 96810, revenue: 133000, placements: [plc({ c: 'exotic', cost: 96810 })] })]
+    const excludes = { keluar: new Set(), menunggu: new Set(['v1|exotic']) }
+    const g = get(buildRecommendations({ videos, thresholds: TH, excludes, now: NOW }), 'WASTEFUL')
+    expect(g.items).toHaveLength(1)
+    expect(g.items[0].pending).toBe(true)
+  })
+
+  it('dikeluarkan dari SATU campaign padahal belanja di dua → tetap ditagih', () => {
+    const videos = [vid({ id: 'v1', roas: 1, cost: 120000, revenue: 120000,
+      placements: [plc({ c: 'a', cost: 60000 }), plc({ c: 'b', cost: 60000 })] })]
+    const excludes = { keluar: new Set(['v1|a']), menunggu: new Set() }
+    const g = get(buildRecommendations({ videos, thresholds: TH, excludes, now: NOW }), 'WASTEFUL')
+    expect(g.items.map(i => i.id)).toEqual(['v1'])
   })
 
   it('otorisasi kedaluwarsa diurut yang paling lama mati dulu', () => {

@@ -4,9 +4,17 @@ import { useState, useMemo } from 'react'
 import { Search, Trash2, ClipboardList } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, Pill, VideoLabel } from '../../components/gmvmax/ui'
+import { ACTION_LABELS } from '../../data/gmvmaxApprovals'
 
+// Tag ditulis dua zaman: catatan manual pakai kata kerja ('Scale', 'Boost'),
+// sedangkan jurnal otomatis dari antrean 🔔 memakai nama aksi eksekusi
+// ('CREATIVE_EXCLUDE', 'BUDGET_UPDATE', …). Yang kedua dulunya hanya bisa
+// ditemukan lewat 'Semua' — orang mencarinya dan menyimpulkan tak tercatat.
+const EKSEKUSI = 'eksekusi'
+const isEksekusi = (tag) => !!tag && tag === tag.toUpperCase() && /[A-Z]/.test(tag)
 const FILTERS = [
   { id: 'all', label: 'Semua', tone: 'blue' },
+  { id: EKSEKUSI, label: 'Eksekusi 🔔', tone: 'violet' },
   { id: 'Scale', label: 'Scale', tone: 'green' },
   { id: 'Boost', label: 'Boost', tone: 'violet' },
   { id: 'Refresh', label: 'Refresh', tone: 'blue' },
@@ -28,7 +36,8 @@ export default function LogPage() {
 
   const filtered = useMemo(() => {
     let list = actionLog
-    if (filter !== 'all') list = list.filter(e => e.action_tag === filter)
+    if (filter === EKSEKUSI) list = list.filter(e => isEksekusi(e.action_tag))
+    else if (filter !== 'all') list = list.filter(e => e.action_tag === filter)
     if (q.trim()) {
       const s = q.toLowerCase()
       list = list.filter(e => (e.video_title || '').toLowerCase().includes(s)
@@ -40,7 +49,9 @@ export default function LogPage() {
   }, [actionLog, filter, q])
 
   const counts = FILTERS.reduce((acc, f) => {
-    acc[f.id] = f.id === 'all' ? actionLog.length : actionLog.filter(e => e.action_tag === f.id).length
+    acc[f.id] = f.id === 'all' ? actionLog.length
+      : f.id === EKSEKUSI ? actionLog.filter(e => isEksekusi(e.action_tag)).length
+        : actionLog.filter(e => e.action_tag === f.id).length
     return acc
   }, {})
 
@@ -71,7 +82,12 @@ export default function LogPage() {
             </span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                {e.action_tag && <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${ACTION_TONE[e.action_tag] || 'bg-fill/10 text-ink-faint'}`}>{e.action_tag}</span>}
+                {e.action_tag && (
+                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${ACTION_TONE[e.action_tag] || (isEksekusi(e.action_tag) ? 'bg-violet-500/15 text-violet-400' : 'bg-fill/10 text-ink-faint')}`}
+                    title={e.action_tag}>
+                    {ACTION_LABELS[e.action_tag] || e.action_tag}
+                  </span>
+                )}
                 <span className="text-xs text-ink-faint">{fmtDate(e.created_at)}</span>
                 {e.roas != null && <span className="text-xs text-ink-faint">· ROAS {(+e.roas).toFixed(1)}x</span>}
                 {e.snapshot_date && <span className="text-xs text-ink-faint">· snapshot {e.snapshot_date}</span>}

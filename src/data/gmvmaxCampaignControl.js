@@ -8,7 +8,7 @@ import { postJson as post } from '../lib/apiClient'
 import { getCurrentWorkspaceId } from '../utils/workspace'
 import { getConnection } from './tiktokConnection'
 import { addActionLog } from './gmvmaxActionLog'
-import { createApproval, getExecutionSettings } from './gmvmaxApprovals'
+import { createApproval, getExecutionSettings, notifyApprovalChanged } from './gmvmaxApprovals'
 
 async function requireConn() {
   const conn = await getConnection()
@@ -358,15 +358,27 @@ export async function executeCampaignAction(approvalRow) {
     .eq('id', approvalRow.id).eq('workspace_id', wsId)
 
   try {
-    const fmt = (v) => (v && typeof v === 'object') ? Object.entries(v).map(([k, x]) => `${k}:${x}`).join(' ') : String(v)
+    // Nilai bersarang dilewati — "items:[object Object]" bukan jurnal, itu sampah.
+    const fmt = (v) => (v && typeof v === 'object')
+      ? (Object.entries(v).filter(([, x]) => x == null || typeof x !== 'object').map(([k, x]) => `${k}:${x}`).join(' ') || '…')
+      : String(v)
     const rb = result?.read_back
     await addActionLog({
       actionTag: approvalRow.action_type,
+      // Identitas video ikut dibawa: tanpa ini baris "Dieksekusi" tak pernah
+      // muncul di riwayat per-video (modal video memfilter by video_id), jadi
+      // jejak eksekusi seolah hilang padahal tercatat.
+      videoId: approvalRow.target?.video_id || null,
+      videoTitle: approvalRow.target?.video_title || null,
+      tiktokAccount: String(approvalRow.evidence?.akun || '').replace(/^@/, '') || null,
       body: failMsg
         ? `[AUTO] Eksekusi GAGAL: ${approvalRow.action_type} · ${approvalRow.target?.campaign_name || campaignId} · ${failMsg}`
         : `[AUTO] Dieksekusi: ${approvalRow.action_type} · ${approvalRow.target?.campaign_name || campaignId} · ${fmt(approvalRow.current_value)} → ${fmt(approvalRow.proposed_value)}${rb?.verified === true ? ' · read-back COCOK ✓' : rb?.verified === false ? ' · read-back BELUM cocok (cek Ads Manager)' : ''}`,
     })
   } catch { /* log gagal tak mengubah hasil */ }
+
+  // Eksekusi selesai (berhasil atau gagal) → Log Optimasi & kartu aksi disegarkan.
+  notifyApprovalChanged({ actionType: approvalRow.action_type, status })
 
   if (failMsg) { const e = new Error(failMsg); e.failed = true; throw e }
   return result

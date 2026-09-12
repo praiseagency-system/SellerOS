@@ -7,6 +7,7 @@ import { RoasBadge, StatusBadge, DeliveryBadge, VideoLabel, VideoIdLink, fmtRp, 
 import { TableScroll, usePaged, Pager } from '../ui/DataTable'
 import { STATUS_META } from '../../utils/gmvmaxClassify'
 import { VideoExecCell } from './VideoExecActions'
+import VideoThumb from './VideoThumb'
 import TargetChooserRow from './TargetChooserRow'
 
 const VIDEO_SORT = {
@@ -61,7 +62,16 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
             const note = notes[v.videoId]
             const baris = (
               <tr key={v.videoId} className="border-b border-line/5 hover:bg-fill/5">
-                <td className="py-2.5 pr-3 max-w-xs"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></td>
+                {/* Thumbnail dimuat MALAS (IntersectionObserver di dalam
+                    VideoThumb): tabel ini rutin memuat ratusan baris, dan
+                    meminta semuanya sekaligus berarti ratusan permintaan oEmbed
+                    → 429 dan semua gambar gagal, termasuk yang sedang dilihat. */}
+                <td className="py-2.5 pr-3 max-w-xs">
+                  <div className="flex items-center gap-2.5">
+                    <VideoThumb videoId={v.videoId} account={v.account} title={v.title} size="table" />
+                    <div className="min-w-0"><VideoLabel title={v.title} account={v.account} videoId={v.videoId} compact /></div>
+                  </div>
+                </td>
                 <td className="py-2.5 px-3"><VideoIdLink videoId={v.videoId} account={v.account} /></td>
                 {showDelivery && <td className="py-2.5 px-3"><DeliveryBadge delivery={v.delivery} /></td>}
                 {showStatus && <td className="py-2.5 px-3"><StatusBadge status={v.status} /></td>}

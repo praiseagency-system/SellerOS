@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Rocket, Ban, X, ChevronDown } from 'lucide-react'
 import { requestBoostSession, requestCreativeExclude, SESSION_MIN_BUDGET_IDR, BOOST_BLOCKED_STATUS } from '../../data/gmvmaxCampaignControl'
-import { pickBoostTarget } from '../../utils/gmvmaxBoostTarget'
+import { pickBoostTarget, pickExcludeTarget } from '../../utils/gmvmaxBoostTarget'
 import SessionSchedule from './SessionSchedule'
 import { defaultSchedule } from '../../utils/gmvmaxSchedule'
 
@@ -53,17 +53,23 @@ export function VideoExecCell({
 
   // Sasaran ditentukan sistem lewat tangga bukti; menu hanya muncul kalau
   // buktinya memang tak ada. Lihat gmvmaxBoostTarget.js.
-  const target = pickBoostTarget({
+  //
+  // DUA sasaran, bukan satu: Boost mencari tempat menaruh uang (jejaknya omzet),
+  // Exclude mencari tempat menghentikannya (jejaknya belanja). Satu sasaran untuk
+  // keduanya pernah mengirim exclude ke campaign yang cost-nya nol.
+  const tBoost = pickBoostTarget({
     video, anchorSpu: anchorOf?.(video.videoId) || null, eligible: (p) => !!resolve(p),
   })
+  const tExclude = pickExcludeTarget({ video, eligible: (p) => !!resolve(p) })
 
   const go = (kind) => {
-    if (target.confident && target.placement) (kind === 'BOOST' ? onBoost : onExclude)(video, target.placement)
+    const t = kind === 'BOOST' ? tBoost : tExclude
+    if (t.confident && t.placement) (kind === 'BOOST' ? onBoost : onExclude)(video, t.placement)
     else onOpenChange?.(kind)
   }
   // Tanpa pemanggil yang menyediakan pemilih, tombol untuk sasaran ambigu akan
   // diam saja — lebih baik dinonaktifkan dengan keterangan daripada mengelabui.
-  const perluPemilih = !target.confident && !onOpenChange
+  const perluPemilih = (t) => !t.confident && !onOpenChange
 
   const btn = 'px-2 py-0.5 rounded-md text-[10px] font-semibold border disabled:opacity-40 whitespace-nowrap'
 
@@ -72,23 +78,23 @@ export function VideoExecCell({
       {blocked ? (
         <span className="text-[10px] text-ink-faint whitespace-nowrap">{BLOCK_HINT[video.delivery] || '—'}</span>
       ) : (
-        <button onClick={() => go('BOOST')} disabled={perluPemilih}
-          title={perluPemilih
+        <button onClick={() => go('BOOST')} disabled={perluPemilih(tBoost)}
+          title={perluPemilih(tBoost)
             ? 'Video ini ikut di beberapa campaign — layar ini belum menyediakan pemilih sasaran'
             : 'Creative Boost — belanja tambahan utk eksplorasi video ini (via 🔔)'}
           className={`${btn} border-violet-500/30 text-violet-300 hover:bg-violet-500/10`}>
-          Boost{!target.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
+          Boost{!tBoost.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
         </button>
       )}
-      <button onClick={() => go('EXCLUDE')} disabled={perluPemilih}
-        title={perluPemilih
+      <button onClick={() => go('EXCLUDE')} disabled={perluPemilih(tExclude)}
+        title={perluPemilih(tExclude)
           ? 'Video ini ikut di beberapa campaign — layar ini belum menyediakan pemilih sasaran'
           : video.delivery === 'EXCLUDED' ? 'Pulihkan ke rotasi (via 🔔)' : 'Keluarkan dari rotasi campaign (via 🔔)'}
         className={video.delivery === 'EXCLUDED'
           ? `${btn} border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10`
           : `${btn} border-red-500/25 text-red-400 hover:bg-red-500/10`}>
         {video.delivery === 'EXCLUDED' ? 'Pulihkan' : 'Exclude'}
-        {!target.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
+        {!tExclude.confident && <ChevronDown className="w-2.5 h-2.5 inline ml-0.5 -mt-px" />}
       </button>
 
     </div>
@@ -193,6 +199,7 @@ export function VideoExcludeDialog({ video, placement, onClose, onQueued }) {
         mode: restore ? 'ADD' : 'REMOVE',
         evidence: {
           dari: 'Performa Video',
+          akun: video.account ? `@${video.account}` : null,
           status: video.delivery || null,
           roas: video.lifetime?.roas != null ? Number(video.lifetime.roas.toFixed(2)) : null,
           spend: Math.round(video.lifetime?.cost || 0),
