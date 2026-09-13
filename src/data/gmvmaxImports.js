@@ -34,7 +34,11 @@ export async function listImports() {
 const CREATIVE_COLS =
   'id, import_id, video_id, campaign_name, campaign_id, product_id, creative_type, ' +
   'video_title, tiktok_account, time_posted, status, auth_type, cost, sku_orders, ' +
-  'cost_per_order, gross_revenue, roas, impressions, clicks, ctr, cvr, hook_tag'
+  'cost_per_order, gross_revenue, roas, impressions, clicks, ctr, cvr, hook_tag, ' +
+  // Rasio tonton 2s..100% — WAJIB ikut: fromDb memetakannya ke vr2s..vr100 dan
+  // rollup lifetime.funnel bergantung padanya (Performa Video, matriks Campaign
+  // Ads, modal produk). Sempat tertinggal dari daftar ini → semua tampil "—".
+  'vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100'
 const PAGE = 1000
 const CONCURRENCY = 8 // permintaan paralel maksimum ke Supabase
 
@@ -272,7 +276,10 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
       roi: a.cost > 0 ? a.revenue / a.cost : null,
       ctr: a.impressions > 0 ? a.clicks / a.impressions : null,
       cvr: a.clicks > 0 ? a.orders / a.clicks : null,
-      vr: a.impressions > 0 ? a.vrW.map(w => w / a.impressions) : null,
+      // Kolom vr_* tersimpan sebagai PERSEN (0–100) apa adanya dari TikTok.
+      // Dikembalikan sebagai FRAKSI 0–1 agar seragam dengan ctr/cvr di atas —
+      // drawer eksperimen memformat semuanya lewat fmtPct (×100).
+      vr: a.impressions > 0 ? a.vrW.map(w => w / a.impressions / 100) : null,
     }))
 }
 
