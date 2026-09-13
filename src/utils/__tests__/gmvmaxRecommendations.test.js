@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRecommendations, totalActions, roasBucket, spendBucket, ageDays } from '../gmvmaxRecommendations'
+import { buildRecommendations, totalActions, roasBucket, spendBucket, ageDays, boostVerdict, medianCtr } from '../gmvmaxRecommendations'
 
 const NOW = Date.parse('2026-08-28T00:00:00Z')
 const vid = (o = {}) => ({
@@ -165,5 +165,55 @@ describe('buildRecommendations', () => {
   it('tanpa masukan apa pun tidak meledak', () => {
     expect(() => buildRecommendations()).not.toThrow()
     expect(totalActions(buildRecommendations())).toBe(0)
+  })
+})
+
+// ── Vonis & alasan boost (Opsi A, 14 Sep 2026) ──────────────────────────────
+const vb = (over = {}, life = {}) => ({
+  videoId: 'v', title: 't', account: 'a', delivery: 'DELIVERING', placements: [],
+  lifetime: { cost: 4101, revenue: 966037, orders: 7, impressions: 277, clicks: 24, ctr: 24 / 277, cvr: 7 / 24, roas: 235.6, funnel: { vr2s: 42.8 }, ...life },
+  ...over,
+})
+
+describe('boostVerdict', () => {
+  it('iklan bekerja → vonis iklan, kalimat menyebut CTR vs median & konversi', () => {
+    const r = boostVerdict(vb(), { floor: 50000, medianCtr: 0.0337 })
+    expect(r.vonis).toBe('iklan')
+    expect(r.alasan).toContain('7 order berulang')
+    expect(r.alasan).toContain('8% lantai')
+    expect(r.alasan).toContain('2,6× median 3,4%')
+    expect(r.alasan).toContain('29% klik jadi order')
+    expect(r.alasan).toContain('Sedang tayang')
+  })
+  it('impresi < 50 → laku organik (data nyata: ROAS 1918× dari 4 impresi, 0 klik)', () => {
+    const r = boostVerdict(vb({}, { cost: 1347, revenue: 2584431, orders: 4, impressions: 4, clicks: 0, ctr: 0, cvr: null }), { floor: 50000 })
+    expect(r.vonis).toBe('organik')
+    expect(r.alasan).toContain('4 impresi, 0 klik')
+    expect(r.alasan).toContain('omzet 2,58 jt')
+  })
+  it('NOT_DELIVERYING → tak tayang', () => {
+    const r = boostVerdict(vb({ delivery: 'NOT_DELIVERYING' }, { impressions: 0, clicks: 0 }), { floor: 50000 })
+    expect(r.vonis).toBe('tak_tayang')
+    expect(r.alasan).toContain('tak tayang')
+  })
+  it('CVR > 100% disebut atribusi TikTok; hook 2s < 20% diperingatkan', () => {
+    const r = boostVerdict(vb({}, { impressions: 81, clicks: 3, orders: 6, ctr: 3 / 81, cvr: 2, funnel: { vr2s: 11 } }), { floor: 50000, medianCtr: 0.0337 })
+    expect(r.vonis).toBe('iklan')
+    expect(r.alasan).toContain('order melebihi klik')
+    expect(r.alasan).toContain('Hook 2s 11%, lemah')
+  })
+  it('item kandidat boost membawa vonis & alasan, signature tak berubah bentuk', () => {
+    const g = get(buildRecommendations({ videos: [vb()], thresholds: TH, now: NOW }), 'BOOST_CANDIDATE')
+    expect(g.items[0].vonis).toBe('iklan')
+    expect(typeof g.items[0].alasan).toBe('string')
+    expect(Object.keys(g.items[0].signature).sort()).toEqual(['aksi', 'roas_bucket', 'spend_bucket', 'status', 'umur_video_hari'])
+  })
+})
+
+describe('medianCtr', () => {
+  it('median CTR video berimpresi ≥100; null bila tak ada', () => {
+    expect(medianCtr([])).toBeNull()
+    const vs = [vb({}, { impressions: 200, ctr: 0.02 }), vb({}, { impressions: 300, ctr: 0.04 }), vb({}, { impressions: 10, ctr: 0.9 })]
+    expect(medianCtr(vs)).toBeCloseTo(0.03)
   })
 })

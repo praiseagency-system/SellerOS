@@ -27,9 +27,18 @@ import { useSortableRows, SortTh, tiktokVideoUrl, VideoIdLink, DeliveryBadge } f
 import { VideoExecCell } from './VideoExecActions'
 import VideoThumb from './VideoThumb'
 import { pickBoostTarget, pickExcludeTarget, undecidedReason } from '../../utils/gmvmaxBoostTarget'
+import { VONIS_BOOST } from '../../utils/gmvmaxRecommendations'
 import TargetChooserRow from './TargetChooserRow'
 
 const n = (v) => Math.round(Number(v) || 0).toLocaleString('id-ID')
+// Rasio 0–1 → "8,7%". CVR GMV Max bisa >100%: TikTok menghitung order termasuk
+// atribusi tanpa klik iklan, jadi angkanya ditampilkan apa adanya + tooltip.
+const pctF = (f) => (f == null ? '—' : (f * 100).toFixed(1).replace('.', ',') + '%')
+const VONIS_TONE = {
+  green: 'bg-emerald-500/15 text-emerald-400',
+  amber: 'bg-amber-500/15 text-amber-400',
+  muted: 'bg-fill/10 text-ink-muted',
+}
 const KOLOM_VIDEO = new Set(['BOOST_CANDIDATE', 'WASTEFUL', 'AUTH_NEEDED_EARNING'])
 // Pekerjaan kartu menentukan jejak mana yang dipakai memilih campaign sasaran:
 // menaikkan belanja mengikuti OMZET, menghentikan belanja mengikuti BELANJA.
@@ -46,6 +55,10 @@ const ACC_VIDEO = {
   revenue: (it) => it.video?.lifetime?.revenue ?? 0,
   cost: (it) => it.video?.lifetime?.cost ?? 0,
   roas: (it) => it.video?.lifetime?.roas ?? null,
+  ctr: (it) => it.video?.lifetime?.ctr ?? null,
+  cvr: (it) => it.video?.lifetime?.cvr ?? null,
+  // Urut vonis: terbukti lewat iklan dulu (rank 0) — dibalik karena desc default.
+  vonis: (it) => -(VONIS_BOOST[it.vonis]?.rank ?? 9),
 }
 const ACC_EXPIRED = { habis: (it) => Date.parse(it.rawEnd || 0) || 0 }
 const ACC_IDLE = { budget: (it) => it.budget ?? 0 }
@@ -94,6 +107,8 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
   const [chooser, setChooser] = useState(null)   // { id, kind }
   const [copied, setCopied] = useState(false)
   const isVideo = KOLOM_VIDEO.has(group.key)
+  // Kolom KENAPA BOOST hanya di kartu kandidat boost — kartu lain belum punya vonis.
+  const adaKenapa = group.key === 'BOOST_CANDIDATE'
   const kind = kindOf(group.key)
   const acc = isVideo ? ACC_VIDEO : group.key === 'AUTH_EXPIRED' ? ACC_EXPIRED : ACC_IDLE
   const { sorted, sort, toggle } = useSortableRows(group.items, acc)
@@ -111,7 +126,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
-        className="glass-modal w-full max-w-6xl max-h-[90vh] flex flex-col rounded-2xl border border-line/15 shadow-2xl">
+        className={`glass-modal w-full ${adaKenapa ? 'max-w-[1300px]' : 'max-w-6xl'} max-h-[90vh] flex flex-col rounded-2xl border border-line/15 shadow-2xl`}>
 
         <div className="flex items-start gap-3 px-6 py-4 border-b border-line/10">
           <div className="min-w-0 flex-1">
@@ -151,7 +166,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
               tetap bisa melebihi lebar tabel dan meluber lagi.
               min-w menjaga angka tetap terbaca di layar sempit: biar wadahnya
               yang menggeser, bukan kolomnya yang gepeng. */}
-          <table className="w-full text-sm table-fixed min-w-[920px]">
+          <table className={`w-full text-sm table-fixed ${adaKenapa ? 'min-w-[1180px]' : 'min-w-[920px]'}`}>
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/10">
                 <th className="py-2.5 pr-3 font-medium">{group.key === 'CAMPAIGN_IDLE_BUDGET' ? 'CAMPAIGN' : 'VIDEO'}</th>
@@ -169,6 +184,12 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
                   <SortTh label="OMZET" sortKey="revenue" sort={sort} onSort={toggle} className="w-28" />
                   <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} className="w-16" />
                   <SortTh label="ORDER" sortKey="orders" sort={sort} onSort={toggle} className="w-14" />
+                  {/* CTR/CVR (permintaan user 14 Sep 2026): kandidat boost tak bisa
+                      dinilai dari ROAS saja — rasio berpenyebut kecil berayun liar,
+                      sedangkan klik yang jadi order adalah bukti iklannya bekerja. */}
+                  <SortTh label="CTR" sortKey="ctr" sort={sort} onSort={toggle} className="w-16" />
+                  <SortTh label="CVR" sortKey="cvr" sort={sort} onSort={toggle} className="w-16" />
+                  {adaKenapa && <SortTh label="KENAPA BOOST" sortKey="vonis" sort={sort} onSort={toggle} align="left" className="w-[270px]" />}
                 </>}
                 {group.key === 'AUTH_EXPIRED' && <>
                   <th className="py-2.5 px-3 font-medium">AKUN</th>
@@ -236,6 +257,19 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
                         {m?.roas == null ? '—' : `${m.roas.toFixed(1)}×`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums text-[13px] text-ink-muted">{m?.orders || 0}</td>
+                      <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-[13px] ${m?.ctr == null ? 'text-ink-faint' : 'text-ink-muted'}`}>{pctF(m?.ctr)}</td>
+                      <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-[13px] ${m?.cvr == null ? 'text-ink-faint' : m.cvr > 1 ? 'text-ink-muted' : m.cvr >= 0.1 ? 'text-emerald-400' : 'text-ink-muted'}`}
+                        title={m?.cvr > 1 ? 'Order dihitung TikTok termasuk atribusi tanpa klik iklan, jadi bisa melebihi 100%' : undefined}>{pctF(m?.cvr)}</td>
+                      {adaKenapa && (
+                        <td className="py-2.5 px-3 text-[12px] leading-snug text-ink-muted">
+                          {it.vonis && (
+                            <span className={`inline-block mb-1 px-2 py-px rounded-full text-[11px] font-semibold ${VONIS_TONE[VONIS_BOOST[it.vonis]?.tone] || VONIS_TONE.muted}`}>
+                              {VONIS_BOOST[it.vonis]?.label || it.vonis}
+                            </span>
+                          )}
+                          <span className="block">{it.alasan}</span>
+                        </td>
+                      )}
                       <td className="py-2.5 pl-3 text-right whitespace-nowrap">
                         {it.pending ? (
                           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-amber-500/30 text-amber-400"
@@ -265,7 +299,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
                 )
                 return [baris, chooser?.id === it.id && it.video && exec ? (
                   <TargetChooserRow key={`${it.id}-pilih`} video={it.video} exec={exec}
-                    kind={chooser.kind} colSpan={isVideo ? 7 : 3}
+                    kind={chooser.kind} colSpan={isVideo ? (adaKenapa ? 10 : 9) : 3}
                     onPick={(pp) => {
                       setChooser(null)
                       ;(chooser.kind === 'BOOST' ? exec.onBoost : exec.onExclude)(it.video, pp)
