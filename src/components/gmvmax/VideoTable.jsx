@@ -10,11 +10,24 @@ import { VideoExecCell } from './VideoExecActions'
 import VideoThumb from './VideoThumb'
 import TargetChooserRow from './TargetChooserRow'
 
+// Rasio tonton video iklan (API: ad_video_view_rate_2s/6s/p25..p100), berskala
+// PERSEN 0–100 apa adanya dari TikTok — sama dengan ProductDetailModal &
+// CampaignStatusMatrix. Enam kolom angka (Opsi B, 14 Sep 2026), semua sortable.
+const VIEW_RATE_COLS = [
+  { key: 'vr2s', label: '2S' }, { key: 'vr6s', label: '6S' },
+  { key: 'vr25', label: '25%' }, { key: 'vr50', label: '50%' },
+  { key: 'vr75', label: '75%' }, { key: 'vr100', label: '100%' },
+]
+const pctRaw = (v, d = 1) => (v == null ? '—' : v.toFixed(d) + '%')
+// 2s berskala persen: ≥30 = hook kuat (ambang yang sama dgn ProductDetailModal).
+const hookTone = (h) => (h != null && h >= 30 ? 'text-emerald-500' : 'text-ink-muted')
+
 const VIDEO_SORT = {
   cost: (v) => v.lifetime.cost,
   revenue: (v) => v.lifetime.revenue,
   roas: (v) => v.lifetime.roas,
   orders: (v) => v.lifetime.orders,
+  ...Object.fromEntries(VIEW_RATE_COLS.map(c => [c.key, (v) => v.lifetime.funnel?.[c.key]])),
 }
 
 const ACTION_TEXT = {
@@ -52,6 +65,9 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
             <SortTh label="REVENUE" sortKey="revenue" sort={sort} onSort={toggle} />
             <SortTh label="ROAS" sortKey="roas" sort={sort} onSort={toggle} />
             <SortTh label="ORDERS" sortKey="orders" sort={sort} onSort={toggle} />
+            {VIEW_RATE_COLS.map(c => (
+              <SortTh key={c.key} label={c.label} sortKey={c.key} sort={sort} onSort={toggle} className="w-16" />
+            ))}
             {showAction && <th className="py-2.5 px-3 font-medium">AKSI</th>}
             {exec && <th className="py-2.5 px-3 font-medium text-right">EKSEKUSI</th>}
             <th className="py-2.5 pl-3 font-medium text-center">CATATAN</th>
@@ -94,6 +110,11 @@ export default function VideoTable({ videos, thresholds, notes = {}, onNote, pro
                 <td className="py-2.5 px-3 text-right text-ink whitespace-nowrap">{fmtRp(v.lifetime.revenue)}</td>
                 <td className="py-2.5 px-3 text-right"><RoasBadge roas={v.lifetime.roas} thresholds={thresholds} showLabel={false} /></td>
                 <td className="py-2.5 px-3 text-right text-ink-muted">{v.lifetime.orders || 0}</td>
+                {VIEW_RATE_COLS.map(c => (
+                  <td key={c.key} className={`py-2.5 px-3 text-right tabular-nums whitespace-nowrap ${c.key === 'vr2s' ? hookTone(v.lifetime.funnel?.vr2s) : 'text-ink-muted'}`}>
+                    {pctRaw(v.lifetime.funnel?.[c.key])}
+                  </td>
+                ))}
                 {showAction && (
                   <td className="py-2.5 px-3">
                     <span className={`text-xs ${v.status === 'kill' ? 'text-red-500' : v.status === 'scale' ? 'text-emerald-500' : 'text-ink-muted'}`}>
