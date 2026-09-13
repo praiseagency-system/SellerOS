@@ -38,6 +38,67 @@ export function ageDays(timePosted, now) {
 
 const sig = (o) => o   // penanda niat: objek ini disimpan apa adanya ke approval
 
+// ── Alasan boost per video (Opsi A, 14 Sep 2026) ────────────────────────────
+// Kartu kandidat boost menyaring dengan ROAS, tapi ROAS sendiri tak menjawab
+// "kenapa video INI layak dinaikkan". Pada data nyata 1–12 Sep, video ber-ROAS
+// 1918× ternyata cuma punya 4 impresi dan 0 klik: omzetnya lahir organik, bukan
+// dari iklan. Boost atas dasar itu adalah UJI, bukan penggandaan. Maka tiap
+// kandidat diberi VONIS dari jejak iklannya, lalu kalimat yang menyebut angka.
+//
+// Vonis SENGAJA tidak dimasukkan ke signature: bentuk sidik kondisi diuji
+// persis (rekomendasi.test) dan pelajaran lama dicocokkan atasnya.
+const MIN_IMPRESI_BUKTI = 50
+export const VONIS_BOOST = {
+  iklan:      { rank: 0, label: 'Terbukti lewat iklan',        tone: 'green' },
+  organik:    { rank: 1, label: 'Laku organik, boost = uji',   tone: 'amber' },
+  tak_tayang: { rank: 2, label: 'Tak tayang',                  tone: 'muted' },
+}
+const idn = (n) => Math.round(n).toLocaleString('id-ID')
+const rpPendek = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(2).replace('.', ',')} jt`
+  : n >= 1e3 ? `${Math.round(n / 1e3)} rb` : idn(n)
+const pct1 = (f) => `${(f * 100).toFixed(1).replace('.', ',')}%`
+const pct0 = (f) => `${Math.round(f * 100)}%`
+const tidakTayang = (delivery) => /NOT_DELIVER|TIDAK_?DITAYANG|NOT DELIVER/i.test(String(delivery || ''))
+
+// Median CTR video yang impresinya cukup — pembanding "2,6× median" di kalimat.
+export function medianCtr(videos, minImp = 100) {
+  const xs = videos
+    .filter(v => (v.lifetime?.impressions || 0) >= minImp && v.lifetime?.ctr != null)
+    .map(v => v.lifetime.ctr).sort((a, b) => a - b)
+  if (!xs.length) return null
+  const m = xs.length >> 1
+  return xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2
+}
+
+export function boostVerdict(v, { floor = 50000, medianCtr: med = null } = {}) {
+  const m = v.lifetime || {}
+  const orders = m.orders || 0, imp = m.impressions || 0, clk = m.clicks || 0
+  const cost = m.cost || 0, rev = m.revenue || 0
+  const vr2s = m.funnel?.vr2s
+  const bukti = `${orders} order${orders >= 2 ? ' berulang' : ''}, omzet ${rpPendek(rev)} dari cost ${idn(cost)} (${Math.max(1, Math.round(cost / floor * 100))}% lantai).`
+
+  if (tidakTayang(v.delivery)) {
+    return { vonis: 'tak_tayang', alasan: `${bukti} Saat ini tak tayang, ${idn(imp)} impresi: omzet sepenuhnya organik. Boost memaksa sistem menayangkannya lagi. Anggap sebagai uji.` }
+  }
+  if (imp < MIN_IMPRESI_BUKTI || clk === 0) {
+    return { vonis: 'organik', alasan: `${bukti} Iklannya nyaris tak tayang: ${idn(imp)} impresi, ${idn(clk)} klik. Omzet ini lahir organik. Boost menguji apakah iklan bisa menambah.` }
+  }
+  const ctr = m.ctr, cvr = m.cvr
+  const banding = med > 0 && ctr != null
+    ? (ctr / med >= 1.3 ? ` (${(ctr / med).toFixed(1).replace('.', ',')}× median ${pct1(med)})`
+      : ctr / med <= 0.7 ? ` (di bawah median ${pct1(med)})` : ' setara median')
+    : ''
+  const konversi = cvr == null ? '' : cvr > 1
+    ? ', order melebihi klik (atribusi TikTok)'
+    : `, ${pct0(cvr)} klik jadi order`
+  const tahap = /LEARN|BELAJAR/i.test(String(v.delivery || ''))
+    ? 'Masih belajar; boost mempercepat eksplorasi.'
+    : 'Sedang tayang, tinggal diberi ruang belanja.'
+  const hook = vr2s != null && imp >= MIN_IMPRESI_BUKTI && vr2s < 20
+    ? ` Hook 2s ${Math.round(vr2s)}%, lemah: pantau retensi saat dinaikkan.` : ''
+  return { vonis: 'iklan', alasan: `${bukti} Iklannya bekerja: CTR ${pct1(ctr)}${banding}${konversi}. ${tahap}${hook}` }
+}
+
 // ── Pembangun ───────────────────────────────────────────────────────────────
 // videos      : hasil rollupVideos (punya lifetime, delivery, placements)
 // thresholds  : { roasGood, roasBad, spendFloor }
@@ -90,12 +151,15 @@ export function buildRecommendations({
   const boostAll = videos
     .filter(v => (v.lifetime?.roas ?? 0) >= good && v.lifetime.cost > 0 && v.lifetime.cost < floor)
   const boostThin = boostAll.filter(v => !kredibel(v))
+  const medCtr = medianCtr(videos)
   const boost = boostAll
     .filter(kredibel)
     .sort((a, b) => (b.lifetime.revenue || 0) - (a.lifetime.revenue || 0))
     .map(v => ({
       id: v.videoId, judul: v.title || v.videoId, akun: v.account,
       video: v,
+      // Vonis + kalimat "kenapa boost" — kolom KENAPA di jendela daftar.
+      ...boostVerdict(v, { floor, medianCtr: medCtr }),
       // Cost terlalu kecil untuk membuat ROAS bisa dipercaya. Bukan larangan —
       // order yang berulang tetap membuatnya layak — tapi angkanya perlu diberi
       // peringatan halus di tabel.
