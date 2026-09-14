@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
-  Users, Eye, EyeOff,
+  Users, Eye, EyeOff, Bell, Check,
 } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings } from '../data/campaigns'
@@ -18,6 +18,11 @@ import {
   activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey,
 } from '../utils/campaignPricing'
 import {
+  campaignActivity, activityTotals, newKeys, fmtAgo, getSeenAt, setSeenAt,
+} from '../utils/campaignActivity'
+import { getCurrentWorkspaceId } from '../utils/workspace'
+import { supabase } from '../lib/supabase'
+import {
   campaignPeriods, campaignStatus, periodsSummary, periodRange, periodRangeShort,
   periodLabel, periodStatus, periodSpan, activeDays, inAnyPeriod, inPeriod, sortPeriods,
 } from '../utils/campaignPeriods'
@@ -28,6 +33,8 @@ function fmtWhen(iso) {
   const d = new Date(iso); if (isNaN(d)) return ''
   return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
+
+const EMPTY_KEYS = new Set()
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 const PLATFORM_CLS = {
@@ -123,6 +130,14 @@ export default function CampaignPanel({ products }) {
   const [storeLines, setStoreLines] = useState([])
   const [platformTab, setPlatformTab] = useState(null)   // null = ikut isi data
   const [openFolders, setOpenFolders] = useState(() => new Set())
+  const [closedFolders, setClosedFolders] = useState(() => new Set())
+  // Penanda "keputusan client baru": batas waktu terakhir dilihat (per device,
+  // per workspace) + email kita sendiri supaya keputusan admin lewat /approve
+  // tidak ikut terhitung sebagai kabar dari client.
+  const wsId = getCurrentWorkspaceId()
+  const [seenAt, setSeen] = useState(() => getSeenAt(wsId))
+  const [selfEmail, setSelfEmail] = useState('')
+  const [filter, setFilter] = useState('all')  // all | new | pending
 
   const reload = useCallback(async () => {
     try { setCampaigns(await listCampaigns()); setLoadErr(false) }
@@ -137,12 +152,38 @@ export default function CampaignPanel({ products }) {
     return () => { active = false }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    supabase.auth.getUser()
+      .then(({ data }) => { if (active) setSelfEmail(data?.user?.email || '') })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
+
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products])
   // Nama campaign induk yang sudah ada (autocomplete + pengelompokan daftar).
   const parentSuggestions = useMemo(
     () => [...new Set(campaigns.map(c => (c.parentCampaign || '').trim()).filter(Boolean))],
     [campaigns],
   )
+  // Keputusan client yang masuk sejak terakhir dilihat, per campaign.
+  const activity = useMemo(() => {
+    const m = new Map()
+    for (const c of campaigns) m.set(c.id, campaignActivity(c, seenAt, selfEmail))
+    return m
+  }, [campaigns, seenAt, selfEmail])
+  const totals = useMemo(() => activityTotals(campaigns, seenAt, selfEmail), [campaigns, seenAt, selfEmail])
+  const newCountOf = useCallback(c => activity.get(c.id)?.count || 0, [activity])
+  // Campaign yang masih menunggu keputusan (ada SKU aktif berstatus pending).
+  const pendingOf = useCallback(c => { const s = approvalSummary(c); return s.pending }, [])
+
+  function markSeen() {
+    const iso = new Date().toISOString()
+    setSeenAt(wsId, iso)
+    setSeen(iso)
+    setFilter(f => (f === 'new' ? 'all' : f))
+  }
+
   // Jumlah campaign per platform (untuk label tab).
   const platformCount = useMemo(() => {
     const n = { tiktok: 0, shopee: 0 }
@@ -154,26 +195,33 @@ export default function CampaignPanel({ products }) {
   // Campaign di tab platform yang aktif, dikelompokkan per judul induk.
   // Yang tanpa induk tampil langsung sebagai kartu (tanpa folder).
   const { folders, loose } = useMemo(() => {
-    const inTab = campaigns.filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
+    const inTab = campaigns
+      .filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
+      .filter(c => filter === 'all'
+        || (filter === 'new' ? newCountOf(c) > 0 : pendingOf(c) > 0))
+    // Yang ada kabar baru dari client naik ke atas (urutan lain tetap).
+    const sorted = [...inTab].sort((a, b) => newCountOf(b) - newCountOf(a))
     const order = [], map = new Map(), loose = []
-    for (const c of inTab) {
+    for (const c of sorted) {
       const key = (c.parentCampaign || '').trim()
       if (!key) { loose.push(c); continue }
       if (!map.has(key)) { map.set(key, []); order.push(key) }
       map.get(key).push(c)
     }
     return { folders: order.map(key => ({ key, items: map.get(key) })), loose }
-  }, [campaigns, tab])
+  }, [campaigns, tab, filter, newCountOf, pendingOf])
 
   // Daftar datar: folder judul + sub-campaign yang terbuka, lalu campaign
   // tanpa induk. Satu loop render — folder cuma baris pembuka.
   const rows = useMemo(() => {
     const out = []
     for (const f of folders) {
-      const open = openFolders.has(f.key)
+      const fresh = f.items.reduce((n, c) => n + newCountOf(c), 0)
+      // Folder dengan kabar baru terbuka sendiri, kecuali sudah ditutup manual.
+      const open = openFolders.has(f.key) || (fresh > 0 && !closedFolders.has(f.key))
       const span = periodSpan(f.items.flatMap(c => campaignPeriods(c)))
       out.push({
-        type: 'folder', key: f.key, count: f.items.length, open,
+        type: 'folder', key: f.key, count: f.items.length, open, fresh,
         running: f.items.filter(c => campaignStatus(c).key === 'running').length,
         range: (span.start || span.end) ? periodRange({ start: span.start, end: span.end }) : 'tanpa tanggal',
       })
@@ -181,14 +229,18 @@ export default function CampaignPanel({ products }) {
     }
     for (const c of loose) out.push({ type: 'card', c, nested: false })
     return out
-  }, [folders, loose, openFolders])
+  }, [folders, loose, openFolders, closedFolders, newCountOf])
 
-  function toggleFolder(key) {
-    setOpenFolders(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
+  // Folder dibuka manual vs ditutup manual disimpan terpisah: folder yang
+  // terbuka otomatis karena ada kabar baru harus tetap bisa ditutup.
+  function toggleFolder(key, isOpen) {
+    if (isOpen) {
+      setOpenFolders(prev => { const n = new Set(prev); n.delete(key); return n })
+      setClosedFolders(prev => new Set(prev).add(key))
+    } else {
+      setClosedFolders(prev => { const n = new Set(prev); n.delete(key); return n })
+      setOpenFolders(prev => new Set(prev).add(key))
+    }
   }
 
   async function handleSave(form) {
@@ -245,6 +297,50 @@ export default function CampaignPanel({ products }) {
         </div>
       )}
 
+      {/* Kabar dari client: keputusan yang masuk sejak terakhir dilihat */}
+      {totals.count > 0 && (
+        <div className="mb-3 px-4 py-3 rounded-2xl bg-blue-600/8 border border-blue-500/25 flex items-center gap-3 flex-wrap">
+          <Bell className="w-4 h-4 text-blue-400 flex-shrink-0" />
+          <p className="text-[13px] text-ink flex-1 min-w-[200px]">
+            <b className="font-semibold text-ink-strong">{totals.count} keputusan client baru</b>
+            {' '}di {totals.campaigns} campaign sejak terakhir dilihat
+          </p>
+          <button onClick={markSeen}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-line/20 text-ink-muted hover:text-ink hover:border-line/35 transition-colors flex-shrink-0">
+            <Check className="w-3.5 h-3.5" /> Tandai sudah dilihat
+          </button>
+        </div>
+      )}
+
+      {/* Saringan daftar: kabar baru / masih menunggu / semua */}
+      {campaigns.length > 0 && (() => {
+        const inTab = campaigns.filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
+        const chips = [
+          { id: 'new', label: 'Baru', n: inTab.filter(c => newCountOf(c) > 0).length },
+          { id: 'pending', label: 'Menunggu', n: inTab.filter(c => pendingOf(c) > 0).length },
+          { id: 'all', label: 'Semua', n: inTab.length },
+        ]
+        return (
+          <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+            {chips.map(ch => {
+              const on = filter === ch.id
+              const disabled = ch.n === 0 && ch.id !== 'all'
+              return (
+                <button key={ch.id} type="button" disabled={disabled}
+                  onClick={() => setFilter(on && ch.id !== 'all' ? 'all' : ch.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                    on ? (ch.id === 'new' ? 'bg-blue-600/15 text-blue-300 border border-blue-500/30'
+                                          : 'bg-fill/10 text-ink border border-line/20')
+                       : `border border-line/12 ${disabled ? 'text-ink-faint/50 cursor-default' : 'text-ink-faint hover:text-ink hover:border-line/25'}`
+                  }`}>
+                  {ch.label} · {ch.n}
+                </button>
+              )
+            })}
+          </div>
+        )
+      })()}
+
       {/* Tab platform — campaign TikTok & Shopee dipisah */}
       {campaigns.length > 0 && (
         <div className="flex items-center gap-1.5 mb-3 border-b border-line/8 pb-2">
@@ -277,7 +373,9 @@ export default function CampaignPanel({ products }) {
         <div className="space-y-2.5">
           {rows.length === 0 && (
             <p className="text-xs text-ink-faint px-1 py-6 text-center">
-              Belum ada campaign {PLATFORM_LABEL[tab]}. Pindah tab atau buat campaign baru.
+              {filter !== 'all'
+                ? <>Tidak ada campaign {PLATFORM_LABEL[tab]} pada saringan ini. <button onClick={() => setFilter('all')} className="text-blue-400 hover:underline">Tampilkan semua</button>.</>
+                : <>Belum ada campaign {PLATFORM_LABEL[tab]}. Pindah tab atau buat campaign baru.</>}
             </p>
           )}
           {rows.map(row => {
@@ -285,12 +383,17 @@ export default function CampaignPanel({ products }) {
             if (row.type === 'folder') {
               const FChevron = row.open ? ChevronDown : ChevronRight
               return (
-                <button key={`f:${row.key}`} onClick={() => toggleFolder(row.key)}
+                <button key={`f:${row.key}`} onClick={() => toggleFolder(row.key, row.open)}
                   className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-surface border shadow-sm text-left transition-colors ${row.open ? 'border-line/20' : 'border-line/10 hover:border-line/25'}`}>
                   <FChevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
                   <Folder className="w-4 h-4 text-blue-400 flex-shrink-0" />
                   <p className="text-[13px] font-semibold text-ink-strong truncate">{row.key}</p>
                   <span className="text-[11px] text-ink-faint flex-shrink-0">· {row.count} sub-campaign</span>
+                  {row.fresh > 0 && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-600/15 text-blue-300 flex-shrink-0">
+                      {row.fresh} baru
+                    </span>
+                  )}
                   {row.running > 0 && (
                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-green-500/12 text-green-300 flex-shrink-0 inline-flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />{row.running} berjalan
@@ -301,12 +404,14 @@ export default function CampaignPanel({ products }) {
               )
             }
             const c = row.c
+            const act = activity.get(c.id) || { count: 0, sentence: '', latest: null }
+            const freshKeys = act.count > 0 ? newKeys(c, seenAt, selfEmail) : EMPTY_KEYS
             const agg = campaignAgg(c.items || [], productMap)
             const mon = monitorCampaign(c, storeLines, productMap)
             const open = expanded === c.id
             const Chevron = open ? ChevronDown : ChevronRight
             return (
-              <div key={c.id} className={`bg-surface rounded-2xl border border-line/10 shadow-sm overflow-hidden ${row.nested ? 'ml-5' : ''}`}>
+              <div key={c.id} className={`bg-surface rounded-2xl border shadow-sm overflow-hidden ${act.count > 0 ? 'border-blue-500/35' : 'border-line/10'} ${row.nested ? 'ml-5' : ''}`}>
                 <div className="flex items-center gap-3 p-4">
                   <button onClick={() => setExpanded(x => x === c.id ? null : c.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                     <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
@@ -335,10 +440,19 @@ export default function CampaignPanel({ products }) {
                           const txt = ap.approved === ap.total ? 'Semua SKU disetujui'
                             : `${ap.approved}/${ap.total} SKU disetujui${ap.rejected ? ` · ${ap.rejected} ditolak` : ''}`
                           return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${cls}`}>{txt}</span> })()}
+                        {act.count > 0 && (
+                          <span title={`${act.count} keputusan client baru sejak terakhir dilihat`}
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 bg-blue-600/15 text-blue-300">Baru</span>
+                        )}
                       </div>
                       <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
                         <CalendarRange className="w-3 h-3" />{dateRange(c)} · {agg.products} produk · {agg.count} varian
                       </p>
+                      {act.count > 0 && (
+                        <p className="text-[11px] text-blue-300 truncate mt-0.5">
+                          {act.sentence} · {fmtAgo(act.latest?.at)}
+                        </p>
+                      )}
                       {c.description && (
                         <p className="text-[11px] text-ink-faint truncate mt-0.5">{c.description}</p>
                       )}
@@ -372,7 +486,8 @@ export default function CampaignPanel({ products }) {
                     ) : (
                       <div className="space-y-2.5">
                         {byProductList(c.items).map(([pid, its]) => (
-                          <ProductCard key={pid} c={c} productId={pid} its={its} productMap={productMap} />
+                          <ProductCard key={pid} c={c} productId={pid} its={its} productMap={productMap}
+                            fresh={freshKeys} seenAt={seenAt} />
                         ))}
                       </div>
                     )}
@@ -1037,7 +1152,7 @@ const VERDICT_CLS = {
 // Kartu satu produk di dalam detail campaign: status, verdict worth-it,
 // riwayat approval, lalu tiap varian (harga campaign, margin, komisi & biaya
 // yang bisa diklik untuk breakdown, tabel voucher).
-function ProductCard({ c, productId, its, productMap }) {
+function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt = '' }) {
   const [openFee, setOpenFee] = useState(null)
   const p = productMap[productId]
   const cfg = c.voucherConfig
@@ -1057,6 +1172,9 @@ function ProductCard({ c, productId, its, productMap }) {
     : sum.approved === 0 && sum.rejected === 0 ? { label: 'Menunggu', cls: APPROVAL.pending.cls }
     : { label: `${sum.approved}/${sum.total} SKU disetujui${sum.rejected ? ` · ${sum.rejected} ditolak` : ''}`,
         cls: sum.rejected > 0 ? APPROVAL.rejected.cls : APPROVAL.pending.cls }
+  // Entri riwayat dihitung baru bila lebih muda dari batas "terakhir dilihat".
+  const seenMs = Date.parse(seenAt || '') || 0
+  const isFresh = e => !!e.by && (Date.parse(e.at || '') || 0) > seenMs
   const plog = approvalLogOfProduct(c, productId, its)
   const a = c.approvals?.[productId]
   const logRows = plog.length > 0 ? plog.slice(0, 4)
@@ -1070,6 +1188,10 @@ function ProductCard({ c, productId, its, productMap }) {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-[13px] font-semibold text-ink-strong">{p ? p.name : '(produk dihapus)'}</p>
             {stLabel && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${stLabel.cls}`}>{stLabel.label}</span>}
+            {fresh.has(productId) && (
+              <span title="ada keputusan client baru di produk ini"
+                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-600/15 text-blue-300">Baru</span>
+            )}
             {verdict && <span title={`margin terburuk ${worst?.toFixed(1)}% vs target ${target}%`} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${VERDICT_CLS[verdict.key]}`}>{verdict.label}</span>}
           </div>
           <p className="text-[11px] text-ink-faint mt-0.5">
@@ -1088,6 +1210,7 @@ function ProductCard({ c, productId, its, productMap }) {
               <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
               <span className="text-ink-faint flex-shrink-0">· {e.sku || 'semua SKU'}</span>
               <span className="truncate">{(e.by || e.byName) ? `oleh ${e.byName ? `${e.byName} (${e.by})` : e.by}` : ''}{e.note ? ` · "${e.note}"` : ''}</span>
+              {isFresh(e) && <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-blue-600/15 text-blue-300 flex-shrink-0">Baru</span>}
               <span className="ml-auto flex-shrink-0">{fmtWhen(e.at)}</span>
             </p>
           ))}
@@ -1127,6 +1250,9 @@ function ProductCard({ c, productId, its, productMap }) {
                   <span className="text-[13px] font-semibold text-ink-strong tabular-nums">{fmt(+it.price)}</span>
                 </div>
                 <span className={`text-[12px] font-semibold tabular-nums w-14 text-right flex-shrink-0 ${marginCls(m)}`}>{m != null ? `${m.toFixed(1)}%` : '—'}</span>
+                {fresh.has(itemKey(it)) && (
+                  <span title="keputusan client baru" className="text-[9px] font-semibold px-1 py-0.5 rounded bg-blue-600/15 text-blue-300 flex-shrink-0">Baru</span>
+                )}
                 {(() => { const ist = approvalStatusOfItem(c.approvals, it)
                   return <span title={hasOwnApproval(c.approvals, it) ? 'diputuskan khusus SKU ini' : 'ikut keputusan produk'}
                     className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 w-[62px] text-center ${APPROVAL[ist].cls}`}>
