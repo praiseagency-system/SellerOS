@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Lock, ChevronRight } from 'lucide-react'
+import { Lock, ChevronRight, ChevronDown, Folder } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ApproverShell, LoginBox, Spinner, Notice } from '../components/ApproverChrome'
 import { getPortalCampaigns } from '../data/campaignPortal'
 import { skuApprovalSummary } from '../utils/campaignPricing'
-import { campaignStatus, periodsSummary } from '../utils/campaignPeriods'
+import { campaignStatus, periodsSummary, campaignPeriods, periodSpan, periodRange } from '../utils/campaignPeriods'
 
 const tokenFromUrl = () => new URLSearchParams(window.location.search).get('t') || ''
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
+const PLATFORM_TAB_CLS = { tiktok: 'bg-gray-700 text-white', shopee: 'bg-orange-500/20 text-orange-300' }
+// Platform selain shopee dianggap tiktok — sama dengan daftar campaign in-app.
+const platformOf = c => (c.platform === 'shopee' ? 'shopee' : 'tiktok')
 const Shell = ({ children }) => <ApproverShell label="Portal Campaign" wide>{children}</ApproverShell>
 
 // Chip filter. `match` menentukan campaign mana yang masuk tiap kelompok;
@@ -31,6 +34,32 @@ function sortRows(a, b) {
   return (b.c.startDate || '').localeCompare(a.c.startDate || '')
 }
 
+// Kelompokkan baris per judul campaign induk (folder). Campaign tanpa induk
+// jadi kartu lepas. Folder diurutkan seperti kartu: yang menunggu dulu.
+function groupRows(rows) {
+  const map = new Map(), loose = []
+  for (const r of rows) {
+    const key = (r.c.parentCampaign || '').trim()
+    if (!key) { loose.push(r); continue }
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(r)
+  }
+  const folders = [...map].map(([key, items]) => {
+    const span = periodSpan(items.flatMap(r => campaignPeriods(r.c)))
+    const pending = items.reduce((s, r) => s + r.sum.pending, 0)
+    const running = items.filter(r => r.status.key === 'running' || r.status.key === 'gap').length
+    return {
+      type: 'folder', key, items, pending, running,
+      range: (span.start || span.end) ? periodRange({ start: span.start, end: span.end }) : 'tanpa tanggal',
+      // Wakil untuk pengurutan: sub-campaign paling mendesak.
+      lead: items[0],
+    }
+  })
+  const out = [...folders, ...loose.map(r => ({ type: 'card', row: r }))]
+  out.sort((a, b) => sortRows(a.type === 'folder' ? a.lead : a.row, b.type === 'folder' ? b.lead : b.row))
+  return out
+}
+
 export default function PortalPage() {
   const { loading: authLoading, user } = useAuth()
   const token = tokenFromUrl()
@@ -44,6 +73,10 @@ export default function PortalPage() {
 function PortalBody({ token, email }) {
   const [state, setState] = useState({ loading: true, error: null, workspace: null, campaigns: [] })
   const [filter, setFilter] = useState(null)   // null = ikut isi data
+  const [platformTab, setPlatformTab] = useState(null)   // null = ikut isi data
+  // Folder yang user buka/tutup sendiri; sisanya ikut default (terbuka bila
+  // masih ada SKU menunggu).
+  const [folderToggles, setFolderToggles] = useState(() => new Map())
 
   const load = useCallback(async () => {
     setState(s => ({ ...s, loading: true, error: null }))
@@ -63,15 +96,33 @@ function PortalBody({ token, email }) {
   if (state.loading) return <Spinner />
   if (state.error) return <Notice icon={Lock} title="Tidak bisa diakses" body={state.error} />
 
-  const rows = state.campaigns
+  const allRows = state.campaigns
     .map(c => ({ c, sum: skuApprovalSummary(c.items, c.approvals), status: campaignStatus(c) }))
     .sort(sortRows)
-  const counts = Object.fromEntries(FILTERS.map(f => [f.key, rows.filter(f.match).length]))
-  const active = filter || (counts.need > 0 ? 'need' : 'all')
-  const shown = rows.filter(FILTERS.find(f => f.key === active).match)
 
-  const pendingSku = rows.reduce((s, r) => s + r.sum.pending, 0)
-  const doneCount = rows.length - counts.need
+  // Tab platform: TikTok & Shopee dipisah. Default ke platform yang punya
+  // SKU menunggu; kalau tak ada, ke yang ada isinya.
+  const perPlatform = { tiktok: { n: 0, pending: 0 }, shopee: { n: 0, pending: 0 } }
+  for (const r of allRows) { const p = perPlatform[platformOf(r.c)]; p.n++; p.pending += r.sum.pending }
+  const tab = platformTab
+    || (perPlatform.tiktok.pending === 0 && perPlatform.shopee.pending > 0 ? 'shopee' : null)
+    || (perPlatform.tiktok.n === 0 && perPlatform.shopee.n > 0 ? 'shopee' : 'tiktok')
+  const rows = allRows.filter(r => platformOf(r.c) === tab)
+
+  const counts = Object.fromEntries(FILTERS.map(f => [f.key, rows.filter(f.match).length]))
+  const active = filter && counts[filter] > 0 ? filter : (counts.need > 0 ? 'need' : 'all')
+  const shown = rows.filter(FILTERS.find(f => f.key === active).match)
+  const grouped = groupRows(shown)
+
+  const pendingSku = allRows.reduce((s, r) => s + r.sum.pending, 0)
+  const needAll = allRows.filter(r => r.sum.pending > 0).length
+  const doneCount = allRows.length - needAll
+  const platformNote = ['tiktok', 'shopee']
+    .filter(id => perPlatform[id].pending > 0)
+    .map(id => `${PLATFORM_LABEL[id]} ${perPlatform[id].pending} SKU`).join(' · ')
+
+  const isOpen = f => folderToggles.has(f.key) ? folderToggles.get(f.key) : f.pending > 0
+  const toggleFolder = f => setFolderToggles(prev => new Map(prev).set(f.key, !isOpen(f)))
 
   return (
     <div>
@@ -82,10 +133,30 @@ function PortalBody({ token, email }) {
         <p className="text-[11px] text-ink-faint mt-0.5">
           {state.workspace?.name ? `${state.workspace.name} · ` : ''}
           {pendingSku > 0
-            ? `di ${counts.need} campaign · ${doneCount} campaign lain sudah beres`
-            : `${rows.length} campaign`}
+            ? `di ${needAll} campaign (${platformNote}) · ${doneCount} campaign lain sudah beres`
+            : `${allRows.length} campaign`}
         </p>
-        <div className="flex flex-wrap gap-1.5 mt-3">
+
+        {/* Tab platform — campaign TikTok & Shopee dipisah */}
+        <div className="flex items-center gap-1.5 mt-3 border-b border-line/8 pb-2.5">
+          {['tiktok', 'shopee'].map(id => {
+            const on = tab === id, p = perPlatform[id]
+            return (
+              <button key={id} type="button" onClick={() => setPlatformTab(id)} disabled={p.n === 0}
+                className={`px-3.5 py-1.5 rounded-xl text-[13px] font-semibold transition-colors disabled:opacity-35 ${
+                  on ? PLATFORM_TAB_CLS[id] : 'text-ink-muted hover:text-ink hover:bg-fill/8'}`}>
+                {PLATFORM_LABEL[id]} <span className={on ? 'opacity-70' : 'text-ink-faint'}>· {p.n}</span>
+                {p.pending > 0 && (
+                  <span className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${on ? 'bg-white/15' : 'bg-amber-500/12 text-amber-300'}`}>
+                    {p.pending} menunggu
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 mt-2.5">
           {FILTERS.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)} disabled={counts[f.key] === 0 && f.key !== 'all'}
               className={`text-[11px] font-medium px-2.5 py-1 rounded-full transition-colors disabled:opacity-35 ${
@@ -96,17 +167,55 @@ function PortalBody({ token, email }) {
         </div>
       </div>
 
-      {shown.length === 0 ? (
-        <p className="text-[12px] text-ink-faint text-center py-10">Tidak ada campaign di kelompok ini.</p>
+      {grouped.length === 0 ? (
+        <p className="text-[12px] text-ink-faint text-center py-10">Tidak ada campaign {PLATFORM_LABEL[tab]} di kelompok ini.</p>
       ) : (
         <div className="space-y-2.5">
-          {shown.map(r => <CampaignCard key={r.c.id} row={r} portalToken={token} />)}
+          {grouped.map(g => g.type === 'card'
+            ? <CampaignCard key={g.row.c.id} row={g.row} portalToken={token} />
+            : <FolderGroup key={`f:${g.key}`} folder={g} open={isOpen(g)} onToggle={() => toggleFolder(g)} portalToken={token} />
+          )}
         </div>
       )}
 
       <p className="text-[11px] text-ink-faint text-center mt-5">
         Masuk sebagai {email}. Daftar ini mengikuti campaign yang dibagikan tim.
       </p>
+    </div>
+  )
+}
+
+// Folder campaign induk: judul + ringkasan, sub-campaign di dalamnya.
+function FolderGroup({ folder, open, onToggle, portalToken }) {
+  const Chevron = open ? ChevronDown : ChevronRight
+  const needs = folder.pending > 0
+  return (
+    <div>
+      <button type="button" onClick={onToggle}
+        className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-surface border shadow-sm text-left transition-colors ${
+          open ? 'border-line/20' : 'border-line/10 hover:border-line/25'} ${needs && !open ? 'border-blue-500/35' : ''}`}>
+        <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
+        <Folder className="w-4 h-4 text-blue-400 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-ink-strong truncate">{folder.key}</p>
+          <p className="text-[11px] text-ink-faint truncate">{folder.items.length} sub-campaign · {folder.range}</p>
+        </div>
+        {needs && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/12 text-amber-300 flex-shrink-0">
+            {folder.pending} SKU menunggu
+          </span>
+        )}
+        {folder.running > 0 && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-green-500/12 text-green-300 flex-shrink-0 inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />{folder.running} berjalan
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="ml-5 mt-2 space-y-2 border-l border-line/10 pl-3">
+          {folder.items.map(r => <CampaignCard key={r.c.id} row={r} portalToken={portalToken} />)}
+        </div>
+      )}
     </div>
   )
 }
@@ -139,7 +248,7 @@ function CampaignCard({ row, portalToken }) {
 
       <p className="text-[14px] font-semibold text-ink-strong mt-2 truncate">{c.name}</p>
       <p className="text-[11px] text-ink-faint mt-0.5 truncate">
-        {c.parentCampaign ? `${c.parentCampaign} · ` : ''}{periodsSummary(c)} · {sum.total} SKU
+        {periodsSummary(c)} · {sum.total} SKU
       </p>
 
       {sum.total > 0 && (sum.approved > 0 || sum.rejected > 0) && (
