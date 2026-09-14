@@ -10,6 +10,7 @@ import {
   originalPrice, discountPct, hasHpp, priceStats, worstKnownMargin,
 } from '../utils/campaignPricing'
 import { campaignPeriods, periodsSummary, periodRange, periodLabel, periodStatus } from '../utils/campaignPeriods'
+import { registrationBadge, registrationDetail } from '../utils/campaignRegistration'
 
 const tokenFromUrl = () => new URLSearchParams(window.location.search).get('t') || ''
 // Token portal asal (dikirim halaman /portal) — untuk tautan "semua campaign".
@@ -147,6 +148,17 @@ function ApprovalBody({ token, email }) {
           {c.approvalAccess === 'public' ? ' · akses publik' : ' · privat'}
         </p>
         {c.description && <p className="text-xs text-ink-muted mt-1">{c.description}</p>}
+        {/* Status pendaftaran ke marketplace — diisi tim, di sini hanya dibaca. */}
+        {(() => { const rb = registrationBadge(c)
+          if (!rb) return null
+          const link = hrefOf(c.registration?.link)
+          return (
+            <p className="mt-2 text-[12px] flex items-center gap-1.5 flex-wrap">
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${rb.cls}`}>{rb.label}</span>
+              <span className="text-ink-faint">{registrationDetail(c)}</span>
+              {link && <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">lihat di marketplace</a>}
+            </p>
+          ) })()}
         {hrefOf(c.link) && (
           <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer"
             className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-400 hover:text-blue-300 border border-line/15 hover:border-blue-500/40 rounded-lg px-2.5 py-1.5 transition-colors">

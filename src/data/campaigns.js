@@ -26,6 +26,9 @@ function rowToCampaign(r) {
     approvalEmails: Array.isArray(r.approval_emails) ? r.approval_emails : [],
     approvalLog: Array.isArray(r.approval_log) ? r.approval_log : [],
     portalHidden: !!r.portal_hidden,
+    // Status pendaftaran ke marketplace (0062). Seperti portal_hidden, kolom
+    // ini TIDAK ikut `toRow` supaya simpan editor tak menimpanya.
+    registration: (r.registration && typeof r.registration === 'object') ? r.registration : {},
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -129,6 +132,20 @@ export async function saveCampaign(campaign) {
   const { data, error } = await supabase
     .from('campaigns')
     .insert({ workspace_id: wsId, ...base })
+    .select('*')
+    .single()
+  if (error) throw error
+  return rowToCampaign(data)
+}
+
+// Status pendaftaran campaign ke marketplace — diisi admin, dibaca client di
+// portal. Ditulis terpisah dari saveCampaign supaya bisa diubah dari daftar
+// tanpa membuka editor (dan tak ikut tertimpa saat editor disimpan).
+export async function setCampaignRegistration(campaignId, registration) {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ registration, updated_at: new Date().toISOString() })
+    .eq('id', campaignId)
     .select('*')
     .single()
   if (error) throw error
