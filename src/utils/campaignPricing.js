@@ -304,3 +304,14 @@ export function approvalLogOfProduct(c, productId, its) {
     .map(e => ({ ...e, sku: nameOf.get(e.productId) || null }))
     .slice().reverse()
 }
+
+// Label varian untuk daftar di dalam campaign. Produk satu varian biasanya
+// memberi varian itu NAMA YANG SAMA dengan produknya, sehingga nama panjang
+// tercetak dua kali di layar. Kembalikan '' bila cuma mengulang — pemanggil
+// menampilkan kode SKU sebagai gantinya.
+export function variantLabel(it, product) {
+  const n = (it?.name || '').trim()
+  if (!n) return `Varian ${(it?.varIdx ?? 0) + 1}`
+  const pn = (product?.name || '').trim()
+  return (pn && n.toLowerCase() === pn.toLowerCase()) ? '' : n
+}
