@@ -188,8 +188,13 @@ describe('boostVerdict', () => {
   it('impresi < 50 → laku organik (data nyata: ROAS 1918× dari 4 impresi, 0 klik)', () => {
     const r = boostVerdict(vb({}, { cost: 1347, revenue: 2584431, orders: 4, impressions: 4, clicks: 0, ctr: 0, cvr: null }), { floor: 50000 })
     expect(r.vonis).toBe('organik')
-    expect(r.alasan).toContain('4 impresi, 0 klik')
+    expect(r.alasan).toContain('menampilkan produk 4 kali, 0 klik')
     expect(r.alasan).toContain('omzet 2,58 jt')
+  })
+  it('cost ada tapi 0 tampilan produk → iklan tayang, penonton tak sampai ke produk', () => {
+    const r = boostVerdict(vb({}, { cost: 32241, revenue: 514289, orders: 4, impressions: 0, clicks: 0, ctr: null, cvr: null }), { floor: 50000 })
+    expect(r.vonis).toBe('organik')
+    expect(r.alasan).toContain('Iklannya tayang (cost 32.241) tapi TikTok mencatat 0 tampilan produk')
   })
   it('NOT_DELIVERYING → tak tayang', () => {
     const r = boostVerdict(vb({ delivery: 'NOT_DELIVERYING' }, { impressions: 0, clicks: 0 }), { floor: 50000 })

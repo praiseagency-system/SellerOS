@@ -27,11 +27,11 @@ export function useSortableRows(rows, accessors) {
 }
 
 // Header kolom yang bisa diklik untuk sortir. `align` = 'right' (metrik) / 'left'.
-export function SortTh({ label, sortKey, sort, onSort, align = 'right', className = '' }) {
+export function SortTh({ label, sortKey, sort, onSort, align = 'right', className = '', title }) {
   const active = sort?.key === sortKey
   const Icon = !active ? ChevronsUpDown : sort.dir === 'desc' ? ChevronDown : ChevronUp
   return (
-    <th className={`py-2.5 px-3 font-medium ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
+    <th title={title} className={`py-2.5 px-3 font-medium ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
       <button onClick={() => onSort(sortKey)}
         className={`inline-flex items-center gap-1 transition-colors hover:text-ink ${align === 'right' ? 'flex-row-reverse' : ''} ${active ? 'text-ink' : ''}`}>
         {label}

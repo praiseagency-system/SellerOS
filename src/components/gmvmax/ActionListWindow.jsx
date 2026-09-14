@@ -55,6 +55,7 @@ const ACC_VIDEO = {
   revenue: (it) => it.video?.lifetime?.revenue ?? 0,
   cost: (it) => it.video?.lifetime?.cost ?? 0,
   roas: (it) => it.video?.lifetime?.roas ?? null,
+  impressions: (it) => it.video?.lifetime?.impressions ?? null,
   ctr: (it) => it.video?.lifetime?.ctr ?? null,
   cvr: (it) => it.video?.lifetime?.cvr ?? null,
   // Urut vonis: terbukti lewat iklan dulu (rank 0) — dibalik karena desc default.
@@ -126,7 +127,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
-        className={`glass-modal w-full ${adaKenapa ? 'max-w-[1300px]' : 'max-w-6xl'} max-h-[90vh] flex flex-col rounded-2xl border border-line/15 shadow-2xl`}>
+        className={`glass-modal w-full ${adaKenapa ? 'max-w-[1380px]' : 'max-w-6xl'} max-h-[90vh] flex flex-col rounded-2xl border border-line/15 shadow-2xl`}>
 
         <div className="flex items-start gap-3 px-6 py-4 border-b border-line/10">
           <div className="min-w-0 flex-1">
@@ -166,7 +167,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
               tetap bisa melebihi lebar tabel dan meluber lagi.
               min-w menjaga angka tetap terbaca di layar sempit: biar wadahnya
               yang menggeser, bukan kolomnya yang gepeng. */}
-          <table className={`w-full text-sm table-fixed ${adaKenapa ? 'min-w-[1180px]' : 'min-w-[920px]'}`}>
+          <table className={`w-full text-sm table-fixed ${adaKenapa ? 'min-w-[1260px]' : 'min-w-[1000px]'}`}>
             <thead>
               <tr className="text-left text-xs text-ink-faint border-b border-line/10">
                 <th className="py-2.5 pr-3 font-medium">{group.key === 'CAMPAIGN_IDLE_BUDGET' ? 'CAMPAIGN' : 'VIDEO'}</th>
@@ -187,6 +188,12 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
                   {/* CTR/CVR (permintaan user 14 Sep 2026): kandidat boost tak bisa
                       dinilai dari ROAS saja — rasio berpenyebut kecil berayun liar,
                       sedangkan klik yang jadi order adalah bukti iklannya bekerja. */}
+                  {/* TAMPILAN = product_impressions TikTok: tampilan PRODUK berbayar dari
+                      video ini, bukan tayangan iklan (laporan GMV Max per video tak
+                      punya metrik itu). Cost > 0 dengan 0 tampilan itu sah. Label
+                      sengaja bukan "IMPRESI" supaya tak dibaca sebagai jangkauan. */}
+                  <SortTh label="TAMPILAN" sortKey="impressions" sort={sort} onSort={toggle} className="w-[84px]"
+                    title="Tampilan produk berbayar yang lahir dari video ini (product_impressions TikTok), bukan tayangan iklan" />
                   <SortTh label="CTR" sortKey="ctr" sort={sort} onSort={toggle} className="w-16" />
                   <SortTh label="CVR" sortKey="cvr" sort={sort} onSort={toggle} className="w-16" />
                   {adaKenapa && <SortTh label="KENAPA BOOST" sortKey="vonis" sort={sort} onSort={toggle} align="left" className="w-[270px]" />}
@@ -257,6 +264,8 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
                         {m?.roas == null ? '—' : `${m.roas.toFixed(1)}×`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums text-[13px] text-ink-muted">{m?.orders || 0}</td>
+                      <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-[13px] ${m?.impressions ? 'text-ink-muted' : 'text-ink-faint'}`}
+                        title={m?.impressions ? undefined : 'TikTok mencatat 0 tampilan produk untuk video ini di rentang terpilih, walau cost-nya ada'}>{m?.impressions ? n(m.impressions) : '0'}</td>
                       <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-[13px] ${m?.ctr == null ? 'text-ink-faint' : 'text-ink-muted'}`}>{pctF(m?.ctr)}</td>
                       <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-[13px] ${m?.cvr == null ? 'text-ink-faint' : m.cvr > 1 ? 'text-ink-muted' : m.cvr >= 0.1 ? 'text-emerald-400' : 'text-ink-muted'}`}
                         title={m?.cvr > 1 ? 'Order dihitung TikTok termasuk atribusi tanpa klik iklan, jadi bisa melebihi 100%' : undefined}>{pctF(m?.cvr)}</td>
@@ -299,7 +308,7 @@ export default function ActionListWindow({ group, exec, thresholds = {}, periodL
                 )
                 return [baris, chooser?.id === it.id && it.video && exec ? (
                   <TargetChooserRow key={`${it.id}-pilih`} video={it.video} exec={exec}
-                    kind={chooser.kind} colSpan={isVideo ? (adaKenapa ? 10 : 9) : 3}
+                    kind={chooser.kind} colSpan={isVideo ? (adaKenapa ? 11 : 10) : 3}
                     onPick={(pp) => {
                       setChooser(null)
                       ;(chooser.kind === 'BOOST' ? exec.onBoost : exec.onExclude)(it.video, pp)
