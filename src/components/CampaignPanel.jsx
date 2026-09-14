@@ -8,9 +8,10 @@ import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration } from '../data/campaigns'
 import { getProfile } from '../data/identity'
 import {
-  REGISTRATION, REGISTRATION_ORDER, registrationStatus, registrationBadge,
+  REGISTRATION, registrationStatus, registrationBadge,
   registrationDetail, buildRegistration, registrationTotals,
   registrationUrgent, registrationAlert, registrationReason,
+  registrationSheet, skuText,
 } from '../utils/campaignRegistration'
 import { getPortalSettings, updatePortalSettings, ensurePortalToken, regeneratePortalToken, setCampaignPortalHidden } from '../data/campaignPortal'
 import { loadStore } from '../data/storeDataset'
@@ -21,7 +22,7 @@ import {
   worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
   APPROVAL, approvalSummary, skuApprovalSummary,
   approvalStatusOfItem, hasOwnApproval, approvalLogOfProduct, productApprovalStatus,
-  activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey,
+  activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey, variantLabel,
 } from '../utils/campaignPricing'
 import {
   campaignActivity, activityTotals, newKeys, fmtAgo, getSeenAt, setSeenAt,
@@ -1295,6 +1296,9 @@ function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt
   // Entri riwayat dihitung baru bila lebih muda dari batas "terakhir dilihat".
   const seenMs = Date.parse(seenAt || '') || 0
   const isFresh = e => !!e.by && (Date.parse(e.at || '') || 0) > seenMs
+  // Nama varian yang cuma mengulang nama produk tak usah dicetak lagi — di
+  // produk satu varian, nama panjang itu sudah muncul sebagai judul kartu.
+  const skuLabel = n => ((n || '').trim().toLowerCase() === (p?.name || '').trim().toLowerCase() ? '' : n)
   const plog = approvalLogOfProduct(c, productId, its)
   const a = c.approvals?.[productId]
   const logRows = plog.length > 0 ? plog.slice(0, 4)
@@ -1306,7 +1310,7 @@ function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt
         <div className="w-9 h-9 rounded-xl bg-blue-600/10 flex items-center justify-center flex-shrink-0"><Package className="w-4 h-4 text-blue-400" /></div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-[13px] font-semibold text-ink-strong">{p ? p.name : '(produk dihapus)'}</p>
+            <p title={p?.name || ''} className="text-[13px] font-semibold text-ink-strong truncate max-w-[420px]">{p ? p.name : '(produk dihapus)'}</p>
             {stLabel && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${stLabel.cls}`}>{stLabel.label}</span>}
             {fresh.has(productId) && (
               <span title="ada keputusan client baru di produk ini"
@@ -1328,7 +1332,7 @@ function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt
             <p key={k} className="text-[10px] text-ink-faint flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.status === 'approved' ? 'bg-green-400' : e.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'}`} />
               <span className="text-ink-muted">{APPROVAL[e.status]?.label || e.status}</span>
-              <span className="text-ink-faint flex-shrink-0">· {e.sku || 'semua SKU'}</span>
+              <span className="text-ink-faint flex-shrink-0 truncate max-w-[220px]">· {skuLabel(e.sku) || 'semua SKU'}</span>
               <span className="truncate">{(e.by || e.byName) ? `oleh ${e.byName ? `${e.byName} (${e.by})` : e.by}` : ''}{e.note ? ` · "${e.note}"` : ''}</span>
               {isFresh(e) && <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-blue-600/15 text-blue-300 flex-shrink-0">Baru</span>}
               <span className="ml-auto flex-shrink-0">{fmtWhen(e.at)}</span>
@@ -1346,7 +1350,7 @@ function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt
           const off = isExcluded(it)
           if (off) return (
             <div key={it.varIdx} className="flex items-center gap-3 opacity-60">
-              <p className="text-[13px] text-ink-muted line-through truncate min-w-0 flex-1">{it.name || `Varian ${it.varIdx + 1}`}</p>
+              <p className="text-[13px] text-ink-muted line-through truncate min-w-0 flex-1">{variantLabel(it, p) || it.sku || `Varian ${it.varIdx + 1}`}</p>
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/12 text-amber-300 flex-shrink-0">{reasonLabel(it)}</span>
             </div>
           )
@@ -1354,11 +1358,16 @@ function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt
             <div key={it.varIdx}>
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] text-ink truncate">{it.name || `Varian ${it.varIdx + 1}`}</p>
+                  {(() => { const vl = variantLabel(it, p)
+                    return vl
+                      ? <p title={vl} className="text-[13px] text-ink truncate">{vl}</p>
+                      : <p className="text-[13px] text-ink tabular-nums truncate">{it.sku || `Varian ${it.varIdx + 1}`}</p> })()}
                   <p className="text-[11px] text-ink-faint truncate">
-                    {it.sku || 'tanpa SKU'}
+                    {/* Kode SKU sudah jadi judul baris saat nama varian cuma
+                        mengulang nama produk — di situ baris ini isinya biaya saja. */}
+                    {variantLabel(it, p) ? (it.sku || 'tanpa SKU') : null}
                     {fee && +it.price > 0 && (
-                      <> · <button onClick={() => setOpenFee(o => o === it.varIdx ? null : it.varIdx)}
+                      <>{variantLabel(it, p) ? ' · ' : ''}<button onClick={() => setOpenFee(o => o === it.varIdx ? null : it.varIdx)}
                         className="text-ink-muted hover:text-blue-400 underline decoration-dotted underline-offset-2">
                         komisi &amp; biaya {fee.pct.toFixed(1)}% ({fmt(fee.amount)})
                       </button></>
@@ -1495,55 +1504,126 @@ function ShareApprovalModal({ campaign, onClose, onSaved }) {
 // diundang satu per satu). Campaign bisa disembunyikan lewat ikon mata.
 // Status pendaftaran campaign ke marketplace. Diisi admin, dibaca client di
 // portal — jadi catatannya ditulis untuk client, bukan catatan internal.
+// Lembar kerja pendaftaran ke marketplace. Bukan cuma pemilih status: isinya
+// justru yang dibutuhkan saat membuka Seller Centre — SKU mana yang boleh
+// masuk (bisa disalin), mana yang jangan, dan mana yang client belum putuskan.
 function RegistrationModal({ campaign, onClose, onSave }) {
-  const [status, setStatus] = useState(() => registrationStatus(campaign))
+  const cur = registrationStatus(campaign)
   const [note, setNote] = useState(campaign?.registration?.note || '')
   const [link, setLink] = useState(campaign?.registration?.link || '')
+  const [showNote, setShowNote] = useState(!!(campaign?.registration?.note || campaign?.registration?.link))
   const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [all, setAll] = useState(false)
 
-  async function save() {
+  const sheet = useMemo(() => registrationSheet(campaign), [campaign])
+  const TABS = [
+    { id: 'approved', label: 'Disetujui', list: sheet.approved, on: 'bg-green-500/15 text-green-300' },
+    { id: 'rejected', label: 'Ditolak', list: sheet.rejected, on: 'bg-red-500/15 text-red-300' },
+    // Tab ini hanya muncul kalau memang ada sisa — campaign yang sudah
+    // diputuskan penuh cukup melihat dua tab.
+    ...(sheet.pending.length ? [{ id: 'pending', label: 'Menunggu', list: sheet.pending, on: 'bg-amber-500/15 text-amber-300' }] : []),
+  ]
+  const [tab, setTab] = useState('approved')
+  const active = TABS.find(t => t.id === tab) || TABS[0]
+  const rows = all ? active.list : active.list.slice(0, 5)
+  const platform = PLATFORM_LABEL[campaign?.platform] || campaign?.platform || 'marketplace'
+
+  async function copySku() {
+    await navigator.clipboard?.writeText(skuText(sheet.approved)).catch(() => {})
+    setCopied(true); setTimeout(() => setCopied(false), 1600)
+  }
+  async function apply(status) {
     setBusy(true)
     try { await onSave({ status, note, link }) } finally { setBusy(false) }
   }
 
   return (
-    <Modal title="Status pendaftaran" subtitle={campaign?.name} onClose={onClose} maxWidth="max-w-md">
+    <Modal title={`Daftarkan ke ${platform}`} subtitle={campaign?.name} onClose={onClose} maxWidth="max-w-md">
       <div className="p-5">
-        <p className="text-[11px] text-ink-faint mb-3">Client melihat status ini di portal, jadi tulis catatan untuk mereka.</p>
-
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-fill/8 mb-3">
-          {REGISTRATION_ORDER.map(k => (
-            <button key={k} type="button" onClick={() => setStatus(k)}
-              className={`flex-1 px-2 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
-                status === k ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'}`}>
-              {REGISTRATION[k].short}
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          {TABS.map(t => (
+            <button key={t.id} type="button" onClick={() => { setTab(t.id); setAll(false) }}
+              className={`px-2.5 py-1 rounded-lg text-[12px] font-semibold transition-colors ${
+                tab === t.id ? t.on : 'text-ink-faint hover:text-ink'}`}>
+              {t.label} · {t.list.length}
             </button>
           ))}
+          {/* Tombol salin SENGAJA cuma ada di tab Disetujui: kalau ikut muncul
+              di tab lain, kode yang ditolak bisa ikut tersalin ke Seller Centre. */}
+          {tab === 'approved' && sheet.approved.length > 0 && (
+            <button type="button" onClick={copySku} disabled={busy}
+              className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-medium border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
+              <Copy className="w-3.5 h-3.5" />{copied ? 'Tersalin' : 'Salin'}
+            </button>
+          )}
         </div>
 
-        {status === 'none' ? (
-          <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2 mb-3">
-            Status dikosongkan. Catatan, link, dan stempel waktu ikut dihapus, dan badge hilang dari portal client.
-          </p>
+        {active.list.length === 0 ? (
+          <p className="text-[12px] text-ink-faint py-4 text-center">Tidak ada SKU di kelompok ini.</p>
         ) : (
-          <>
-            <label className="block text-[11px] font-medium text-ink-muted mb-1">Catatan untuk client (opsional)</label>
-            <input value={note} onChange={e => setNote(e.target.value)} maxLength={180}
-              placeholder="mis. 4 SKU yang ditolak tidak diikutkan"
-              className="w-full px-3 py-2 rounded-xl bg-fill/8 border border-line/12 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/40 mb-3" />
-            <label className="block text-[11px] font-medium text-ink-muted mb-1">Link bukti di Seller Centre (opsional)</label>
-            <input value={link} onChange={e => setLink(e.target.value)}
-              placeholder="https://seller.tiktok.com/..."
-              className="w-full px-3 py-2 rounded-xl bg-fill/8 border border-line/12 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/40 mb-3" />
-          </>
+          <div className="mb-1">
+            {rows.map(it => (
+              <div key={itemKey(it)} className="flex items-start justify-between gap-3 py-1.5 border-t border-line/8">
+                <div className="min-w-0">
+                  <p className={`text-[13px] tabular-nums ${tab === 'rejected' ? 'text-ink-faint line-through' : 'text-ink'}`}>
+                    {it.sku || it.name || `Varian ${it.varIdx + 1}`}
+                  </p>
+                  {tab === 'rejected' && (
+                    <p className="text-[11px] text-ink-faint">{it.note ? `"${it.note}"` : 'tanpa catatan'}</p>
+                  )}
+                </div>
+                <span className="text-[13px] text-ink-muted tabular-nums flex-shrink-0">{fmt(+it.price)}</span>
+              </div>
+            ))}
+            {active.list.length > rows.length && (
+              <button type="button" onClick={() => setAll(true)}
+                className="w-full text-left text-[12px] text-blue-400 hover:underline py-1.5 border-t border-line/8">
+                {active.list.length - rows.length} lainnya
+              </button>
+            )}
+          </div>
         )}
 
-        <div className="flex items-center justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-2 rounded-xl text-xs font-medium text-ink-muted hover:text-ink transition-colors">Batal</button>
-          <button onClick={save} disabled={busy}
-            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors">
-            {busy ? 'Menyimpan…' : 'Simpan'}
+        {tab === 'pending' && (
+          <p className="text-[11px] text-amber-300 mt-2">
+            SKU ini belum diputuskan client. Kalau didaftarkan sekarang, harganya belum disetujui siapa pun.
+          </p>
+        )}
+
+        {showNote ? (
+          <div className="mt-4 space-y-2">
+            <input value={note} onChange={e => setNote(e.target.value)} maxLength={180}
+              placeholder="Catatan untuk client, mis. 4 SKU yang ditolak tidak diikutkan"
+              className="w-full px-3 py-2 rounded-xl bg-fill/8 border border-line/12 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/40" />
+            <input value={link} onChange={e => setLink(e.target.value)}
+              placeholder="Link bukti di Seller Centre (opsional)"
+              className="w-full px-3 py-2 rounded-xl bg-fill/8 border border-line/12 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/40" />
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-2 mt-4">
+          <button onClick={() => apply('progress')} disabled={busy}
+            className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors disabled:opacity-60 ${
+              cur === 'progress' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'border-line/15 text-ink hover:bg-fill/8'}`}>
+            Sedang diproses
           </button>
+          <button onClick={() => apply('done')} disabled={busy}
+            className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition-colors disabled:opacity-60 ${
+              cur === 'done' ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+            Sudah didaftarkan
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 mt-2.5">
+          {showNote
+            ? <span className="text-[11px] text-ink-faint">Catatan tersimpan saat status dipilih.</span>
+            : <button type="button" onClick={() => setShowNote(true)} className="text-[11px] text-blue-400 hover:underline">Tambah catatan untuk client</button>}
+          {cur !== 'none' && (
+            <button type="button" onClick={() => apply('none')} disabled={busy}
+              title="Hapus status beserta catatan, link, dan stempel waktunya"
+              className="text-[11px] text-ink-faint hover:text-red-400 transition-colors">Batalkan status</button>
+          )}
         </div>
       </div>
     </Modal>

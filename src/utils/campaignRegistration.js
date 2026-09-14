@@ -4,7 +4,7 @@
 // sedangkan ini catatan ADMIN soal tindak lanjutnya di TikTok/Shopee Seller
 // Centre. Client hanya membaca. Disimpan di kolom `campaigns.registration`
 // (migrasi 0062) sebagai satu objek; `{}` = belum didaftarkan.
-import { skuApprovalSummary } from './campaignPricing'
+import { skuApprovalSummary, activeItems, approvalStatusOfItem, approvalEntryOfItem } from './campaignPricing'
 import { campaignStatus } from './campaignPeriods'
 import { decisionUrgency } from './campaignUrgency'
 
@@ -106,4 +106,27 @@ export function registrationReason(c, now = Date.now()) {
   if (u.key === 'closed' || u.key === 'deadline') tail = ` · ${u.label}`
   else if (u.key === 'started') tail = u.days > 0 ? ` · campaign sudah berjalan ${u.days} hari` : ' · campaign mulai hari ini'
   return `Client sudah menyetujui ${sum.approved} SKU, belum ada catatan pendaftaran${tail}`
+}
+
+// ── Lembar kerja pendaftaran ───────────────────────────────────────────────
+// Yang dipakai admin saat membuka Seller Centre: SKU mana yang boleh masuk,
+// mana yang jangan, dan mana yang client belum putuskan. Varian yang memang
+// dikecualikan dari campaign tak ikut sama sekali.
+export function registrationSheet(c) {
+  const out = { approved: [], rejected: [], pending: [] }
+  for (const it of activeItems(c?.items)) {
+    const st = approvalStatusOfItem(c?.approvals, it)
+    ;(out[st] || out.pending).push({ ...it, note: (approvalEntryOfItem(c?.approvals, it)?.note || '').trim() })
+  }
+  return out
+}
+
+// Teks yang disalin ke papan klip: KODE SKU saja, satu per baris — itu yang
+// diketik/ditempel di kolom pencarian Seller Centre. Harga sengaja tak ikut
+// supaya barisnya tetap bisa ditempel apa adanya. Tanpa kode, nama dipakai.
+export function skuText(items) {
+  return (items || [])
+    .map(it => ((it.sku || '').trim() || (it.name || '').trim()))
+    .filter(Boolean)
+    .join('\n')
 }

@@ -139,3 +139,60 @@ describe('registrationAlert & registrationReason', () => {
     expect(registrationReason(camp({ registrationDeadline: '2026-09-18' }), NOW)).toMatch(/Daftar sebelum/)
   })
 })
+
+// ── Lembar kerja pendaftaran ───────────────────────────────────────────────
+import { registrationSheet, skuText } from '../campaignRegistration'
+import { variantLabel } from '../campaignPricing'
+
+const sheetCamp = {
+  items: [
+    { productId: 'p1', varIdx: 0, name: 'Alonica', sku: 'ALNC-35', price: 84900 },
+    { productId: 'p1', varIdx: 1, name: 'Valerie', sku: 'VLR-35', price: 79000 },
+    { productId: 'p2', varIdx: 0, name: 'Manor', sku: 'MNR-35', price: 84900 },
+    { productId: 'p3', varIdx: 0, name: 'Dikecualikan', sku: 'XXX', price: 0, excluded: true },
+  ],
+  approvals: {
+    'p1:0': { status: 'approved' },
+    'p1:1': { status: 'rejected', note: ' margin terlalu tipis ' },
+  },
+}
+
+describe('registrationSheet', () => {
+  it('memisah disetujui, ditolak, dan yang belum diputuskan', () => {
+    const s = registrationSheet(sheetCamp)
+    expect(s.approved.map(i => i.sku)).toEqual(['ALNC-35'])
+    expect(s.rejected.map(i => i.sku)).toEqual(['VLR-35'])
+    expect(s.pending.map(i => i.sku)).toEqual(['MNR-35'])
+  })
+  it('varian yang dikecualikan dari campaign tak ikut sama sekali', () => {
+    const all = Object.values(registrationSheet(sheetCamp)).flat()
+    expect(all.some(i => i.sku === 'XXX')).toBe(false)
+  })
+  it('alasan penolakan client ikut terbawa', () => {
+    expect(registrationSheet(sheetCamp).rejected[0].note).toBe('margin terlalu tipis')
+  })
+  it('campaign kosong aman', () => {
+    expect(registrationSheet({})).toEqual({ approved: [], rejected: [], pending: [] })
+  })
+})
+
+describe('skuText', () => {
+  it('kode SKU saja, satu per baris', () => {
+    expect(skuText([{ sku: 'A-1' }, { sku: 'B-2' }])).toBe('A-1\nB-2')
+  })
+  it('tanpa kode jatuh ke nama; yang kosong dibuang', () => {
+    expect(skuText([{ sku: '', name: 'Tanpa kode' }, { sku: '  ', name: '' }])).toBe('Tanpa kode')
+  })
+})
+
+describe('variantLabel', () => {
+  it('nama varian yang cuma mengulang nama produk dikosongkan', () => {
+    expect(variantLabel({ name: 'AsterixSty Alonica' }, { name: 'asterixsty alonica' })).toBe('')
+  })
+  it('nama varian yang beda tetap dipakai', () => {
+    expect(variantLabel({ name: '50ml' }, { name: 'Alonica' })).toBe('50ml')
+  })
+  it('tanpa nama jatuh ke nomor varian', () => {
+    expect(variantLabel({ varIdx: 2 }, { name: 'X' })).toBe('Varian 3')
+  })
+})
