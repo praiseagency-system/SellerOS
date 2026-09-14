@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Lock, Check, X, User, ChevronDown, ChevronRight, ChevronLeft, FileText, CalendarRange, ExternalLink } from 'lucide-react'
+import { Lock, Check, X, User, ChevronDown, ChevronRight, ChevronLeft, FileText, CalendarRange, ExternalLink, Clock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ApproverShell, LoginBox, Spinner, Notice } from '../components/ApproverChrome'
 import { getCampaignByToken, submitApproval } from '../data/campaignApproval'
@@ -10,6 +10,7 @@ import {
   originalPrice, discountPct, hasHpp, priceStats, worstKnownMargin,
 } from '../utils/campaignPricing'
 import { campaignPeriods, periodsSummary, periodRange, periodLabel, periodStatus } from '../utils/campaignPeriods'
+import { decisionUrgency } from '../utils/campaignUrgency'
 import { registrationBadge, registrationDetail } from '../utils/campaignRegistration'
 
 const tokenFromUrl = () => new URLSearchParams(window.location.search).get('t') || ''
@@ -148,6 +149,17 @@ function ApprovalBody({ token, email }) {
           {c.approvalAccess === 'public' ? ' · akses publik' : ' · privat'}
         </p>
         {c.description && <p className="text-xs text-ink-muted mt-1">{c.description}</p>}
+        {/* Batas pendaftaran ke marketplace — sumber urgensi keputusan. */}
+        {(() => { if (!c.registrationDeadline) return null
+          const u = decisionUrgency(c)
+          if (u.key !== 'deadline' && u.key !== 'closed') return null
+          return (
+            <p className="mt-2 text-[12px] flex items-center gap-1.5 flex-wrap">
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 ${u.cls}`}>
+                <Clock className="w-3 h-3" />{u.label}
+              </span>
+            </p>
+          ) })()}
         {/* Status pendaftaran ke marketplace — diisi tim, di sini hanya dibaca. */}
         {(() => { const rb = registrationBadge(c)
           if (!rb) return null
