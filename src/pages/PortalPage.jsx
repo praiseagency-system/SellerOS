@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Lock, ChevronRight, ChevronDown, Folder } from 'lucide-react'
+import { Lock, ChevronRight, ChevronDown, Folder, Clock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ApproverShell, LoginBox, Spinner, Notice } from '../components/ApproverChrome'
 import { getPortalCampaigns } from '../data/campaignPortal'
 import { skuApprovalSummary } from '../utils/campaignPricing'
 import { campaignStatus, periodsSummary, campaignPeriods, periodSpan, periodRange } from '../utils/campaignPeriods'
+import { decisionUrgency } from '../utils/campaignUrgency'
 
 const tokenFromUrl = () => new URLSearchParams(window.location.search).get('t') || ''
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
@@ -15,20 +16,26 @@ const Shell = ({ children }) => <ApproverShell label="Portal Campaign" wide>{chi
 
 // Chip filter. `match` menentukan campaign mana yang masuk tiap kelompok;
 // "Jeda antar periode" ikut Berjalan karena campaign-nya memang belum kelar.
+// `r.need` = masih ada SKU menunggu DAN campaign belum selesai — campaign
+// yang sudah lewat tak perlu diputuskan lagi (keputusan user 14 Sep 2026).
 const FILTERS = [
-  { key: 'need',      label: 'Perlu keputusan', match: r => r.sum.pending > 0 },
+  { key: 'need',      label: 'Perlu keputusan', match: r => r.need },
+  { key: 'decided',   label: 'Sudah diputuskan', match: r => r.sum.total > 0 && r.sum.pending === 0 },
   { key: 'running',   label: 'Berjalan',        match: r => r.status.key === 'running' || r.status.key === 'gap' },
   { key: 'scheduled', label: 'Terjadwal',       match: r => r.status.key === 'scheduled' },
   { key: 'ended',     label: 'Selesai',         match: r => r.status.key === 'ended' },
   { key: 'all',       label: 'Semua',           match: () => true },
 ]
 
-// Urutan tampil: yang menunggu keputusan dulu, lalu yang sedang berjalan.
+// Urutan tampil: yang menunggu keputusan dulu — diurutkan menurut urgensi
+// (sudah berjalan → paling dekat tanggal mulai) — lalu sisanya per status.
 const ORDER = { running: 0, gap: 1, scheduled: 2, draft: 3, ended: 4 }
 function sortRows(a, b) {
-  const needA = a.sum.pending > 0 ? 0 : 1
-  const needB = b.sum.pending > 0 ? 0 : 1
-  if (needA !== needB) return needA - needB
+  if (a.need !== b.need) return a.need ? -1 : 1
+  if (a.need) {
+    if (a.urg.rank !== b.urg.rank) return a.urg.rank - b.urg.rank
+    if (a.urg.sortKey !== b.urg.sortKey) return a.urg.sortKey - b.urg.sortKey
+  }
   const oa = ORDER[a.status.key] ?? 9, ob = ORDER[b.status.key] ?? 9
   if (oa !== ob) return oa - ob
   return (b.c.startDate || '').localeCompare(a.c.startDate || '')
@@ -46,7 +53,7 @@ function groupRows(rows) {
   }
   const folders = [...map].map(([key, items]) => {
     const span = periodSpan(items.flatMap(r => campaignPeriods(r.c)))
-    const pending = items.reduce((s, r) => s + r.sum.pending, 0)
+    const pending = items.reduce((s, r) => s + (r.need ? r.sum.pending : 0), 0)
     const running = items.filter(r => r.status.key === 'running' || r.status.key === 'gap').length
     return {
       type: 'folder', key, items, pending, running,
@@ -97,13 +104,17 @@ function PortalBody({ token, email }) {
   if (state.error) return <Notice icon={Lock} title="Tidak bisa diakses" body={state.error} />
 
   const allRows = state.campaigns
-    .map(c => ({ c, sum: skuApprovalSummary(c.items, c.approvals), status: campaignStatus(c) }))
+    .map(c => {
+      const sum = skuApprovalSummary(c.items, c.approvals), status = campaignStatus(c)
+      const need = sum.pending > 0 && status.key !== 'ended'
+      return { c, sum, status, need, urg: need ? decisionUrgency(c) : null }
+    })
     .sort(sortRows)
 
   // Tab platform: TikTok & Shopee dipisah. Default ke platform yang punya
   // SKU menunggu; kalau tak ada, ke yang ada isinya.
   const perPlatform = { tiktok: { n: 0, pending: 0 }, shopee: { n: 0, pending: 0 } }
-  for (const r of allRows) { const p = perPlatform[platformOf(r.c)]; p.n++; p.pending += r.sum.pending }
+  for (const r of allRows) { const p = perPlatform[platformOf(r.c)]; p.n++; if (r.need) p.pending += r.sum.pending }
   const tab = platformTab
     || (perPlatform.tiktok.pending === 0 && perPlatform.shopee.pending > 0 ? 'shopee' : null)
     || (perPlatform.tiktok.n === 0 && perPlatform.shopee.n > 0 ? 'shopee' : 'tiktok')
@@ -114,9 +125,11 @@ function PortalBody({ token, email }) {
   const shown = rows.filter(FILTERS.find(f => f.key === active).match)
   const grouped = groupRows(shown)
 
-  const pendingSku = allRows.reduce((s, r) => s + r.sum.pending, 0)
-  const needAll = allRows.filter(r => r.sum.pending > 0).length
-  const doneCount = allRows.length - needAll
+  const pendingSku = allRows.reduce((s, r) => s + (r.need ? r.sum.pending : 0), 0)
+  const needAll = allRows.filter(r => r.need).length
+  const endedUndecided = allRows.filter(r => !r.need && r.sum.pending > 0).length
+  const doneCount = allRows.length - needAll - endedUndecided
+  const urgentCount = allRows.filter(r => r.need && r.urg.cls.includes('red')).length
   const platformNote = ['tiktok', 'shopee']
     .filter(id => perPlatform[id].pending > 0)
     .map(id => `${PLATFORM_LABEL[id]} ${perPlatform[id].pending} SKU`).join(' · ')
@@ -133,8 +146,8 @@ function PortalBody({ token, email }) {
         <p className="text-[11px] text-ink-faint mt-0.5">
           {state.workspace?.name ? `${state.workspace.name} · ` : ''}
           {pendingSku > 0
-            ? `di ${needAll} campaign (${platformNote}) · ${doneCount} campaign lain sudah beres`
-            : `${allRows.length} campaign`}
+            ? `di ${needAll} campaign (${platformNote})${urgentCount > 0 ? ` · ${urgentCount} mendesak` : ''} · ${doneCount} campaign lain sudah beres${endedUndecided > 0 ? ` · ${endedUndecided} selesai tanpa keputusan` : ''}`
+            : `${allRows.length} campaign${endedUndecided > 0 ? ` · ${endedUndecided} selesai tanpa keputusan` : ''}`}
         </p>
 
         {/* Tab platform — campaign TikTok & Shopee dipisah */}
@@ -221,8 +234,9 @@ function FolderGroup({ folder, open, onToggle, portalToken }) {
 }
 
 // Badge status persetujuan — ringkasan per SKU, sejalan dengan halaman /approve.
-function approvalBadge(sum) {
+function approvalBadge(sum, ended) {
   if (!sum.total) return { label: 'Belum ada SKU', cls: 'bg-fill/8 text-ink-muted' }
+  if (sum.pending > 0 && ended) return { label: `${sum.pending} SKU tak diputuskan`, cls: 'bg-gray-600/20 text-gray-400' }
   if (sum.pending > 0) return { label: `${sum.pending} SKU menunggu`, cls: 'bg-amber-500/12 text-amber-300' }
   if (sum.rejected === sum.total) return { label: 'Semua ditolak', cls: 'bg-red-500/12 text-red-300' }
   if (sum.rejected > 0) return { label: `${sum.approved} disetujui · ${sum.rejected} ditolak`, cls: 'bg-red-500/12 text-red-300' }
@@ -230,9 +244,8 @@ function approvalBadge(sum) {
 }
 
 function CampaignCard({ row, portalToken }) {
-  const { c, sum, status } = row
-  const badge = approvalBadge(sum)
-  const needs = sum.pending > 0
+  const { c, sum, status, need: needs, urg } = row
+  const badge = approvalBadge(sum, status.key === 'ended')
   const href = c.shareToken
     ? `/approve?t=${encodeURIComponent(c.shareToken)}&p=${encodeURIComponent(portalToken)}`
     : null
@@ -241,6 +254,11 @@ function CampaignCard({ row, portalToken }) {
   return (
     <div className={`bg-surface rounded-2xl border shadow-sm p-4 ${needs ? 'border-blue-500/35' : 'border-line/10'} ${status.key === 'ended' ? 'opacity-90' : ''}`}>
       <div className="flex items-center gap-2 flex-wrap">
+        {urg && (
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 ${urg.cls}`}>
+            <Clock className="w-3 h-3" />{urg.label}
+          </span>
+        )}
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${status.cls}`}>{status.label}</span>
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${badge.cls}`}>{badge.label}</span>
         <span className="ml-auto text-[11px] text-ink-faint">{PLATFORM_LABEL[c.platform] || c.platform}</span>
