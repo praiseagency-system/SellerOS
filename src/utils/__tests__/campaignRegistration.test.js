@@ -71,3 +71,71 @@ describe('registrationTotals', () => {
     expect(t).toEqual({ none: 1, progress: 1, done: 2, total: 4 })
   })
 })
+
+// ── "Perlu didaftarkan" ────────────────────────────────────────────────────
+import { needsRegistration, registrationUrgent, registrationAlert, registrationReason } from '../campaignRegistration'
+
+const NOW = Date.parse('2026-09-14T05:00:00Z')  // 12.00 WIB
+const iso = d => d
+const camp = (over = {}) => ({
+  id: 'c1',
+  items: [{ productId: 'p1', varIdx: 0, name: 'A' }, { productId: 'p1', varIdx: 1, name: 'B' }],
+  approvals: { 'p1:0': { status: 'approved' } },
+  startDate: iso('2026-09-20'), endDate: iso('2026-09-30'),
+  ...over,
+})
+
+describe('needsRegistration', () => {
+  it('sudah di-ACC sebagian tapi belum ada catatan → perlu didaftarkan', () => {
+    expect(needsRegistration(camp(), NOW)).toBe(true)
+  })
+  it('sudah ditandai (apa pun tahapnya) tak dihitung lagi', () => {
+    expect(needsRegistration(camp({ registration: { status: 'progress' } }), NOW)).toBe(false)
+    expect(needsRegistration(camp({ registration: { status: 'done' } }), NOW)).toBe(false)
+  })
+  it('belum ada SKU yang disetujui → belum jadi pekerjaan', () => {
+    expect(needsRegistration(camp({ approvals: {} }), NOW)).toBe(false)
+    expect(needsRegistration(camp({ approvals: { 'p1:0': { status: 'rejected' } } }), NOW)).toBe(false)
+  })
+  it('campaign yang sudah selesai tak ditagih', () => {
+    expect(needsRegistration(camp({ startDate: '2026-08-01', endDate: '2026-08-10' }), NOW)).toBe(false)
+  })
+})
+
+describe('registrationUrgent', () => {
+  it('campaign yang sudah berjalan → mendesak', () => {
+    expect(registrationUrgent(camp({ startDate: '2026-09-10', endDate: '2026-09-30' }), NOW)).toBe(true)
+  })
+  it('batas pendaftaran ≤7 hari → mendesak; jauh → tidak', () => {
+    expect(registrationUrgent(camp({ registrationDeadline: '2026-09-18' }), NOW)).toBe(true)
+    expect(registrationUrgent(camp({ startDate: '2026-11-01', endDate: '2026-11-10', registrationDeadline: '2026-10-25' }), NOW)).toBe(false)
+  })
+  it('batas pendaftaran sudah lewat → mendesak', () => {
+    expect(registrationUrgent(camp({ registrationDeadline: '2026-09-01' }), NOW)).toBe(true)
+  })
+  it('yang tak perlu didaftarkan tak pernah mendesak', () => {
+    expect(registrationUrgent(camp({ registration: { status: 'done' }, startDate: '2026-09-10' }), NOW)).toBe(false)
+  })
+})
+
+describe('registrationAlert & registrationReason', () => {
+  it('menghitung total dan yang mendesak', () => {
+    const a = registrationAlert([
+      camp({ id: 'a' }),
+      camp({ id: 'b', startDate: '2026-09-10', endDate: '2026-09-30' }),
+      camp({ id: 'c', registration: { status: 'done' } }),
+    ], NOW)
+    expect(a.count).toBe(2); expect(a.urgent).toBe(1); expect(a.ids.has('c')).toBe(false)
+  })
+  it('kalimat menyebut jumlah SKU yang sudah disetujui', () => {
+    expect(registrationReason(camp(), NOW)).toMatch(/menyetujui 1 SKU/)
+  })
+  it('campaign berjalan TIDAK memakai kalimat "belum diputuskan" milik urgensi keputusan', () => {
+    const r = registrationReason(camp({ startDate: '2026-09-10', endDate: '2026-09-30' }), NOW)
+    expect(r).toMatch(/campaign sudah berjalan 4 hari/)
+    expect(r).not.toMatch(/belum diputuskan/)
+  })
+  it('batas pendaftaran ikut disebut apa adanya', () => {
+    expect(registrationReason(camp({ registrationDeadline: '2026-09-18' }), NOW)).toMatch(/Daftar sebelum/)
+  })
+})

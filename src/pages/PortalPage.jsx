@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Lock, ChevronRight, ChevronDown, Folder, Clock } from 'lucide-react'
+import { Lock, ChevronRight, ChevronDown, Folder, Clock, ClipboardCheck } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ApproverShell, LoginBox, Spinner, Notice } from '../components/ApproverChrome'
 import { getPortalCampaigns } from '../data/campaignPortal'
@@ -249,6 +249,7 @@ function CampaignCard({ row, portalToken }) {
   const badge = approvalBadge(sum, status.key === 'ended')
   // Status pendaftaran ke marketplace yang diisi tim (kolom registration).
   const reg = registrationBadge(c)
+  const done = registrationStatus(c) === 'done'
   const regNote = registrationDetail(c)
   const regLink = hrefOf(c.registration?.link)
   const href = c.shareToken
@@ -266,7 +267,6 @@ function CampaignCard({ row, portalToken }) {
         )}
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${status.cls}`}>{status.label}</span>
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${badge.cls}`}>{badge.label}</span>
-        {reg && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${reg.cls}`}>{reg.label}</span>}
         <span className="ml-auto text-[11px] text-ink-faint">{PLATFORM_LABEL[c.platform] || c.platform}</span>
       </div>
 
@@ -274,13 +274,7 @@ function CampaignCard({ row, portalToken }) {
       <p className="text-[11px] text-ink-faint mt-0.5 truncate">
         {periodsSummary(c)} · {sum.total} SKU
       </p>
-      {reg && (
-        <p className="text-[11px] text-ink-faint mt-1">
-          <span className={registrationStatus(c) === 'done' ? 'text-blue-300' : 'text-amber-300'}>{reg.label}</span>
-          {regNote ? ` · ${regNote}` : ''}
-          {regLink && <> · <a href={regLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">lihat di marketplace</a></>}
-        </p>
-      )}
+
 
       {sum.total > 0 && (sum.approved > 0 || sum.rejected > 0) && (
         <div className="mt-2.5 h-1.5 rounded-full bg-fill/8 overflow-hidden flex">
@@ -305,6 +299,27 @@ function CampaignCard({ row, portalToken }) {
           </span>
         )}
       </div>
+
+      {/* Status pendaftaran ke marketplace — barisnya sendiri di kaki kartu,
+          bukan badge kecil di antara badge lain, supaya benar-benar terbaca. */}
+      {reg && (
+        <div className={`-mx-4 -mb-4 mt-3 px-4 py-2.5 flex items-start gap-2.5 border-t ${
+          done ? 'bg-blue-600/10 border-blue-500/25' : 'bg-amber-500/10 border-amber-500/25'}`}>
+          {done
+            ? <ClipboardCheck className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+            : <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />}
+          <div className="min-w-0 flex-1">
+            <p className={`text-[12px] font-semibold ${done ? 'text-blue-300' : 'text-amber-300'}`}>
+              {done ? `Sudah didaftarkan ke ${PLATFORM_LABEL[c.platform] || c.platform}` : 'Sedang didaftarkan tim'}
+            </p>
+            {regNote && <p className={`text-[11px] mt-0.5 ${done ? 'text-blue-300/80' : 'text-amber-300/80'}`}>{regNote}</p>}
+          </div>
+          {regLink && (
+            <a href={regLink} target="_blank" rel="noopener noreferrer"
+              className="text-[11px] text-blue-400 hover:underline flex-shrink-0 mt-0.5">lihat di marketplace</a>
+          )}
+        </div>
+      )}
     </div>
   )
 }
