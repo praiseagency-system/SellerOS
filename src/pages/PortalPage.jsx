@@ -3,7 +3,8 @@ import { Lock, ChevronRight, ChevronDown, Folder, Clock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ApproverShell, LoginBox, Spinner, Notice } from '../components/ApproverChrome'
 import { getPortalCampaigns } from '../data/campaignPortal'
-import { skuApprovalSummary } from '../utils/campaignPricing'
+import { skuApprovalSummary, hrefOf } from '../utils/campaignPricing'
+import { registrationBadge, registrationDetail, registrationStatus } from '../utils/campaignRegistration'
 import { campaignStatus, periodsSummary, campaignPeriods, periodSpan, periodRange } from '../utils/campaignPeriods'
 import { decisionUrgency } from '../utils/campaignUrgency'
 
@@ -246,6 +247,10 @@ function approvalBadge(sum, ended) {
 function CampaignCard({ row, portalToken }) {
   const { c, sum, status, need: needs, urg } = row
   const badge = approvalBadge(sum, status.key === 'ended')
+  // Status pendaftaran ke marketplace yang diisi tim (kolom registration).
+  const reg = registrationBadge(c)
+  const regNote = registrationDetail(c)
+  const regLink = hrefOf(c.registration?.link)
   const href = c.shareToken
     ? `/approve?t=${encodeURIComponent(c.shareToken)}&p=${encodeURIComponent(portalToken)}`
     : null
@@ -261,6 +266,7 @@ function CampaignCard({ row, portalToken }) {
         )}
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${status.cls}`}>{status.label}</span>
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${badge.cls}`}>{badge.label}</span>
+        {reg && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${reg.cls}`}>{reg.label}</span>}
         <span className="ml-auto text-[11px] text-ink-faint">{PLATFORM_LABEL[c.platform] || c.platform}</span>
       </div>
 
@@ -268,6 +274,13 @@ function CampaignCard({ row, portalToken }) {
       <p className="text-[11px] text-ink-faint mt-0.5 truncate">
         {periodsSummary(c)} · {sum.total} SKU
       </p>
+      {reg && (
+        <p className="text-[11px] text-ink-faint mt-1">
+          <span className={registrationStatus(c) === 'done' ? 'text-blue-300' : 'text-amber-300'}>{reg.label}</span>
+          {regNote ? ` · ${regNote}` : ''}
+          {regLink && <> · <a href={regLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">lihat di marketplace</a></>}
+        </p>
+      )}
 
       {sum.total > 0 && (sum.approved > 0 || sum.rejected > 0) && (
         <div className="mt-2.5 h-1.5 rounded-full bg-fill/8 overflow-hidden flex">

@@ -2,10 +2,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
-  Users, Eye, EyeOff, Bell, Check,
+  Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList,
 } from 'lucide-react'
 import Modal from './Modal'
-import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings } from '../data/campaigns'
+import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration } from '../data/campaigns'
+import { getProfile } from '../data/identity'
+import {
+  REGISTRATION, REGISTRATION_ORDER, registrationStatus, registrationBadge,
+  registrationDetail, buildRegistration, registrationTotals,
+} from '../utils/campaignRegistration'
 import { getPortalSettings, updatePortalSettings, ensurePortalToken, regeneratePortalToken, setCampaignPortalHidden } from '../data/campaignPortal'
 import { loadStore } from '../data/storeDataset'
 import { computeCalc } from '../utils/calc'
@@ -137,6 +142,8 @@ export default function CampaignPanel({ products }) {
   const wsId = getCurrentWorkspaceId()
   const [seenAt, setSeen] = useState(() => getSeenAt(wsId))
   const [selfEmail, setSelfEmail] = useState('')
+  const [selfName, setSelfName] = useState('')
+  const [regFor, setRegFor] = useState(null)   // campaign yang status daftarnya diubah
   const [filter, setFilter] = useState('all')  // all | new | pending
 
   const reload = useCallback(async () => {
@@ -155,7 +162,12 @@ export default function CampaignPanel({ products }) {
   useEffect(() => {
     let active = true
     supabase.auth.getUser()
-      .then(({ data }) => { if (active) setSelfEmail(data?.user?.email || '') })
+      .then(async ({ data }) => {
+        if (!active) return
+        setSelfEmail(data?.user?.email || '')
+        // Nama tampilan dipakai sebagai "didaftarkan oleh" yang dibaca client.
+        try { const pr = await getProfile(data?.user?.id); if (active) setSelfName(pr?.name || '') } catch { /* profil opsional */ }
+      })
       .catch(() => {})
     return () => { active = false }
   }, [])
@@ -258,6 +270,19 @@ export default function CampaignPanel({ products }) {
     try { await setCampaignPortalHidden(c.id, !c.portalHidden); await reload() }
     catch (e) { console.error(e); alert('Gagal mengubah tampilan portal. Pastikan migrasi 0060 sudah dijalankan.') }
   }
+  // Simpan status pendaftaran ke marketplace (kolom registration, migrasi 0062).
+  async function handleRegistration(c, form) {
+    const payload = buildRegistration(form, { email: selfEmail, name: selfName })
+    try { await setCampaignRegistration(c.id, payload); setRegFor(null); await reload() }
+    catch (e) {
+      console.error(e)
+      const m = e?.message || ''
+      alert(/registration|column|schema cache/i.test(m)
+        ? 'Kolom "registration" belum ada. Jalankan migrasi 0062_campaign_registration.sql di Supabase → SQL Editor dulu.'
+        : `Gagal menyimpan status pendaftaran.${m ? `\n\n${m}` : ''}`)
+    }
+  }
+
   async function handleDelete(id) {
     if (!confirm('Hapus campaign ini?')) return
     try { await deleteCampaign(id); await reload() }
@@ -277,6 +302,10 @@ export default function CampaignPanel({ products }) {
           {campaigns.length} campaign terdaftar
           {(() => { const r = campaigns.filter(c => campaignStatus(c).key === 'running').length
             return r > 0 ? <> · <span className="text-green-400 font-medium">{r} berjalan</span></> : null })()}
+          {(() => { const rt = registrationTotals(campaigns)
+            if (!rt.done && !rt.progress) return null
+            return <> · <span className="text-blue-300 font-medium">{rt.done} sudah didaftarkan</span>
+              {rt.progress > 0 ? <span className="text-amber-300"> · {rt.progress} sedang diproses</span> : null}</> })()}
           {' '}· proyeksi margin di harga campaign per varian
         </p>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -444,6 +473,9 @@ export default function CampaignPanel({ products }) {
                           <span title={`${act.count} keputusan client baru sejak terakhir dilihat`}
                             className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 bg-blue-600/15 text-blue-300">Baru</span>
                         )}
+                        {(() => { const rb = registrationBadge(c)
+                          return rb ? <span title={registrationDetail(c)}
+                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${rb.cls}`}>{rb.label}</span> : null })()}
                       </div>
                       <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
                         <CalendarRange className="w-3 h-3" />{dateRange(c)} · {agg.products} produk · {agg.count} varian
@@ -451,6 +483,11 @@ export default function CampaignPanel({ products }) {
                       {act.count > 0 && (
                         <p className="text-[11px] text-blue-300 truncate mt-0.5">
                           {act.sentence} · {fmtAgo(act.latest?.at)}
+                        </p>
+                      )}
+                      {registrationStatus(c) !== 'none' && (
+                        <p className="text-[11px] text-ink-faint truncate mt-0.5">
+                          {REGISTRATION[registrationStatus(c)].label} · {registrationDetail(c)}
                         </p>
                       )}
                       {c.description && (
@@ -469,6 +506,16 @@ export default function CampaignPanel({ products }) {
                       <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer" title="Buka link campaign"
                         className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>
                     )}
+                    {(() => { const rs = registrationStatus(c)
+                      const Icon = rs === 'none' ? ClipboardList : ClipboardCheck
+                      const cls = rs === 'done' ? 'text-blue-400' : rs === 'progress' ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'
+                      return (
+                        <button title={rs === 'none' ? 'Belum didaftarkan ke marketplace — klik untuk ubah' : `${REGISTRATION[rs].label} · ${registrationDetail(c)}`}
+                          onClick={() => setRegFor(c)}
+                          className={`p-1.5 rounded-lg transition-colors hover:bg-fill/8 ${cls}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </button>
+                      ) })()}
                     <button title={c.portalHidden ? 'Disembunyikan dari portal client — klik untuk tampilkan' : 'Tampil di portal client — klik untuk sembunyikan'}
                       onClick={() => handleTogglePortal(c)}
                       className={`p-1.5 rounded-lg transition-colors hover:bg-fill/8 ${c.portalHidden ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'}`}>
@@ -554,6 +601,8 @@ export default function CampaignPanel({ products }) {
 
       {sharing && <ShareApprovalModal campaign={sharing} onClose={() => setSharing(null)} onSaved={reload} />}
       {portalOpen && <PortalShareModal onClose={() => setPortalOpen(false)} />}
+      {regFor && <RegistrationModal campaign={regFor} onClose={() => setRegFor(null)}
+        onSave={form => handleRegistration(regFor, form)} />}
     </div>
   )
 }
@@ -1373,6 +1422,63 @@ function ShareApprovalModal({ campaign, onClose, onSaved }) {
 // melihat mana yang belum di-ACC, sedang berjalan, dan sudah selesai; anggota
 // portal otomatis boleh membuka halaman persetujuan tiap campaign (tak perlu
 // diundang satu per satu). Campaign bisa disembunyikan lewat ikon mata.
+// Status pendaftaran campaign ke marketplace. Diisi admin, dibaca client di
+// portal — jadi catatannya ditulis untuk client, bukan catatan internal.
+function RegistrationModal({ campaign, onClose, onSave }) {
+  const [status, setStatus] = useState(() => registrationStatus(campaign))
+  const [note, setNote] = useState(campaign?.registration?.note || '')
+  const [link, setLink] = useState(campaign?.registration?.link || '')
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    try { await onSave({ status, note, link }) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal title="Status pendaftaran" subtitle={campaign?.name} onClose={onClose} maxWidth="max-w-md">
+      <div className="p-5">
+        <p className="text-[11px] text-ink-faint mb-3">Client melihat status ini di portal, jadi tulis catatan untuk mereka.</p>
+
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-fill/8 mb-3">
+          {REGISTRATION_ORDER.map(k => (
+            <button key={k} type="button" onClick={() => setStatus(k)}
+              className={`flex-1 px-2 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                status === k ? 'bg-blue-600 text-white' : 'text-ink-muted hover:text-ink'}`}>
+              {REGISTRATION[k].short}
+            </button>
+          ))}
+        </div>
+
+        {status === 'none' ? (
+          <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2 mb-3">
+            Status dikosongkan. Catatan, link, dan stempel waktu ikut dihapus, dan badge hilang dari portal client.
+          </p>
+        ) : (
+          <>
+            <label className="block text-[11px] font-medium text-ink-muted mb-1">Catatan untuk client (opsional)</label>
+            <input value={note} onChange={e => setNote(e.target.value)} maxLength={180}
+              placeholder="mis. 4 SKU yang ditolak tidak diikutkan"
+              className="w-full px-3 py-2 rounded-xl bg-fill/8 border border-line/12 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/40 mb-3" />
+            <label className="block text-[11px] font-medium text-ink-muted mb-1">Link bukti di Seller Centre (opsional)</label>
+            <input value={link} onChange={e => setLink(e.target.value)}
+              placeholder="https://seller.tiktok.com/..."
+              className="w-full px-3 py-2 rounded-xl bg-fill/8 border border-line/12 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/40 mb-3" />
+          </>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 rounded-xl text-xs font-medium text-ink-muted hover:text-ink transition-colors">Batal</button>
+          <button onClick={save} disabled={busy}
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors">
+            {busy ? 'Menyimpan…' : 'Simpan'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function PortalShareModal({ onClose }) {
   const [loading, setLoading] = useState(true)
   const [access, setAccess] = useState('private')
