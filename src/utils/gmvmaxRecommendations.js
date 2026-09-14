@@ -78,12 +78,21 @@ export function boostVerdict(v, { floor = 50000, medianCtr: med = null } = {}) {
   const bukti = `${orders} order${orders >= 2 ? ' berulang' : ''}, omzet ${rpPendek(rev)} dari cost ${idn(cost)} (${Math.max(1, Math.round(cost / floor * 100))}% lantai).`
 
   if (tidakTayang(v.delivery)) {
-    return { vonis: 'tak_tayang', alasan: `${bukti} Saat ini tak tayang, ${idn(imp)} impresi: omzet sepenuhnya organik. Boost memaksa sistem menayangkannya lagi. Anggap sebagai uji.` }
+    return { vonis: 'tak_tayang', alasan: `${bukti} Saat ini tak tayang, ${idn(imp)} tampilan produk: omzet sepenuhnya organik. Boost memaksa sistem menayangkannya lagi. Anggap sebagai uji.` }
   }
+  // CATATAN ISTILAH: `impressions` kita = product_impressions TikTok = tampilan
+  // PRODUK berbayar yang lahir dari video ini — BUKAN tayangan iklan. Laporan
+  // GMV Max per video tak punya metrik impresi iklan. Maka cost > 0 dengan 0
+  // tampilan produk itu sah: iklannya tayang, penonton tak sampai ke produk.
+  // Data 7–13 Sep: ±1 dari 10 baris berbelanja seperti ini.
   if (imp < MIN_IMPRESI_BUKTI || clk === 0) {
-    return { vonis: 'organik', alasan: `${bukti} Iklannya nyaris tak tayang: ${idn(imp)} impresi, ${idn(clk)} klik. Omzet ini lahir organik. Boost menguji apakah iklan bisa menambah.` }
+    const jejak = imp === 0
+      ? `Iklannya tayang (cost ${idn(cost)}) tapi TikTok mencatat 0 tampilan produk, 0 klik: penonton belum sampai ke produk.`
+      : `Iklannya baru menampilkan produk ${idn(imp)} kali, ${idn(clk)} klik: belum cukup bukti.`
+    return { vonis: 'organik', alasan: `${bukti} ${jejak} Omzet ini lahir organik. Boost menguji apakah iklan bisa menambah.` }
   }
   const ctr = m.ctr, cvr = m.cvr
+  // CTR di sini = klik produk / tampilan produk (product_click_rate TikTok).
   const banding = med > 0 && ctr != null
     ? (ctr / med >= 1.3 ? ` (${(ctr / med).toFixed(1).replace('.', ',')}× median ${pct1(med)})`
       : ctr / med <= 0.7 ? ` (di bawah median ${pct1(med)})` : ' setara median')
