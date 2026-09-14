@@ -27,6 +27,40 @@ export async function listImports() {
   return data || []
 }
 
+// Laporan TINGKAT PRODUK (gmvmax_product_daily, migrasi 0061) untuk sekumpulan
+// import — angka per (campaign × produk) langsung dari TikTok, bukan alokasi.
+// Import lama (sebelum 0061) tak punya baris → pemanggil jatuh ke alokasi card.
+// Bila tabelnya belum ada di DB (migrasi belum dijalankan) → [] tanpa galat.
+export async function loadProductDaily(importIds = []) {
+  if (!importIds.length) return []
+  const out = []
+  for (let i = 0; i < importIds.length; i += 40) {
+    const ids = importIds.slice(i, i + 40)
+    let from = 0
+    for (;;) {
+      const { data, error } = await supabase
+        .from('gmvmax_product_daily')
+        .select('import_id, campaign_id, campaign_name, product_id, cost, gross_revenue, orders, roi')
+        .in('import_id', ids)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) {
+        if (/gmvmax_product_daily/.test(error.message || '') || error.code === '42P01' || error.code === 'PGRST205') return []
+        throw error
+      }
+      for (const r of data || []) {
+        out.push({
+          importId: r.import_id, campaignId: r.campaign_id, campaignName: r.campaign_name, productId: r.product_id,
+          cost: num(r.cost), grossRevenue: num(r.gross_revenue), orders: num(r.orders), roi: num(r.roi),
+        })
+      }
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
+  }
+  return out
+}
+
 // Ambil baris creatives untuk sekumpulan import (atau semua import workspace).
 // Setiap baris ditandai period/periodName dari import-nya (dipakai rollup).
 // Kolom yang benar-benar dipakai rowToCreative — HINDARI select('*') (ikut

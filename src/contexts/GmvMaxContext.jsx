@@ -8,7 +8,7 @@
 // untuk hari-hari dalam window (+ pembanding) agar hemat memori.
 import { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { parseGmvMaxFile, fmtSnapshotLabel } from '../utils/parseGmvMax'
-import { listImports, loadCreatives, saveImport, deleteImport } from '../data/gmvmaxImports'
+import { listImports, loadCreatives, loadProductDaily, saveImport, deleteImport } from '../data/gmvmaxImports'
 import { getThresholds, saveThresholds } from '../data/gmvmaxSettings'
 import { listNotes, upsertNote, deleteNote } from '../data/gmvmaxNotes'
 import { listActionLog, addActionLog, deleteActionLog } from '../data/gmvmaxActionLog'
@@ -19,7 +19,7 @@ import { listProducts } from '../data/calcProducts'
 import { enrichVideos } from '../utils/gmvmaxEnrich'
 import { DEFAULT_THRESHOLDS } from '../utils/gmvmaxClassify'
 import {
-  rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, rollupProducts, rollupProductsCard, dashboardSummary,
+  rollupVideos, rollupCampaigns, rollupCreators, rollupHooks, rollupProducts, rollupProductsCard, rollupProductsExact, dashboardSummary,
   rollupChannels, channelDailyTrend,
 } from '../utils/gmvmaxRollup'
 import { insightCards, actionPlan, winningFramework } from '../utils/gmvmaxInsights'
@@ -85,6 +85,8 @@ export function GmvMaxProvider({ children }) {
   const [actionLog, setActionLog] = useState([])
   const [boost, setBoost] = useState({})
   const [productNames, setProductNames] = useState({})
+  // Laporan tingkat produk (gmvmax_product_daily, 0061) utk import di window+prev.
+  const [productDaily, setProductDaily] = useState([])
   const [meta, setMeta] = useState({})
   const [enriching, setEnriching] = useState(null)
   const [period, setPeriod] = useState(null)    // null=bulan terbaru | 'all' | monthKey
@@ -244,12 +246,14 @@ export function GmvMaxProvider({ children }) {
   useEffect(() => {
     let active = true
     ;(async () => {
-      if (!neededIds.length) { if (active) { setCreatives([]); setCreativesLoading(false) } return }
+      if (!neededIds.length) { if (active) { setCreatives([]); setProductDaily([]); setCreativesLoading(false) } return }
       if (active) setCreativesLoading(true)
       try {
-        const cre = await loadCreatives(neededIds)
+        // Laporan produk dimuat sejajar; gagal/absen → [] (jatuh ke alokasi card).
+        const [cre, pd] = await Promise.all([loadCreatives(neededIds), loadProductDaily(neededIds).catch(() => [])])
         if (!active) return
         setCreatives(cre)
+        setProductDaily(pd)
         const vids = cre.filter(c => c.creativeType === 'Video' && c.videoId).map(c => c.videoId)
         const loaded = await loadVideoMeta(vids)
         if (active) setMeta(prev => ({ ...prev, ...loaded }))
@@ -322,6 +326,20 @@ export function GmvMaxProvider({ children }) {
   const productsCard = useMemo(() => rollupProductsCard(rows).map(p => ({
     ...p, name: (p.productId && productNames[p.productId]) || null,
   })), [rows, productNames])
+  // Opsi D (0061): angka per produk LANGSUNG dari laporan TikTok tingkat produk
+  // (= tabel "Product" Ads Manager), bukan alokasi. Kosong bila import di window
+  // belum punya baris produk (sebelum migrasi/deploy) → halaman jatuh ke card.
+  const winIds = useMemo(() => new Set(windowDaysSnaps.map(i => i.id)), [windowDaysSnaps])
+  const prevIds = useMemo(() => new Set(prevDaysSnaps.map(i => i.id)), [prevDaysSnaps])
+  const productsExact = useMemo(() => rollupProductsExact(productDaily.filter(r => winIds.has(r.importId)), rows).map(p => ({
+    ...p, name: (p.productId && productNames[p.productId]) || null,
+  })), [productDaily, winIds, rows, productNames])
+  // Cakupan laporan produk di window: berapa hari punya baris, sejak kapan.
+  const productDailyCoverage = useMemo(() => {
+    const has = new Set(productDaily.map(r => r.importId))
+    const days = windowDaysSnaps.filter(i => has.has(i.id))
+    return { withRows: days.length, total: windowDaysSnaps.length, since: days.length ? days.map(i => i.snapshot_date).filter(Boolean).sort()[0] : null }
+  }, [productDaily, windowDaysSnaps])
   const dashboard = useMemo(() => dashboardSummary(videos, thresholds), [videos, thresholds])
   const typeTotals = useMemo(() => typeTotalsOf(rows), [rows])
   // Perbandingan per channel (Video / Product card / Live) + tren harian stacked.
@@ -346,10 +364,11 @@ export function GmvMaxProvider({ children }) {
       creators: rollupCreators(prevRows, thresholds),
       products: rollupProducts(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
       productsCard: rollupProductsCard(prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
+      productsExact: rollupProductsExact(productDaily.filter(r => prevIds.has(r.importId)), prevRows).map(p => ({ ...p, name: (p.productId && productNames[p.productId]) || null })),
       typeTotals: typeTotalsOf(prevRows),
       channels: rollupChannels(prevRows),
     }
-  }, [prevRows, prevLabel, thresholds, productNames])
+  }, [prevRows, prevLabel, thresholds, productNames, productDaily, prevIds])
 
   // Strip "Hari ini" = angka hari TERAKHIR di scope (langsung dari totals-nya).
   const dailyDelta = useMemo(() => {
@@ -516,7 +535,7 @@ export function GmvMaxProvider({ children }) {
     range: effectiveRange, setRange: setCustomRange, rangePresets, dateBounds,
     windowDays, setWindowDays, windows: WINDOWS,
     prev, dailyDelta, trend,
-    videos, campaigns, creators, hooks, products, productsCard, dashboard, typeTotals, insights,
+    videos, campaigns, creators, hooks, products, productsCard, productsExact, productDailyCoverage, dashboard, typeTotals, insights,
     channels, channelTrend,
     hasData: imports.length > 0, freshness,
     loading, busy, creativesLoading, error,

@@ -37,14 +37,22 @@ function sumProducts(arr) {
 }
 
 export default function ProductPage({ onOpenUpload }) {
-  const { productsCard, videos, boost, thresholds, hasData, prev, periodName, requestBoost, updateBoost } = useGmvMax()
+  const { productsCard, productsExact, productDailyCoverage, videos, boost, thresholds, hasData, prev, periodName, requestBoost, updateBoost } = useGmvMax()
   const [q, setQ] = useState('')
   const [detail, setDetail] = useState(null)   // produk yang dibuka modal detailnya
+  // SUMBER ANGKA (Opsi D, 14 Sep 2026). 'exact' = laporan TikTok tingkat produk
+  // (gmvmax_product_daily) — persis tabel "Product" Ads Manager, semua produk
+  // yang berbelanja tampil. 'card' = alokasi Product card lama (estimasi; produk
+  // tanpa revenue video hilang). Default exact bila datanya ada; pilihan user
+  // dipegang selama halaman hidup.
+  const exactAvailable = productsExact.length > 0
+  const [modeChoice, setModeChoice] = useState(null)
+  const mode = modeChoice ?? (exactAvailable ? 'exact' : 'card')
+  const source = mode === 'exact' && exactAvailable ? productsExact : productsCard
 
   // Kartu meringkas seluruh produk periode ini (tak terpengaruh pencarian);
   // kotak cari hanya menyaring tabel di bawahnya — seperti Monitoring Praise.
-  // Revenue = channel PRODUCT CARD (dialokasikan per-produk); Video & Live tak dihitung.
-  const base = useMemo(() => productBase(productsCard), [productsCard])
+  const base = useMemo(() => productBase(source), [source])
   const list = useMemo(() => {
     if (!q.trim()) return base
     const s = q.toLowerCase()
@@ -52,7 +60,11 @@ export default function ProductPage({ onOpenUpload }) {
   }, [base, q])
 
   const sum = useMemo(() => sumProducts(base), [base])
-  const prevSum = useMemo(() => (prev ? sumProducts(productBase(prev.productsCard || [])) : null), [prev])
+  const prevSum = useMemo(() => {
+    if (!prev) return null
+    const arr = mode === 'exact' && exactAvailable ? (prev.productsExact || []) : (prev.productsCard || [])
+    return sumProducts(productBase(arr))
+  }, [prev, mode, exactAvailable])
   const { sorted, sort, toggle } = useSortableRows(list, PRODUCT_SORT)
   const pg = usePaged(sorted)
 
@@ -80,14 +92,38 @@ export default function ProductPage({ onOpenUpload }) {
           delta={<DeltaBadge cur={sum.delivering} prev={prevSum?.delivering} />} />
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-ink-muted">{list.length} produk · <span className="text-emerald-500">{matched}</span> ketemu nama di menu Produk</p>
+        <div className="inline-flex gap-0.5 p-0.5 rounded-lg bg-fill/10 border border-line/10" role="tablist" aria-label="Sumber angka">
+          {[
+            { id: 'exact', label: 'Laporan produk TikTok', disabled: !exactAvailable, title: exactAvailable ? 'Angka per produk langsung dari laporan TikTok per campaign (= tabel Product di Ads Manager)' : 'Belum ada laporan produk untuk rentang ini — tersedia sejak sinkron harian pertama setelah migrasi 0061' },
+            { id: 'card', label: 'Product card (alokasi)', disabled: false, title: 'Alokasi baris Product card menurut porsi revenue video — estimasi; produk tanpa revenue video tak tampil' },
+          ].map(t => (
+            <button key={t.id} role="tab" aria-selected={mode === t.id} disabled={t.disabled} title={t.title}
+              onClick={() => setModeChoice(t.id)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === t.id ? 'bg-surface text-ink-strong shadow-sm' : 'text-ink-muted hover:text-ink'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <p className="text-[11px] text-ink-faint flex items-start gap-1.5 leading-relaxed -mt-1">
-        <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-        Revenue di sini = channel <span className="text-ink-muted">Product card</span> saja (Video &amp; Live tak dihitung). Baris Product card bersifat level-campaign (tanpa product_id) → dialokasikan ke produk berdasarkan porsi revenue video tiap produk dalam campaign-nya; untuk campaign multi-produk angka bersifat <span className="text-ink-muted">estimasi</span>. Produk tanpa iklan Product card tak muncul.
-      </p>
+      {mode === 'exact' && exactAvailable ? (
+        <p className="text-[11px] text-ink-faint flex items-start gap-1.5 leading-relaxed -mt-1">
+          <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>
+            Angka per produk <span className="text-ink-muted">langsung dari laporan TikTok tingkat produk</span> per campaign (sama dengan tabel Product di Ads Manager), dijumlahkan lintas campaign dan hari. Semua produk yang berbelanja tampil, termasuk yang belum menghasilkan.
+            {productDailyCoverage.total > productDailyCoverage.withRows && (
+              <> Laporan produk tersedia untuk <span className="text-ink-muted">{productDailyCoverage.withRows} dari {productDailyCoverage.total} hari</span> di rentang ini{productDailyCoverage.since ? ` (sejak ${productDailyCoverage.since})` : ''}; hari sebelumnya tak ikut dihitung di mode ini.</>
+            )}
+          </span>
+        </p>
+      ) : (
+        <p className="text-[11px] text-ink-faint flex items-start gap-1.5 leading-relaxed -mt-1">
+          <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>Revenue di sini = channel <span className="text-ink-muted">Product card</span> saja (Video &amp; Live tak dihitung). Baris Product card bersifat level-campaign (tanpa product_id) → dialokasikan ke produk berdasarkan porsi revenue video tiap produk dalam campaign-nya; untuk campaign multi-produk angka bersifat <span className="text-ink-muted">estimasi</span>. Produk tanpa iklan Product card tak muncul.{!exactAvailable && ' Laporan produk TikTok belum tersedia untuk rentang ini.'}</span>
+        </p>
+      )}
 
       <div className="relative">
         <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />

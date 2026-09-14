@@ -85,3 +85,22 @@ test('engine: campaign tanpa spend (discovery kosong) → snapshot kosong, bukan
   assert.equal(res.meta.campaignCount, 0)
   assert.equal(res.meta.completeness, 'COMPLETE_ZERO_DATA') // sukses penuh & kosong = zero-data sah
 })
+
+test('engine (0061): laporan tingkat produk ikut dikembalikan (products) dari langkah SPU', async () => {
+  const provider = makeProvider({
+    creative: () => ({ list: [
+      { dimensions: { item_id: 'v1' }, metrics: { cost: '300', gross_revenue: '2060', orders: '5', shop_content_type: 'VIDEO', tt_account_name: 'A', title: 'x' } },
+    ], page_info: { total_page: 1 } }),
+  })
+  const res = await runSync(provider, { advertiserId: 'ADV', storeId: 'S', date: '2026-07-08' })
+  assert.equal(res.products.length, 1)
+  assert.deepEqual(res.products[0], { campaignId: 'C1', campaignName: 'Camp One', productId: 'S1', cost: 300, grossRevenue: null, orders: null, roi: null })
+  assert.equal(res.meta.productRowCount, 1)
+})
+
+test('parseProductRow: baris tanpa aktivitas dibuang; angka string → number', async () => {
+  const { parseProductRow } = await import('./engine.mjs')
+  assert.equal(parseProductRow({ dimensions: { item_group_id: 'P' }, metrics: { cost: '0', gross_revenue: '0', orders: '0' } }, { campaignId: 'C', campaignName: 'N' }), null)
+  assert.deepEqual(parseProductRow({ dimensions: { item_group_id: 1732225622201894065n.toString() }, metrics: { cost: '18620', gross_revenue: '0', orders: '0', roi: '0.00' } }, { campaignId: 'C', campaignName: 'N' }),
+    { campaignId: 'C', campaignName: 'N', productId: '1732225622201894065', cost: 18620, grossRevenue: 0, orders: 0, roi: 0 })
+})

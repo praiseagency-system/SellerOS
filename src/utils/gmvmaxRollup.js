@@ -270,6 +270,47 @@ export function rollupProducts(rows) {
   })).sort((a, b) => b.revenue - a.revenue)
 }
 
+// Per PRODUK dari LAPORAN TINGKAT PRODUK TikTok (gmvmax_product_daily, 0061) —
+// angka cost/omzet/order per (campaign × produk) apa adanya, dijumlahkan lintas
+// campaign & hari dalam window. Ini persis tabel "Product" di Ads Manager, jadi
+// tak ada estimasi. Jumlah video + status delivery tetap diambil dari baris
+// kreatif (creativeRows) supaya kolom #VIDEO/DELIVERY tetap terisi.
+// Mengembalikan bentuk yang sama dgn rollupProductsCard (+ exact:true).
+export function rollupProductsExact(productRows, creativeRows = []) {
+  if (!productRows || !productRows.length) return []
+  const byId = new Map()
+  for (const r of productRows) {
+    if (!r.productId) continue
+    let p = byId.get(r.productId)
+    if (!p) { p = { productId: r.productId, cost: 0, revenue: 0, orders: 0, campaigns: new Set(), videos: new Set(), _vidStatus: new Map() }; byId.set(r.productId, p) }
+    p.cost += r.cost ?? 0
+    p.revenue += r.grossRevenue ?? 0
+    p.orders += r.orders ?? 0
+    if (r.campaignName) p.campaigns.add(r.campaignName)
+  }
+  for (const r of creativeRows) {
+    const p = r.productId && byId.get(r.productId)
+    if (!p || r.creativeType !== 'Video' || !r.videoId) continue
+    p.videos.add(r.videoId)
+    const canon = normDeliveryStatus(r.status)
+    const per = periodOf(r)
+    const cur = p._vidStatus.get(r.videoId)
+    if (!cur || per > cur.period || (per === cur.period && deliveryRank(canon) > deliveryRank(cur.canon))) {
+      p._vidStatus.set(r.videoId, { period: per, canon })
+    }
+  }
+  return [...byId.values()].map(p => ({
+    productId: p.productId,
+    videoCount: p.videos.size,
+    statusCounts: tallyDelivery(p._vidStatus),
+    campaigns: [...p.campaigns],
+    cost: p.cost, revenue: p.revenue, orders: p.orders,
+    roas: p.cost > 0 ? p.revenue / p.cost : null,
+    cpo: p.orders > 0 ? p.cost / p.orders : null,
+    exact: true,
+  })).sort((a, b) => b.revenue - a.revenue)
+}
+
 // Per PRODUK dari channel PRODUCT CARD saja (bukan Video/Live). Baris Product card
 // = agregat per-campaign TANPA product_id; dialokasikan ke produk berdasarkan
 // PORSI REVENUE VIDEO tiap produk dalam campaign yang sama (fallback: rata bila

@@ -66,3 +66,51 @@ test('error rpc → VERSIONED_WRITE_FAILED', async () => {
   const sb = mockSb({ data: null, error: { message: 'boom' } })
   await assert.rejects(() => writeSnapshotVersioned({ sb, ...wsDate, result: result(), commit: true }), /VERSIONED_WRITE_FAILED/)
 })
+
+// ── 0061: laporan tingkat produk ─────────────────────────────────────────────
+function mockSbWithTable({ tableExists, reply }) {
+  const calls = []
+  return {
+    calls,
+    rpc: async (fn, args) => { calls.push({ fn, args }); return reply },
+    from: () => ({ select: () => ({ limit: async () => (tableExists ? { error: null } : { error: { code: '42P01', message: 'relation does not exist' } }) }) }),
+  }
+}
+const withProducts = () => ({
+  rows: [{ videoId: 'v1', campaignId: 'C1', productId: 'P1', cost: 10, grossRevenue: 100, isSystem: false }],
+  products: [{ campaignId: 'C1', campaignName: 'Camp', productId: 'P1', cost: 10, grossRevenue: 100, orders: 1, roi: 10 }],
+  totals: { cost: 10, revenue: 100, orders: 1, roas: 10 },
+  meta: { completeness: 'COMPLETE_WITH_ROWS' },
+})
+
+test('0061: tabel ada → p_products dikirim (bentuk kolom DB) & signature memuat produk', async () => {
+  const { writeSnapshotVersioned } = await import('./writer.mjs')
+  const { contentSignature } = await import('./provenance.mjs')
+  const sb = mockSbWithTable({ tableExists: true, reply: { data: { import_id: 'I', version: 1, content_changed: true, noop: false }, error: null } })
+  const result = withProducts()
+  const w = await writeSnapshotVersioned({ sb, workspaceId: 'W', date: '2026-09-13', result, commit: true })
+  assert.equal(w.productCount, 1)
+  assert.deepEqual(sb.calls[0].args.p_products, [{ import_id: null, campaign_id: 'C1', campaign_name: 'Camp', product_id: 'P1', cost: 10, gross_revenue: 100, orders: 1, roi: 10 }])
+  assert.equal(sb.calls[0].args.p_content_signature, contentSignature({ workspaceId: 'W', date: '2026-09-13', rows: result.rows, totals: result.totals, products: result.products }))
+  assert.notEqual(sb.calls[0].args.p_content_signature, contentSignature({ workspaceId: 'W', date: '2026-09-13', rows: result.rows, totals: result.totals }))
+})
+
+test('0061: tabel BELUM ada → p_products TIDAK dikirim, snapshot tetap ditulis, signature = lama', async () => {
+  const { writeSnapshotVersioned } = await import('./writer.mjs')
+  const { contentSignature } = await import('./provenance.mjs')
+  const sb = mockSbWithTable({ tableExists: false, reply: { data: { import_id: 'I', version: 1, content_changed: true, noop: false }, error: null } })
+  const result = withProducts()
+  const w = await writeSnapshotVersioned({ sb, workspaceId: 'W', date: '2026-09-13', result, commit: true })
+  assert.equal(w.written, true)
+  assert.equal(w.productCount, 0)
+  assert.equal(w.productsSkipped, 'TABLE_MISSING')
+  assert.equal('p_products' in sb.calls[0].args, false)
+  assert.equal(sb.calls[0].args.p_content_signature, contentSignature({ workspaceId: 'W', date: '2026-09-13', rows: result.rows, totals: result.totals }))
+})
+
+test('0061: signature tanpa produk identik dgn sebelum 0061 (products=[] tak mengubah hash)', async () => {
+  const { contentSignature } = await import('./provenance.mjs')
+  const a = contentSignature({ workspaceId: 'W', date: '2026-09-13', rows: [], totals: { cost: 0 } })
+  const b = contentSignature({ workspaceId: 'W', date: '2026-09-13', rows: [], totals: { cost: 0 }, products: [] })
+  assert.equal(a, b)
+})
