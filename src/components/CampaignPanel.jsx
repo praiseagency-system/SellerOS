@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
-  Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList,
+  Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList, ClipboardX,
   Clock } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration } from '../data/campaigns'
@@ -10,6 +10,7 @@ import { getProfile } from '../data/identity'
 import {
   REGISTRATION, REGISTRATION_ORDER, registrationStatus, registrationBadge,
   registrationDetail, buildRegistration, registrationTotals,
+  registrationUrgent, registrationAlert, registrationReason,
 } from '../utils/campaignRegistration'
 import { getPortalSettings, updatePortalSettings, ensurePortalToken, regeneratePortalToken, setCampaignPortalHidden } from '../data/campaignPortal'
 import { loadStore } from '../data/storeDataset'
@@ -145,7 +146,7 @@ export default function CampaignPanel({ products }) {
   const [selfEmail, setSelfEmail] = useState('')
   const [selfName, setSelfName] = useState('')
   const [regFor, setRegFor] = useState(null)   // campaign yang status daftarnya diubah
-  const [filter, setFilter] = useState('all')  // all | new | pending
+  const [filter, setFilter] = useState('all')  // all | new | needreg | pending
 
   const reload = useCallback(async () => {
     try { setCampaigns(await listCampaigns()); setLoadErr(false) }
@@ -187,6 +188,9 @@ export default function CampaignPanel({ products }) {
   }, [campaigns, seenAt, selfEmail])
   const totals = useMemo(() => activityTotals(campaigns, seenAt, selfEmail), [campaigns, seenAt, selfEmail])
   const newCountOf = useCallback(c => activity.get(c.id)?.count || 0, [activity])
+  // Pekerjaan tertinggal: sudah di-ACC client tapi belum ada catatan pendaftaran.
+  const regAlert = useMemo(() => registrationAlert(campaigns), [campaigns])
+  const needRegOf = useCallback(c => regAlert.ids.has(c.id), [regAlert])
   // Campaign yang masih menunggu keputusan (ada SKU aktif berstatus pending).
   const pendingOf = useCallback(c => { const s = approvalSummary(c); return s.pending }, [])
 
@@ -211,9 +215,13 @@ export default function CampaignPanel({ products }) {
     const inTab = campaigns
       .filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
       .filter(c => filter === 'all'
-        || (filter === 'new' ? newCountOf(c) > 0 : pendingOf(c) > 0))
-    // Yang ada kabar baru dari client naik ke atas (urutan lain tetap).
-    const sorted = [...inTab].sort((a, b) => newCountOf(b) - newCountOf(a))
+        || (filter === 'new' ? newCountOf(c) > 0
+          : filter === 'needreg' ? needRegOf(c)
+          : pendingOf(c) > 0))
+    // Naik ke atas: kabar baru dari client dulu, lalu pendaftaran yang
+    // tertinggal (yang mendesak lebih dulu lagi). Urutan lain tetap.
+    const rank = c => (newCountOf(c) > 0 ? 4 : 0) + (registrationUrgent(c) ? 2 : needRegOf(c) ? 1 : 0)
+    const sorted = [...inTab].sort((a, b) => rank(b) - rank(a))
     const order = [], map = new Map(), loose = []
     for (const c of sorted) {
       const key = (c.parentCampaign || '').trim()
@@ -222,7 +230,7 @@ export default function CampaignPanel({ products }) {
       map.get(key).push(c)
     }
     return { folders: order.map(key => ({ key, items: map.get(key) })), loose }
-  }, [campaigns, tab, filter, newCountOf, pendingOf])
+  }, [campaigns, tab, filter, newCountOf, pendingOf, needRegOf])
 
   // Daftar datar: folder judul + sub-campaign yang terbuka, lalu campaign
   // tanpa induk. Satu loop render — folder cuma baris pembuka.
@@ -231,10 +239,12 @@ export default function CampaignPanel({ products }) {
     for (const f of folders) {
       const fresh = f.items.reduce((n, c) => n + newCountOf(c), 0)
       // Folder dengan kabar baru terbuka sendiri, kecuali sudah ditutup manual.
-      const open = openFolders.has(f.key) || (fresh > 0 && !closedFolders.has(f.key))
+      const open = openFolders.has(f.key)
+        || ((fresh > 0 || f.items.some(needRegOf)) && !closedFolders.has(f.key))
       const span = periodSpan(f.items.flatMap(c => campaignPeriods(c)))
       out.push({
         type: 'folder', key: f.key, count: f.items.length, open, fresh,
+        needReg: f.items.filter(needRegOf).length,
         running: f.items.filter(c => campaignStatus(c).key === 'running').length,
         range: (span.start || span.end) ? periodRange({ start: span.start, end: span.end }) : 'tanpa tanggal',
       })
@@ -242,7 +252,7 @@ export default function CampaignPanel({ products }) {
     }
     for (const c of loose) out.push({ type: 'card', c, nested: false })
     return out
-  }, [folders, loose, openFolders, closedFolders, newCountOf])
+  }, [folders, loose, openFolders, closedFolders, newCountOf, needRegOf])
 
   // Folder dibuka manual vs ditutup manual disimpan terpisah: folder yang
   // terbuka otomatis karena ada kabar baru harus tetap bisa ditutup.
@@ -344,11 +354,27 @@ export default function CampaignPanel({ products }) {
         </div>
       )}
 
+      {/* Pekerjaan tertinggal: sudah di-ACC client tapi belum didaftarkan */}
+      {regAlert.count > 0 && (
+        <div className="mb-3 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 flex-wrap">
+          <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <p className="text-[13px] text-ink flex-1 min-w-[220px]">
+            <b className="font-semibold text-amber-300">{regAlert.count} campaign sudah di-ACC client tapi belum didaftarkan</b>
+            {regAlert.urgent > 0 && <span className="text-amber-300"> · {regAlert.urgent} mendesak</span>}
+          </p>
+          <button onClick={() => setFilter(f => (f === 'needreg' ? 'all' : 'needreg'))}
+            className="px-3 py-1.5 rounded-xl text-xs font-medium border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 transition-colors flex-shrink-0">
+            {filter === 'needreg' ? 'Tampilkan semua' : 'Lihat daftarnya'}
+          </button>
+        </div>
+      )}
+
       {/* Saringan daftar: kabar baru / masih menunggu / semua */}
       {campaigns.length > 0 && (() => {
         const inTab = campaigns.filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
         const chips = [
           { id: 'new', label: 'Baru', n: inTab.filter(c => newCountOf(c) > 0).length },
+          { id: 'needreg', label: 'Perlu didaftarkan', n: inTab.filter(needRegOf).length },
           { id: 'pending', label: 'Menunggu', n: inTab.filter(c => pendingOf(c) > 0).length },
           { id: 'all', label: 'Semua', n: inTab.length },
         ]
@@ -362,6 +388,7 @@ export default function CampaignPanel({ products }) {
                   onClick={() => setFilter(on && ch.id !== 'all' ? 'all' : ch.id)}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
                     on ? (ch.id === 'new' ? 'bg-blue-600/15 text-blue-300 border border-blue-500/30'
+                        : ch.id === 'needreg' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                                           : 'bg-fill/10 text-ink border border-line/20')
                        : `border border-line/12 ${disabled ? 'text-ink-faint/50 cursor-default' : 'text-ink-faint hover:text-ink hover:border-line/25'}`
                   }`}>
@@ -421,6 +448,11 @@ export default function CampaignPanel({ products }) {
                   <Folder className="w-4 h-4 text-blue-400 flex-shrink-0" />
                   <p className="text-[13px] font-semibold text-ink-strong truncate">{row.key}</p>
                   <span className="text-[11px] text-ink-faint flex-shrink-0">· {row.count} sub-campaign</span>
+                  {row.needReg > 0 && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300 flex-shrink-0">
+                      {row.needReg} perlu didaftarkan
+                    </span>
+                  )}
                   {row.fresh > 0 && (
                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-600/15 text-blue-300 flex-shrink-0">
                       {row.fresh} baru
@@ -438,12 +470,14 @@ export default function CampaignPanel({ products }) {
             const c = row.c
             const act = activity.get(c.id) || { count: 0, sentence: '', latest: null }
             const freshKeys = act.count > 0 ? newKeys(c, seenAt, selfEmail) : EMPTY_KEYS
+            const needReg = needRegOf(c)
             const agg = campaignAgg(c.items || [], productMap)
             const mon = monitorCampaign(c, storeLines, productMap)
             const open = expanded === c.id
             const Chevron = open ? ChevronDown : ChevronRight
             return (
-              <div key={c.id} className={`bg-surface rounded-2xl border shadow-sm overflow-hidden ${act.count > 0 ? 'border-blue-500/35' : 'border-line/10'} ${row.nested ? 'ml-5' : ''}`}>
+              <div key={c.id} className={`bg-surface rounded-2xl border shadow-sm overflow-hidden ${
+                act.count > 0 ? 'border-blue-500/35' : needReg ? 'border-amber-500/35' : 'border-line/10'} ${row.nested ? 'ml-5' : ''}`}>
                 <div className="flex items-center gap-3 p-4">
                   <button onClick={() => setExpanded(x => x === c.id ? null : c.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                     <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
@@ -485,9 +519,11 @@ export default function CampaignPanel({ products }) {
                           <span title={`${act.count} keputusan client baru sejak terakhir dilihat`}
                             className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 bg-blue-600/15 text-blue-300">Baru</span>
                         )}
-                        {(() => { const rb = registrationBadge(c)
-                          return rb ? <span title={registrationDetail(c)}
-                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${rb.cls}`}>{rb.label}</span> : null })()}
+                        {(() => { const rb = registrationBadge(c, { showNone: needReg })
+                          if (!rb) return null
+                          const cls = rb.key === 'none' ? 'bg-amber-500/12 text-amber-300' : rb.cls
+                          return <span title={registrationDetail(c) || registrationReason(c)}
+                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${cls}`}>{rb.label}</span> })()}
                       </div>
                       <p className="text-[11px] text-ink-faint truncate flex items-center gap-1">
                         <CalendarRange className="w-3 h-3" />{dateRange(c)} · {agg.products} produk · {agg.count} varian
@@ -497,11 +533,13 @@ export default function CampaignPanel({ products }) {
                           {act.sentence} · {fmtAgo(act.latest?.at)}
                         </p>
                       )}
-                      {registrationStatus(c) !== 'none' && (
+                      {registrationStatus(c) !== 'none' ? (
                         <p className="text-[11px] text-ink-faint truncate mt-0.5">
                           {REGISTRATION[registrationStatus(c)].label} · {registrationDetail(c)}
                         </p>
-                      )}
+                      ) : needReg ? (
+                        <p className="text-[11px] text-amber-300 truncate mt-0.5">{registrationReason(c)}</p>
+                      ) : null}
                       {c.description && (
                         <p className="text-[11px] text-ink-faint truncate mt-0.5">{c.description}</p>
                       )}
@@ -519,10 +557,12 @@ export default function CampaignPanel({ products }) {
                         className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>
                     )}
                     {(() => { const rs = registrationStatus(c)
-                      const Icon = rs === 'none' ? ClipboardList : ClipboardCheck
-                      const cls = rs === 'done' ? 'text-blue-400' : rs === 'progress' ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'
+                      const Icon = rs === 'none' ? (needReg ? ClipboardX : ClipboardList) : ClipboardCheck
+                      const cls = rs === 'done' ? 'text-blue-400'
+                        : rs === 'progress' ? 'text-amber-400'
+                        : needReg ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'
                       return (
-                        <button title={rs === 'none' ? 'Belum didaftarkan ke marketplace — klik untuk ubah' : `${REGISTRATION[rs].label} · ${registrationDetail(c)}`}
+                        <button title={rs === 'none' ? (needReg ? registrationReason(c) : 'Belum didaftarkan ke marketplace — klik untuk ubah') : `${REGISTRATION[rs].label} · ${registrationDetail(c)}`}
                           onClick={() => setRegFor(c)}
                           className={`p-1.5 rounded-lg transition-colors hover:bg-fill/8 ${cls}`}>
                           <Icon className="w-3.5 h-3.5" />

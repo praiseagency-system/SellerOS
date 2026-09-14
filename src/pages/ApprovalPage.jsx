@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Lock, Check, X, User, ChevronDown, ChevronRight, ChevronLeft, FileText, CalendarRange, ExternalLink, Clock } from 'lucide-react'
+import { Lock, Check, X, User, ChevronDown, ChevronRight, ChevronLeft, FileText, CalendarRange, ExternalLink, Clock, ClipboardCheck } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ApproverShell, LoginBox, Spinner, Notice } from '../components/ApproverChrome'
 import { getCampaignByToken, submitApproval } from '../data/campaignApproval'
@@ -160,16 +160,30 @@ function ApprovalBody({ token, email }) {
               </span>
             </p>
           ) })()}
-        {/* Status pendaftaran ke marketplace — diisi tim, di sini hanya dibaca. */}
+        {/* Status pendaftaran ke marketplace — diisi tim, di sini hanya dibaca.
+            Sepadan dengan pita di kartu portal: barisnya sendiri, bukan badge. */}
         {(() => { const rb = registrationBadge(c)
           if (!rb) return null
+          const done = rb.key === 'done'
           const link = hrefOf(c.registration?.link)
+          const detail = registrationDetail(c)
           return (
-            <p className="mt-2 text-[12px] flex items-center gap-1.5 flex-wrap">
-              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${rb.cls}`}>{rb.label}</span>
-              <span className="text-ink-faint">{registrationDetail(c)}</span>
-              {link && <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">lihat di marketplace</a>}
-            </p>
+            <div className={`mt-3 px-3 py-2.5 rounded-xl border flex items-start gap-2.5 ${
+              done ? 'bg-blue-600/10 border-blue-500/25' : 'bg-amber-500/10 border-amber-500/25'}`}>
+              {done
+                ? <ClipboardCheck className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                : <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />}
+              <div className="min-w-0 flex-1">
+                <p className={`text-[12px] font-semibold ${done ? 'text-blue-300' : 'text-amber-300'}`}>
+                  {done ? `Sudah didaftarkan ke ${PLATFORM_LABEL[c.platform] || c.platform}` : 'Sedang didaftarkan tim'}
+                </p>
+                {detail && <p className={`text-[11px] mt-0.5 ${done ? 'text-blue-300/80' : 'text-amber-300/80'}`}>{detail}</p>}
+              </div>
+              {link && (
+                <a href={link} target="_blank" rel="noopener noreferrer"
+                  className="text-[11px] text-blue-400 hover:underline flex-shrink-0 mt-0.5">lihat di marketplace</a>
+              )}
+            </div>
           ) })()}
         {hrefOf(c.link) && (
           <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer"
