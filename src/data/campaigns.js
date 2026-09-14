@@ -155,6 +155,20 @@ export async function setCampaignRegistration(campaignId, registration) {
   return rowToCampaign(data)
 }
 
+// Keputusan persetujuan per SKU dari sisi admin, ditulis dari DAFTAR (bukan
+// editor) supaya koreksi satu varian tak perlu membuka & menyimpan seluruh
+// campaign — menyimpan editor mengirim `items`, `periods`, dll sekaligus.
+export async function setCampaignApprovals(campaignId, approvals) {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ approvals, updated_at: new Date().toISOString() })
+    .eq('id', campaignId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return rowToCampaign(data)
+}
+
 export async function deleteCampaign(id) {
   const { error } = await supabase.from('campaigns').delete().eq('id', id)
   if (error) throw error

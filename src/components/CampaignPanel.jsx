@@ -5,7 +5,7 @@ import {
   Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList, ClipboardX,
   Clock } from 'lucide-react'
 import Modal from './Modal'
-import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration } from '../data/campaigns'
+import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration, setCampaignApprovals } from '../data/campaigns'
 import { getProfile } from '../data/identity'
 import {
   REGISTRATION, registrationStatus, registrationBadge,
@@ -22,7 +22,7 @@ import {
   worthVerdict, worstProductMargin, DEFAULT_TARGET_MARGIN,
   APPROVAL, approvalSummary, skuApprovalSummary,
   approvalStatusOfItem, hasOwnApproval, approvalLogOfProduct, productApprovalStatus,
-  activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey, variantLabel,
+  activeItems, isExcluded, excludeSuggestions, reasonLabel, itemKey, variantLabel, applySkuDecision,
 } from '../utils/campaignPricing'
 import {
   campaignActivity, activityTotals, newKeys, fmtAgo, getSeenAt, setSeenAt,
@@ -295,6 +295,14 @@ export default function CampaignPanel({ products }) {
         ? 'Kolom "registration" belum ada. Jalankan migrasi 0062_campaign_registration.sql di Supabase → SQL Editor dulu.'
         : `Gagal menyimpan status pendaftaran.${m ? `\n\n${m}` : ''}`)
     }
+  }
+
+  // Keputusan admin per SKU langsung dari daftar (tanpa membuka editor).
+  // Disimpan hanya ke kolom approvals supaya tak ikut menimpa items/periods.
+  async function handleSkuDecision(c, it, status) {
+    const next = applySkuDecision(c.approvals, it, status, { email: selfEmail, name: selfName })
+    try { await setCampaignApprovals(c.id, next); await reload() }
+    catch (e) { console.error(e); alert(`Gagal menyimpan keputusan.${e?.message ? `\n\n${e.message}` : ''}`) }
   }
 
   async function handleDelete(id) {
@@ -587,7 +595,8 @@ export default function CampaignPanel({ products }) {
                       <div className="space-y-2.5">
                         {byProductList(c.items).map(([pid, its]) => (
                           <ProductCard key={pid} c={c} productId={pid} its={its} productMap={productMap}
-                            fresh={freshKeys} seenAt={seenAt} />
+                            fresh={freshKeys} seenAt={seenAt}
+                            onDecide={(it, st) => handleSkuDecision(c, it, st)} />
                         ))}
                       </div>
                     )}
@@ -1270,10 +1279,48 @@ const VERDICT_CLS = {
   low:   'bg-red-500/12 text-red-300',
 }
 
+// Setujui / Tolak satu SKU langsung dari daftar campaign.
+// Kedua tombol sengaja BEDA BENTUK (bulat vs kotak), bukan cuma beda warna:
+// keduanya berdempetan dan bersebelahan puluhan kali di layar yang sama.
+// Menekan tombol yang sedang aktif mengembalikan SKU ke Menunggu.
+function SkuDecision({ it, status, own, onDecide }) {
+  const [busy, setBusy] = useState(false)
+  if (!onDecide) {
+    return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 w-[62px] text-center ${APPROVAL[status].cls}`}>{APPROVAL[status].label}</span>
+  }
+  async function hit(st) {
+    if (busy) return
+    setBusy(true)
+    try { await onDecide(it, status === st ? 'pending' : st) } finally { setBusy(false) }
+  }
+  const base = 'flex items-center justify-center transition-colors disabled:opacity-50 flex-shrink-0'
+  return (
+    <div className="flex items-center gap-1 flex-shrink-0" title={own ? 'diputuskan khusus SKU ini' : 'ikut keputusan produk'}>
+      <button type="button" disabled={busy} onClick={() => hit('approved')}
+        title={status === 'approved' ? 'Batalkan — kembalikan ke Menunggu' : 'Setujui SKU ini'}
+        className={`${base} w-6 h-6 rounded-full border ${status === 'approved'
+          ? 'bg-green-600 border-green-500 text-white'
+          : 'border-line/20 text-ink-faint hover:text-green-300 hover:border-green-500/40'}`}>
+        <Check className="w-3.5 h-3.5" />
+      </button>
+      <button type="button" disabled={busy} onClick={() => hit('rejected')}
+        title={status === 'rejected' ? 'Batalkan — kembalikan ke Menunggu' : 'Tolak SKU ini'}
+        className={`${base} w-6 h-6 rounded-md border ${status === 'rejected'
+          ? 'bg-red-600 border-red-500 text-white'
+          : 'border-line/20 text-ink-faint hover:text-red-300 hover:border-red-500/40'}`}>
+        <X className="w-3.5 h-3.5" />
+      </button>
+      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md w-[62px] text-center ${APPROVAL[status].cls}`}>
+        {APPROVAL[status].label}
+      </span>
+    </div>
+  )
+}
+
 // Kartu satu produk di dalam detail campaign: status, verdict worth-it,
 // riwayat approval, lalu tiap varian (harga campaign, margin, komisi & biaya
 // yang bisa diklik untuk breakdown, tabel voucher).
-function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt = '' }) {
+function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt = '', onDecide }) {
   const [openFee, setOpenFee] = useState(null)
   const p = productMap[productId]
   const cfg = c.voucherConfig
@@ -1382,11 +1429,8 @@ function ProductCard({ c, productId, its, productMap, fresh = EMPTY_KEYS, seenAt
                 {fresh.has(itemKey(it)) && (
                   <span title="keputusan client baru" className="text-[9px] font-semibold px-1 py-0.5 rounded bg-blue-600/15 text-blue-300 flex-shrink-0">Baru</span>
                 )}
-                {(() => { const ist = approvalStatusOfItem(c.approvals, it)
-                  return <span title={hasOwnApproval(c.approvals, it) ? 'diputuskan khusus SKU ini' : 'ikut keputusan produk'}
-                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 w-[62px] text-center ${APPROVAL[ist].cls}`}>
-                    {APPROVAL[ist].label}
-                  </span> })()}
+                <SkuDecision it={it} status={approvalStatusOfItem(c.approvals, it)}
+                  own={hasOwnApproval(c.approvals, it)} onDecide={onDecide} />
               </div>
               {feeRows && (
                 <div className="mt-1.5 mb-1 rounded-lg bg-fill/5 border border-line/8 p-2.5 space-y-1">

@@ -110,3 +110,39 @@ describe('status efektif produk (kontrol editor)', () => {
     expect(productApprovalStatus({ 'p1:0': { status: 'approved' } }, [IT('p1', 0, { excluded: true })])).toBe('pending')
   })
 })
+
+// ── Keputusan admin dari daftar campaign ──────────────────────────────────
+import { applySkuDecision } from '../campaignPricing'
+
+describe('applySkuDecision', () => {
+  const it0 = { productId: 'p1', varIdx: 0 }
+  const it1 = { productId: 'p1', varIdx: 1 }
+
+  it('menulis kunci SKU, bukan kunci produk', () => {
+    const out = applySkuDecision({}, it0, 'approved', { email: 'A@b.com', name: 'Ikhsan' })
+    expect(Object.keys(out)).toEqual(['p1:0'])
+    expect(out['p1:0'].status).toBe('approved')
+    expect(out['p1:0'].by).toBe('a@b.com')
+    expect(out['p1:0'].byName).toBe('Ikhsan')
+    expect(Date.parse(out['p1:0'].at)).not.toBeNaN()
+  })
+  it('kembali ke pending TETAP menulis kunci SKU, tidak menghapusnya', () => {
+    // Kunci yang dihapus akan jatuh ke keputusan level produk di bawahnya.
+    const before = { p1: { status: 'approved' }, 'p1:0': { status: 'rejected' } }
+    const out = applySkuDecision(before, it0, 'pending')
+    expect(out['p1:0'].status).toBe('pending')
+    expect(approvalStatusOfItem(out, it0)).toBe('pending')
+  })
+  it('SKU lain tak ikut berubah', () => {
+    const before = { 'p1:1': { status: 'rejected', note: 'mahal' } }
+    const out = applySkuDecision(before, it0, 'approved')
+    expect(out['p1:1']).toEqual({ status: 'rejected', note: 'mahal' })
+  })
+  it('catatan client yang sudah ada dipertahankan', () => {
+    const out = applySkuDecision({ 'p1:0': { status: 'rejected', note: 'margin tipis' } }, it0, 'approved')
+    expect(out['p1:0'].note).toBe('margin tipis')
+  })
+  it('tanpa identitas pengisi tetap jalan', () => {
+    expect(applySkuDecision({}, it1, 'rejected')['p1:1'].by).toBe('')
+  })
+})

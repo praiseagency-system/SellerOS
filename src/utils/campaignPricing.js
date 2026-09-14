@@ -315,3 +315,22 @@ export function variantLabel(it, product) {
   const pn = (product?.name || '').trim()
   return (pn && n.toLowerCase() === pn.toLowerCase()) ? '' : n
 }
+
+// Keputusan admin atas SATU SKU, ditulis dari daftar campaign.
+// Selalu menulis kunci SKU (`productId:varIdx`) — TIDAK menghapusnya saat
+// kembali ke 'pending', karena kunci yang hilang akan jatuh ke keputusan
+// level produk dan malah terbaca "disetujui" lagi. Stempel `by`/`byName`
+// diisi supaya terlihat ini keputusan tim, bukan client; riwayat
+// (`approval_log`) sengaja TAK disentuh, itu milik keputusan lewat /approve.
+export function applySkuDecision(approvals, it, status, actor = {}) {
+  const next = { ...(approvals || {}) }
+  const key = itemKey(it)
+  next[key] = {
+    ...(next[key] || {}),
+    status,
+    at: new Date().toISOString(),
+    by: (actor.email || '').trim().toLowerCase(),
+    byName: (actor.name || '').trim(),
+  }
+  return next
+}
