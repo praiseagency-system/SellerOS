@@ -15,3 +15,12 @@ export function creativeRowToDb(importId, r) {
     hook_tag: r.hookTag, raw_data: null,
   }
 }
+
+// Baris laporan produk → gmvmax_product_daily (import_id di-assign RPC).
+export function productRowToDb(importId, r) {
+  return {
+    import_id: importId,
+    campaign_id: r.campaignId, campaign_name: r.campaignName ?? null, product_id: r.productId,
+    cost: r.cost, gross_revenue: r.grossRevenue, orders: r.orders, roi: r.roi,
+  }
+}

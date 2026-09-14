@@ -3,7 +3,7 @@
 // dipakai (belum cutover). Commit sekarang ATOMIK via RPC gmvmax_replace_snapshot
 // (migration 0017): DELETE+INSERT dalam SATU transaksi → tak ada snapshot parsial
 // visible. Bukan lagi DELETE-then-INSERT non-atomik.
-import { creativeRowToDb } from './rowMap.mjs'
+import { creativeRowToDb, productRowToDb } from './rowMap.mjs'
 import { contentSignature } from './provenance.mjs'
 
 export const WRITER_VERSION = 'versioned-0.1.0'
@@ -54,8 +54,15 @@ export async function writeSnapshotVersioned({
 }) {
   const payloadRows = result.rows
   const totals = { cost: result.totals.cost, revenue: result.totals.revenue, orders: result.totals.orders, roas: result.totals.roas }
-  const signature = contentSignature({ workspaceId, date, rows: payloadRows, totals })
-  const plan = { mode: commit ? 'commit' : 'shadow', workspaceId, date, rowCount: payloadRows.length, totals, content_signature: signature }
+  // Laporan tingkat produk (0061) ditulis HANYA bila tabelnya sudah ada di DB
+  // (migrasi manual di SQL Editor) — kalau belum, snapshot tetap ditulis tanpa
+  // produk, bukan gagal. Pola sama dgn deteksi tabel 0048.
+  const productRows = Array.isArray(result.products) ? result.products : []
+  const withProducts = productRows.length > 0 && commit && sb ? await productTableExists(sb) : false
+  const products = withProducts ? productRows : []
+  const signature = contentSignature({ workspaceId, date, rows: payloadRows, totals, products })
+  const plan = { mode: commit ? 'commit' : 'shadow', workspaceId, date, rowCount: payloadRows.length, productCount: products.length,
+    productsSkipped: productRows.length > 0 && !withProducts && commit ? 'TABLE_MISSING' : null, totals, content_signature: signature }
   if (!commit) return { ...plan, written: false } // SHADOW: hitung signature, TIDAK menulis
   if (!sb) throw new Error('writeSnapshotVersioned commit: klien Supabase wajib')
 
@@ -70,16 +77,30 @@ export async function writeSnapshotVersioned({
     currency, source_filename: null, totals, settings: null,
   }
   const creatives = payloadRows.map(r => creativeRowToDb(null, r)) // import_id di-assign oleh RPC
-  const { data, error } = await sb.rpc('gmvmax_write_versioned_snapshot', {
+  const rpcArgs = {
     p_workspace_id: workspaceId, p_snapshot_date: date, p_content_signature: signature,
     p_import: importPayload, p_creatives: creatives, p_writer_kind: writerKind,
     p_writer_version: writerVersion, p_run_id: runId, p_sync_run_id: syncRunId,
     p_actor_role: actorRole, p_allow_empty: allowEmpty,
-  })
+  }
+  // p_products hanya dikirim bila tabelnya ada (RPC lama tanpa parameter ini
+  // tetap terpanggil benar selama migrasi 0061 belum dijalankan).
+  if (withProducts) rpcArgs.p_products = products.map(r => productRowToDb(null, r))
+  const { data, error } = await sb.rpc('gmvmax_write_versioned_snapshot', rpcArgs)
   if (error) { const e = new Error(`VERSIONED_WRITE_FAILED: ${error.message}`); e.code = 'VERSIONED_WRITE_FAILED'; throw e }
   return {
     ...plan, written: true, atomic: true,
     importId: data?.import_id ?? null, version: data?.version ?? null,
     content_changed: data?.content_changed === true, noop: data?.noop === true,
   }
+}
+
+// Deteksi tabel gmvmax_product_daily (migrasi 0061). Query ringan `limit 0`;
+// galat 42P01/404 = tabel belum ada → false. Galat lain → dianggap belum ada
+// juga (jangan menjatuhkan commit snapshot demi tabel pelengkap).
+export async function productTableExists(sb) {
+  try {
+    const { error } = await sb.from('gmvmax_product_daily').select('id', { head: true, count: 'exact' }).limit(0)
+    return !error
+  } catch { return false }
 }

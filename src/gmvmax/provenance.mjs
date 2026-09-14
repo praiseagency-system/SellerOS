@@ -14,8 +14,14 @@ export { rowFingerprint }
 
 // Signature konten deterministik & INVARIAN terhadap urutan baris, untuk
 // (workspace, date). Konten sama → signature sama; beda satu nilai/total → beda.
-export function contentSignature({ workspaceId, date, rows = [], totals = {} }) {
+// `products` (laporan tingkat produk, 0061) ikut dihitung HANYA bila ada isinya:
+// snapshot tanpa produk menghasilkan signature persis seperti sebelum 0061,
+// jadi no-op idempotency utk data lama tak terganggu.
+export function contentSignature({ workspaceId, date, rows = [], totals = {}, products = [] }) {
+  const input = products && products.length
+    ? { workspaceId, date, rows, totals, products }
+    : { workspaceId, date, rows, totals }
   return 'sha256:' + createHash('sha256')
-    .update(canonicalString({ workspaceId, date, rows, totals }))
+    .update(canonicalString(input))
     .digest('hex')
 }

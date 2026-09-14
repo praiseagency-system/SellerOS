@@ -80,11 +80,20 @@ export async function runSync(provider, { advertiserId, storeId, date, currency 
 
   // 3+4) Per campaign: enumerasi SPU (cost>0) → tarik creative per (campaign,SPU) paginasi penuh.
   const pairs = []
+  // Laporan TINGKAT PRODUK (per campaign × item_group_id) = tabel "Product" di
+  // Ads Manager. Dulu dipanggil hanya untuk enumerasi SPU (metrics ['cost']) lalu
+  // angkanya dibuang; kini disimpan apa adanya (Opsi D, 14 Sep 2026) supaya
+  // Performa Produk tak perlu menebak lewat alokasi Product card.
+  const products = []
   for (const cid of campaignIds) {
-    const spuRes = await fetchAllPages(provider, { ...dr, dimensions: ['item_group_id'], filtering: { campaign_ids: [cid] }, metrics: ['cost'], page_size: CAMPAIGN_PAGE_SIZE }, `spu:${cid}`)
+    const spuRes = await fetchAllPages(provider, { ...dr, dimensions: ['item_group_id'], filtering: { campaign_ids: [cid] }, metrics: PRODUCT_METRICS, page_size: CAMPAIGN_PAGE_SIZE }, `spu:${cid}`)
     pageCount += spuRes.pagesFetched
-    const spus = spuRes.list.filter(r => (Number(r.metrics?.cost) || 0) > 0).map(r => r.dimensions?.item_group_id).filter(Boolean)
     const campaignName = nameByCampaign[cid]?.name || cid
+    for (const r of spuRes.list) {
+      const pr = parseProductRow(r, { campaignId: cid, campaignName })
+      if (pr) products.push(pr)
+    }
+    const spus = spuRes.list.filter(r => (Number(r.metrics?.cost) || 0) > 0).map(r => r.dimensions?.item_group_id).filter(Boolean)
     for (const spu of spus) {
       const cr = await fetchAllPages(provider, { ...dr, dimensions: API_DIMENSIONS, filtering: { campaign_ids: [cid], item_group_ids: [spu] }, metrics: API_ALL_METRICS, sort_field: 'cost', sort_type: 'DESC', page_size: PAGE_SIZE }, `creative:${cid}/${spu}`)
       pageCount += cr.pagesFetched
@@ -104,7 +113,21 @@ export async function runSync(provider, { advertiserId, storeId, date, currency 
   const rec = reconcile({ pairs, campaignTotals, currency })
   if (rec.report.negativeResidual) { const e = new Error('RECONCILE_INVARIANT: Σ attributed > campaignTotal (over-count/data cacat)'); e.code = 'RECONCILE_INVARIANT'; throw e }
 
-  return finalize(rec, { advertiserId, date, campaignCount: campaignIds.length, pageCount, rawRowCount, normalizedRows: rec.rows, t0 })
+  return finalize({ ...rec, products }, { advertiserId, date, campaignCount: campaignIds.length, pageCount, rawRowCount, normalizedRows: rec.rows, t0 })
+}
+
+// Metrik laporan produk — persis langkah 3 runbook (terbukti valid di level ini).
+export const PRODUCT_METRICS = ['cost', 'gross_revenue', 'orders', 'roi']
+const numOrNull = (v) => (v == null || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null))
+// Baris produk disimpan bila ada aktivitas (cost/omzet/order > 0); produk tanpa
+// aktivitas sehari itu dibuang seperti baris kreatif nol-aktivitas.
+export function parseProductRow(r, { campaignId, campaignName }) {
+  const productId = r?.dimensions?.item_group_id
+  if (!productId) return null
+  const m = r.metrics || {}
+  const cost = numOrNull(m.cost), grossRevenue = numOrNull(m.gross_revenue), orders = numOrNull(m.orders)
+  if (!((cost || 0) > 0 || (grossRevenue || 0) > 0 || (orders || 0) > 0)) return null
+  return { campaignId, campaignName, productId: String(productId), cost, grossRevenue, orders, roi: numOrNull(m.roi) }
 }
 
 function finalize(rec, m) {
@@ -112,11 +135,13 @@ function finalize(rec, m) {
   const nonAttr = rec.rows.filter(r => r.isSystem)
   return {
     rows: rec.rows,
+    products: rec.products || [],
     totals: rec.totals,
     meta: {
       advertiserId: m.advertiserId, date: m.date, campaignCount: m.campaignCount,
       pageCount: m.pageCount, rawRowCount: m.rawRowCount,
       normalizedRowCount: rec.rows.length, attributedCount: attributed.length,
+      productRowCount: (rec.products || []).length,
       nonAttributedCount: nonAttr.length, durationMs: Date.now() - m.t0,
       // Zero-data contract: finalize HANYA tercapai saat sukses penuh (semua paginasi
       // selesai, tanpa throw). rows=0 di sini = benar-benar zero-data (bukan incomplete/failed).

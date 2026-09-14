@@ -122,6 +122,7 @@ begin
   insert into public.products (period_id, name) values (per, 'Barang A');
   update public.gmvmax_imports set id = imp where workspace_id = ws_a;
   insert into public.gmvmax_creatives (import_id, video_id) values (imp, '12345678901');
+  insert into public.gmvmax_product_daily (import_id, campaign_id, product_id) values (imp, 'c1', '12345678901');
 end $seed$;
 
 -- ── 1–4. SAPUAN SELURUH TABEL TENANT ──────────────────────────────────────
@@ -135,7 +136,7 @@ declare
   LUAR   constant text := '11110000-0000-0000-0000-000000000003';
 begin
   for t in select tt.t from pg_temp.tabel_tenant tt union all
-           select 'products' union all select 'gmvmax_creatives' order by 1
+           select 'products' union all select 'gmvmax_creatives' union all select 'gmvmax_product_daily' order by 1
   loop
     total := total + 1;
     execute 'set role authenticated';

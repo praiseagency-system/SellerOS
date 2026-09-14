@@ -59,7 +59,8 @@ function mergeResults(parts) {
   totals.roas = totals.cost > 0 ? totals.revenue / totals.cost : null
   const completeness = rows.length > 0 ? 'COMPLETE_WITH_ROWS'
     : (parts.every(p => p.meta?.completeness === 'COMPLETE_ZERO_DATA') ? 'COMPLETE_ZERO_DATA' : 'COMPLETE_WITH_ROWS')
-  return { rows, totals, meta: { completeness, mergedFrom: parts.length } }
+  const products = parts.flatMap(p => p.products || [])
+  return { rows, products, totals, meta: { completeness, mergedFrom: parts.length } }
 }
 
 // Proses SATU workspace end-to-end (jalankan engine tiap advertiser-nya lalu
@@ -97,7 +98,7 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       if (i > 0) await sleep(INTER_ADV_DELAY_MS)
       const en = entries[i]
       const res = await runSync(provider, { advertiserId: en.advertiserId, storeId: en.storeId, date })
-      safeLog({ event: 'ADVERTISER_PULLED', workspace_id: workspaceId, advertiser_id: en.advertiserId, row_count: res.rows.length, totals: res.totals })
+      safeLog({ event: 'ADVERTISER_PULLED', workspace_id: workspaceId, advertiser_id: en.advertiserId, row_count: res.rows.length, product_row_count: (res.products || []).length, totals: res.totals })
       parts.push(res)
     }
     const result = mergeResults(parts)

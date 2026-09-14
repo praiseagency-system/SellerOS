@@ -28,9 +28,27 @@ export function rowFingerprint(r) {
   }
 }
 
+// Sidik jari baris laporan tingkat produk (0061): identitas (campaign, product)
+// + nilai ternormalisasi.
+export function productFingerprint(r) {
+  return {
+    c: pick(r, 'campaignId', 'campaign_id'),
+    p: pick(r, 'productId', 'product_id'),
+    cost: roundIdr(pick(r, 'cost')),
+    rev: roundIdr(pick(r, 'grossRevenue', 'gross_revenue')),
+    ord: roundIdr(pick(r, 'orders')),
+  }
+}
+
 // String kanonik yang di-hash. Invarian terhadap urutan baris.
-export function canonicalString({ workspaceId, date, rows = [], totals = {} }) {
+// `products` (0061) HANYA ditambahkan bila ada isinya → string utk snapshot tanpa
+// produk PERSIS sama seperti sebelum 0061 (signature lama tetap cocok).
+export function canonicalString({ workspaceId, date, rows = [], totals = {}, products = [] }) {
   const norm = (rows || []).map(rowFingerprint).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   const t = { cost: roundIdr(totals.cost), revenue: roundIdr(totals.revenue), orders: roundIdr(totals.orders) }
-  return JSON.stringify({ ws: workspaceId, date, rows: norm, totals: t })
+  const base = { ws: workspaceId, date, rows: norm, totals: t }
+  if (products && products.length) {
+    base.products = products.map(productFingerprint).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  }
+  return JSON.stringify(base)
 }
