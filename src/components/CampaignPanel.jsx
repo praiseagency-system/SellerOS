@@ -3,7 +3,7 @@ import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
   Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList,
-} from 'lucide-react'
+  Clock } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration } from '../data/campaigns'
 import { getProfile } from '../data/identity'
@@ -31,6 +31,7 @@ import {
   campaignPeriods, campaignStatus, periodsSummary, periodRange, periodRangeShort,
   periodLabel, periodStatus, periodSpan, activeDays, inAnyPeriod, inPeriod, sortPeriods,
 } from '../utils/campaignPeriods'
+import { decisionUrgency } from '../utils/campaignUrgency'
 
 // Tanggal + jam untuk riwayat persetujuan.
 function fmtWhen(iso) {
@@ -259,7 +260,9 @@ export default function CampaignPanel({ products }) {
     try { await saveCampaign(form); setEditing(null); await reload() }
     catch (e) {
       console.error(e)
-      const msg = /periods/i.test(e?.message || '')
+      const msg = /registration_deadline/i.test(e?.message || '')
+        ? 'Gagal menyimpan: kolom "registration_deadline" belum ada. Jalankan migrasi 0063_campaign_registration_deadline.sql di Supabase → SQL Editor.'
+        : /periods/i.test(e?.message || '')
         ? 'Gagal menyimpan: kolom "periods" belum ada. Jalankan migrasi 0042_campaign_periods.sql di Supabase → SQL Editor.'
         : `Gagal menyimpan campaign.${e?.message ? `\n\n${e.message}` : ''}`
       alert(msg)
@@ -457,6 +460,15 @@ export default function CampaignPanel({ products }) {
                           return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 inline-flex items-center gap-1 ${st.cls}`}>
                             {st.key === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />}{st.label}
                           </span> })()}
+                        {(() => {
+                          // Urgensi keputusan — hanya bila masih ada SKU menunggu & campaign belum selesai.
+                          const ap = approvalSummary(c)
+                          if (!ap.total || ap.approved + ap.rejected >= ap.total) return null
+                          const u = decisionUrgency(c)
+                          if (u.key === 'ended' || u.key === 'nodate') return null
+                          return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 inline-flex items-center gap-1 ${u.cls}`}>
+                            <Clock className="w-3 h-3" />{u.label}
+                          </span> })()}
                         {c.voucherConfig?.kind === 'cofunded' && voucherList(c.voucherConfig).length > 0 && (
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 bg-blue-600/12 text-blue-300">
                             Co-funded · {voucherList(c.voucherConfig).length} voucher
@@ -614,6 +626,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
   const [description, setDesc]    = useState(initial.description ?? '')
   const [detail, setDetail]       = useState(initial.detail ?? '')
   const [link, setLink]           = useState(initial.link ?? '')
+  const [regDeadline, setRegDeadline] = useState(initial.registrationDeadline ?? '')
   // Periode efektif: campaign lama (start/end tunggal) terbaca sebagai 1 baris.
   const [periods, setPeriods]     = useState(() => {
     const list = campaignPeriods(initial)
@@ -766,7 +779,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
     if (!name.trim() || busy || periodInvalid) return
     setBusy(true)
     const span = periodSpan(cleanPeriods)
-    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, detail, link: link.trim(), startDate: span.start, endDate: span.end, periods: cleanPeriods, items, voucherConfig: buildVoucherConfig(), approvals })
+    await onSave({ id: initial.id, name: name.trim(), parentCampaign: parentCampaign.trim(), platform, description, detail, link: link.trim(), registrationDeadline: regDeadline || '', startDate: span.start, endDate: span.end, periods: cleanPeriods, items, voucherConfig: buildVoucherConfig(), approvals })
     setBusy(false)
   }
 
@@ -846,6 +859,24 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
           <p className={`text-[11px] mt-1.5 ${periodWarn ? 'text-amber-300' : 'text-ink-faint'}`}>
             {periodWarn || periodSummaryText}
           </p>
+        </div>
+
+        {/* Batas pendaftaran ke marketplace — sumber urgensi keputusan client */}
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <Clock className="w-3.5 h-3.5 inline mr-1" />Batas Pendaftaran
+            <span className="font-normal text-ink-faint"> (opsional — tanggal terakhir daftar produk ke marketplace; menentukan urgensi di portal client)</span>
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-[160px_minmax(0,1fr)] gap-2 items-center">
+            <input type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)}
+              className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
+            <p className="text-[11px] text-ink-faint">
+              {regDeadline
+                ? (() => { const u = decisionUrgency({ periods: cleanPeriods, registrationDeadline: regDeadline })
+                    return u.key === 'deadline' || u.key === 'closed' ? u.label : 'Campaign sudah berjalan — batas pendaftaran tak lagi dipakai.' })()
+                : 'Kosong = urgensi dihitung dari tanggal mulai campaign.'}
+            </p>
+          </div>
         </div>
 
         {/* Platform */}

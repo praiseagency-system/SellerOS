@@ -29,6 +29,8 @@ function rowToCampaign(r) {
     // Status pendaftaran ke marketplace (0062). Seperti portal_hidden, kolom
     // ini TIDAK ikut `toRow` supaya simpan editor tak menimpanya.
     registration: (r.registration && typeof r.registration === 'object') ? r.registration : {},
+    // Batas pendaftaran ke marketplace (0063) — 'YYYY-MM-DD' atau ''.
+    registrationDeadline: r.registration_deadline || '',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -55,6 +57,7 @@ function toRow(c) {
     start_date: span.start || null,
     end_date: span.end || null,
     periods,
+    registration_deadline: c.registrationDeadline || null,
     items,
     product_ids: productIds.length ? productIds : (Array.isArray(c.productIds) ? c.productIds : []),
     voucher_config: (c.voucherConfig && typeof c.voucherConfig === 'object') ? c.voucherConfig : {},

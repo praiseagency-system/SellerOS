@@ -47,4 +47,30 @@ describe('decisionUrgency', () => {
     const u = decisionUrgency({ periods: [{ start: '2026-09-01', end: '2026-09-05' }, { start: '2026-09-20', end: '2026-09-25' }] }, NOW)
     expect(u.key).toBe('started')
   })
+  it('batas pendaftaran eksplisit menang: 2 hari lagi → merah, rank 1', () => {
+    const u = decisionUrgency({ ...c('2026-09-20', '2026-09-25'), registrationDeadline: '2026-09-12' }, NOW)
+    expect(u.key).toBe('deadline'); expect(u.days).toBe(2); expect(u.cls).toMatch(/red/)
+    expect(u.label).toMatch(/Daftar sebelum .*2 hari lagi/)
+  })
+  it('batas pendaftaran hari ini → 0 hari, "Daftar hari ini"', () => {
+    const u = decisionUrgency({ ...c('2026-09-20', '2026-09-25'), registrationDeadline: '2026-09-10' }, NOW)
+    expect(u.days).toBe(0); expect(u.label).toMatch(/Daftar hari ini/)
+  })
+  it('batas pendaftaran lewat, campaign belum mulai → closed rank 0', () => {
+    const u = decisionUrgency({ ...c('2026-09-20', '2026-09-25'), registrationDeadline: '2026-09-08' }, NOW)
+    expect(u.key).toBe('closed'); expect(u.rank).toBe(0); expect(u.days).toBe(2)
+  })
+  it('batas pendaftaran lewat tapi campaign sudah berjalan → tetap "started"', () => {
+    const u = decisionUrgency({ ...c('2026-09-05', '2026-09-25'), registrationDeadline: '2026-09-03' }, NOW)
+    expect(u.key).toBe('started')
+  })
+  it('batas pendaftaran diabaikan bila campaign selesai', () => {
+    const u = decisionUrgency({ ...c('2026-09-01', '2026-09-05'), registrationDeadline: '2026-08-30' }, NOW)
+    expect(u.key).toBe('ended')
+  })
+  it('deadline 10 hari lagi lebih rendah dari campaign yang mulai 5 hari lagi', () => {
+    const a = decisionUrgency({ ...c('2026-10-01', '2026-10-05'), registrationDeadline: '2026-09-20' }, NOW)
+    const b = decisionUrgency(c('2026-09-15', '2026-09-20'), NOW)
+    expect(a.rank).toBe(b.rank); expect(b.sortKey).toBeLessThan(a.sortKey)
+  })
 })
