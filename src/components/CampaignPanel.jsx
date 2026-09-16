@@ -176,11 +176,16 @@ export default function CampaignPanel({ products }) {
   }, [])
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products])
-  // Nama campaign induk yang sudah ada (autocomplete + pengelompokan daftar).
-  const parentSuggestions = useMemo(
-    () => [...new Set(campaigns.map(c => (c.parentCampaign || '').trim()).filter(Boolean))],
-    [campaigns],
-  )
+  // Nama campaign induk yang sudah ada, dipisah per platform — induk TikTok
+  // tak disarankan saat membuat campaign Shopee (dan sebaliknya).
+  const parentSuggestions = useMemo(() => {
+    const m = { tiktok: new Set(), shopee: new Set() }
+    for (const c of campaigns) {
+      const key = (c.parentCampaign || '').trim()
+      if (key) m[c.platform === 'shopee' ? 'shopee' : 'tiktok'].add(key)
+    }
+    return { tiktok: [...m.tiktok], shopee: [...m.shopee] }
+  }, [campaigns])
   // Keputusan client yang masuk sejak terakhir dilihat, per campaign.
   const activity = useMemo(() => {
     const m = new Map()
@@ -335,7 +340,7 @@ export default function CampaignPanel({ products }) {
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-line/15 text-ink-muted hover:text-ink hover:border-line/30 transition-colors">
             <Users className="w-4 h-4" /> Portal Client
           </button>
-          <button onClick={() => setEditing({})}
+          <button onClick={() => setEditing({ platform: tab })}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
             <Plus className="w-4 h-4" /> Campaign Baru
           </button>
@@ -669,10 +674,12 @@ export default function CampaignPanel({ products }) {
   )
 }
 
-function CampaignEditor({ initial, products, productMap, parentSuggestions = [], onSave, onClose }) {
+function CampaignEditor({ initial, products, productMap, parentSuggestions = {}, onSave, onClose }) {
   const [name, setName]           = useState(initial.name ?? '')
   const [parentCampaign, setParent] = useState(initial.parentCampaign ?? '')
   const [platform, setPlatform]   = useState(initial.platform ?? 'tiktok')
+  // Saran induk hanya dari campaign di platform yang sama.
+  const parentOptions = parentSuggestions[platform === 'shopee' ? 'shopee' : 'tiktok'] || []
   const [description, setDesc]    = useState(initial.description ?? '')
   const [detail, setDetail]       = useState(initial.detail ?? '')
   const [link, setLink]           = useState(initial.link ?? '')
@@ -859,6 +866,23 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
 
       {/* Nama + platform + tanggal */}
       <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-5 space-y-4">
+        {/* Platform */}
+        <div>
+          <label className="block text-xs font-medium text-ink-muted mb-1.5">Platform</label>
+          <div className="flex gap-2">
+            {[['tiktok', 'TikTok'], ['shopee', 'Shopee']].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setPlatform(id)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                  platform === id
+                    ? id === 'tiktok' ? 'bg-gray-700 text-white border-gray-600' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+                    : 'border-line/10 text-ink-muted hover:border-line/20 hover:text-ink'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div>
           <label className="block text-xs font-medium text-ink-muted mb-1.5">
             <Folder className="w-3.5 h-3.5 inline mr-1" />Campaign Induk <span className="font-normal text-ink-faint">(opsional — campaign besar yang menaungi, mis. "Gajian Sale Juli &amp; 8.8")</span>
@@ -867,7 +891,7 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
             placeholder="mis. Gajian Sale Juli & 8.8"
             className="w-full bg-fill/5 border border-line/10 rounded-xl px-3 py-2.5 text-sm text-ink-strong focus:outline-none focus:ring-2 focus:ring-blue-600/50" />
           <datalist id="campaign-parents">
-            {parentSuggestions.map(s => <option key={s} value={s} />)}
+            {parentOptions.map(s => <option key={s} value={s} />)}
           </datalist>
         </div>
         <div>
@@ -926,23 +950,6 @@ function CampaignEditor({ initial, products, productMap, parentSuggestions = [],
                     return u.key === 'deadline' || u.key === 'closed' ? u.label : 'Campaign sudah berjalan — batas pendaftaran tak lagi dipakai.' })()
                 : 'Kosong = urgensi dihitung dari tanggal mulai campaign.'}
             </p>
-          </div>
-        </div>
-
-        {/* Platform */}
-        <div>
-          <label className="block text-xs font-medium text-ink-muted mb-1.5">Platform</label>
-          <div className="flex gap-2">
-            {[['tiktok', 'TikTok'], ['shopee', 'Shopee']].map(([id, label]) => (
-              <button key={id} type="button" onClick={() => setPlatform(id)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                  platform === id
-                    ? id === 'tiktok' ? 'bg-gray-700 text-white border-gray-600' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'
-                    : 'border-line/10 text-ink-muted hover:border-line/20 hover:text-ink'
-                }`}>
-                {label}
-              </button>
-            ))}
           </div>
         </div>
 
