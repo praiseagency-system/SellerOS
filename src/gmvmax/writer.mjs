@@ -96,11 +96,16 @@ export async function writeSnapshotVersioned({
 }
 
 // Deteksi tabel gmvmax_product_daily (migrasi 0061). Query ringan `limit 0`;
-// galat 42P01/404 = tabel belum ada → false. Galat lain → dianggap belum ada
-// juga (jangan menjatuhkan commit snapshot demi tabel pelengkap).
+// galat 42P01/PGRST205/404 = tabel belum ada → false. Galat lain → dianggap
+// belum ada juga (jangan menjatuhkan commit snapshot demi tabel pelengkap).
+// JANGAN pakai `head: true`: PostgREST menjawab HEAD ke tabel yang tak ada
+// dengan 204 tanpa badan → supabase-js mengembalikan error null → penjaga
+// menjawab "ada" padahal tidak, lalu RPC dipanggil dengan p_products dan
+// gagal "function not found" (insiden 15–16 Sep 2026, snapshot bolong 2 hari).
 export async function productTableExists(sb) {
   try {
-    const { error } = await sb.from('gmvmax_product_daily').select('id', { head: true, count: 'exact' }).limit(0)
-    return !error
+    const { error, status } = await sb.from('gmvmax_product_daily').select('id').limit(0)
+    if (error) return false
+    return status == null || (status >= 200 && status < 300)
   } catch { return false }
 }
