@@ -34,6 +34,7 @@ import {
   periodLabel, periodStatus, periodSpan, activeDays, inAnyPeriod, inPeriod, sortPeriods,
 } from '../utils/campaignPeriods'
 import { decisionUrgency } from '../utils/campaignUrgency'
+import { searchTokens, matchesCampaign } from '../utils/campaignSearch'
 
 // Tanggal + jam untuk riwayat persetujuan.
 function fmtWhen(iso) {
@@ -148,6 +149,7 @@ export default function CampaignPanel({ products }) {
   const [selfName, setSelfName] = useState('')
   const [regFor, setRegFor] = useState(null)   // campaign yang status daftarnya diubah
   const [filter, setFilter] = useState('all')  // all | new | needreg | pending
+  const [query, setQuery] = useState('')
 
   const reload = useCallback(async () => {
     try { setCampaigns(await listCampaigns()); setLoadErr(false) }
@@ -207,18 +209,26 @@ export default function CampaignPanel({ products }) {
     setFilter(f => (f === 'new' ? 'all' : f))
   }
 
+  // Pencarian: nama campaign / induk / produk / SKU. Berlaku di kedua tab,
+  // jadi angka di tab ikut menunjukkan di platform mana hasilnya berada.
+  const searching = query.trim() !== ''
+  const found = useMemo(() => {
+    const tokens = searchTokens(query)
+    return tokens.length ? campaigns.filter(c => matchesCampaign(c, tokens, productMap)) : campaigns
+  }, [campaigns, query, productMap])
+
   // Jumlah campaign per platform (untuk label tab).
   const platformCount = useMemo(() => {
     const n = { tiktok: 0, shopee: 0 }
-    for (const c of campaigns) n[c.platform === 'shopee' ? 'shopee' : 'tiktok']++
+    for (const c of found) n[c.platform === 'shopee' ? 'shopee' : 'tiktok']++
     return n
-  }, [campaigns])
+  }, [found])
   // Tab aktif: pilihan user, atau otomatis ke platform yang ada isinya.
   const tab = platformTab || (platformCount.tiktok === 0 && platformCount.shopee > 0 ? 'shopee' : 'tiktok')
   // Campaign di tab platform yang aktif, dikelompokkan per judul induk.
   // Yang tanpa induk tampil langsung sebagai kartu (tanpa folder).
   const { folders, loose } = useMemo(() => {
-    const inTab = campaigns
+    const inTab = found
       .filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
       .filter(c => filter === 'all'
         || (filter === 'new' ? newCountOf(c) > 0
@@ -236,7 +246,7 @@ export default function CampaignPanel({ products }) {
       map.get(key).push(c)
     }
     return { folders: order.map(key => ({ key, items: map.get(key) })), loose }
-  }, [campaigns, tab, filter, newCountOf, pendingOf, needRegOf])
+  }, [found, tab, filter, newCountOf, pendingOf, needRegOf])
 
   // Daftar datar: folder judul + sub-campaign yang terbuka, lalu campaign
   // tanpa induk. Satu loop render — folder cuma baris pembuka.
@@ -245,8 +255,9 @@ export default function CampaignPanel({ products }) {
     for (const f of folders) {
       const fresh = f.items.reduce((n, c) => n + newCountOf(c), 0)
       // Folder dengan kabar baru terbuka sendiri, kecuali sudah ditutup manual.
+      // Saat mencari, folder yang berisi hasil ikut terbuka.
       const open = openFolders.has(f.key)
-        || ((fresh > 0 || f.items.some(needRegOf)) && !closedFolders.has(f.key))
+        || ((searching || fresh > 0 || f.items.some(needRegOf)) && !closedFolders.has(f.key))
       const span = periodSpan(f.items.flatMap(c => campaignPeriods(c)))
       out.push({
         type: 'folder', key: f.key, count: f.items.length, open, fresh,
@@ -258,7 +269,7 @@ export default function CampaignPanel({ products }) {
     }
     for (const c of loose) out.push({ type: 'card', c, nested: false })
     return out
-  }, [folders, loose, openFolders, closedFolders, newCountOf, needRegOf])
+  }, [folders, loose, openFolders, closedFolders, newCountOf, needRegOf, searching])
 
   // Folder dibuka manual vs ditutup manual disimpan terpisah: folder yang
   // terbuka otomatis karena ada kabar baru harus tetap bisa ditutup.
@@ -385,7 +396,7 @@ export default function CampaignPanel({ products }) {
 
       {/* Saringan daftar: kabar baru / masih menunggu / semua */}
       {campaigns.length > 0 && (() => {
-        const inTab = campaigns.filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
+        const inTab = found.filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
         const chips = [
           { id: 'new', label: 'Baru', n: inTab.filter(c => newCountOf(c) > 0).length },
           { id: 'needreg', label: 'Perlu didaftarkan', n: inTab.filter(needRegOf).length },
@@ -416,7 +427,7 @@ export default function CampaignPanel({ products }) {
 
       {/* Tab platform — campaign TikTok & Shopee dipisah */}
       {campaigns.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-3 border-b border-line/8 pb-2">
+        <div className="flex items-center gap-1.5 mb-3 border-b border-line/8 pb-2 flex-wrap">
           {['tiktok', 'shopee'].map(id => {
             const on = tab === id
             return (
@@ -429,6 +440,19 @@ export default function CampaignPanel({ products }) {
               </button>
             )
           })}
+          <div className="relative ml-auto w-full max-w-[260px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-faint" />
+            <input value={query} onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') setQuery('') }}
+              placeholder="Cari campaign, produk, atau SKU..." aria-label="Cari campaign"
+              className="w-full bg-fill/5 border border-line/10 rounded-xl pl-9 pr-8 py-1.5 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+            {searching && (
+              <button type="button" onClick={() => setQuery('')} aria-label="Hapus pencarian"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -446,7 +470,14 @@ export default function CampaignPanel({ products }) {
         <div className="space-y-2.5">
           {rows.length === 0 && (
             <p className="text-xs text-ink-faint px-1 py-6 text-center">
-              {filter !== 'all'
+              {searching ? (() => {
+                const other = tab === 'tiktok' ? 'shopee' : 'tiktok'
+                return <>Tidak ada campaign {PLATFORM_LABEL[tab]} yang cocok dengan "{query.trim()}"{filter !== 'all' ? ' pada saringan ini' : ''}.{' '}
+                  {platformCount[other] > 0
+                    ? <button onClick={() => { setPlatformTab(other); setFilter('all') }} className="text-blue-400 hover:underline">Lihat {platformCount[other]} hasil di {PLATFORM_LABEL[other]}</button>
+                    : <button onClick={() => { setQuery(''); setFilter('all') }} className="text-blue-400 hover:underline">Hapus pencarian</button>}</>
+              })()
+                : filter !== 'all'
                 ? <>Tidak ada campaign {PLATFORM_LABEL[tab]} pada saringan ini. <button onClick={() => setFilter('all')} className="text-blue-400 hover:underline">Tampilkan semua</button>.</>
                 : <>Belum ada campaign {PLATFORM_LABEL[tab]}. Pindah tab atau buat campaign baru.</>}
             </p>
