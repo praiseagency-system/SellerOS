@@ -6,9 +6,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, RefreshCw, Link2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import {
-  getPikatLink, pullPikat, listInbox, loadBoundVideoIds, previewRow, bindRow, dismissRows, OPEN_STATUSES,
+  getPikatLink, pullPikat, reportPikat, listInbox, loadBoundVideoIds, loadAdsStats, previewRow, bindRow, dismissRows,
+  OPEN_STATUSES,
 } from '../../data/pikatSpark'
-import { tiktokVideoUrl } from './ui'
+import { tiktokVideoUrl, fmtRpC } from './ui'
 
 const TARIK_ULANG_MS = 30 * 60 * 1000   // tarik otomatis bila tarikan terakhir > 30 menit
 const PRATINJAU_PER_PUTARAN = 25
@@ -37,6 +38,9 @@ const FILTERS = [
 const fmtViews = (n) => n == null ? '—' : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} jt` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace('.', ',')} rb` : String(n)
 const jam = (iso) => iso ? new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+const er = (r) => r.views ? (((r.likes || 0) + (r.comments || 0) + (r.shares || 0)) / r.views) * 100 : null
+// Status di Spark Center Pikat ikut diperbarui; gagal lapor tak mengganggu kerja tim Ads.
+const lapor = () => { reportPikat().catch(() => {}) }
 
 export default function PikatInboxSection({ boundIds: boundFromList, onBound }) {
   const [link, setLink] = useState(undefined)       // undefined = memuat, null = belum tersambung
@@ -49,11 +53,14 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
   const [binding, setBinding] = useState(false)
   const [error, setError] = useState(null)
   const [note, setNote] = useState(null)
+  const [ads, setAds] = useState(() => new Map())   // video_id → kinerja GMV Max 7 snapshot terakhir
+  const [rowBusy, setRowBusy] = useState(null)      // id baris yang sedang diikat/diabaikan satuan
   const boundRef = useRef(new Set())
 
   const refresh = useCallback(async () => {
     const data = await listInbox()
     setRows(data); setLoadedAt(Date.now())
+    loadAdsStats(data.map(r => r.video_id)).then(setAds).catch(() => { /* kolom iklan jadi "—" */ })
     return data
   }, [])
 
@@ -70,7 +77,7 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
         setRows(prev => prev.map(x => x.id === r.id ? hasil : x))
       }
     } catch (e) { setError(`Pratinjau terhenti: ${e.message}`) }
-    finally { setChecking(false) }
+    finally { setChecking(false); lapor() }
   }, [boundFromList])
 
   const pull = useCallback(async () => {
@@ -117,7 +124,9 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
   }
 
   const f = FILTERS.find(x => x.id === filter) || FILTERS[0]
-  const shown = rows.filter(f.match)
+  // GMV organik tertinggi dulu — video yang paling menghasilkan paling perlu diamankan kodenya.
+  const shown = rows.filter(f.match).sort((a, b) =>
+    (Number(b.gmv_organic) || 0) - (Number(a.gmv_organic) || 0) || (b.views || 0) - (a.views || 0))
   const counts = Object.fromEntries(FILTERS.map(x => [x.id, rows.filter(x.match).length]))
   const selectable = (r) => OPEN_STATUSES.includes(r.status) && r.status !== 'NEW'
   const pickedRows = rows.filter(r => selected.has(r.id))
@@ -143,7 +152,26 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     await refresh()
     setNote(`${ok} video terikat${gagal ? ` · ${gagal} gagal (lihat tab Perlu dicek)` : ''}.`)
     setBinding(false)
+    lapor()
     if (ok) onBound?.()
+  }
+
+  async function bindOne(r) {
+    setRowBusy(r.id); setError(null); setNote(null)
+    const hasil = await bindRow(r)
+    setSelected(prev => { const n = new Set(prev); n.delete(r.id); return n })
+    await refresh()
+    setRowBusy(null)
+    if (hasil.ok) { setNote(`@${r.tiktok_username || '?'} terikat${hasil.verified ? ' ✓ terverifikasi' : ''}.`); onBound?.() }
+    else setError(`Gagal mengikat @${r.tiktok_username || '?'}: ${hasil.error}`)
+    lapor()
+  }
+
+  async function dismissOne(r) {
+    setRowBusy(r.id); setError(null)
+    try { await dismissRows([r.id]); await refresh(); lapor() }
+    catch (e) { setError(e.message) }
+    finally { setRowBusy(null) }
   }
 
   async function dismissPicked() {
@@ -152,10 +180,11 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
       await dismissRows(pickedRows.map(r => r.id))
       setSelected(new Set())
       await refresh()
+      lapor()
     } catch (e) { setError(e.message) }
   }
 
-  const busy = pulling || binding
+  const busy = pulling || binding || rowBusy != null
   const allShownPicked = shown.some(selectable) && shown.filter(selectable).every(r => selected.has(r.id))
 
   return (
@@ -196,7 +225,7 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-[11.5px] min-w-[760px]">
+          <table className="w-full text-[11.5px] min-w-[980px]">
             <thead><tr className="text-left text-ink-faint border-b border-line/10">
               <th className="py-1.5 pr-2 w-8">
                 <input type="checkbox" aria-label="Pilih semua" checked={allShownPicked} onChange={toggleAll}
@@ -204,10 +233,11 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
               </th>
               <th className="py-1.5 pr-3 font-semibold">Video</th>
               <th className="py-1.5 pr-3 font-semibold">Kreator</th>
-              <th className="py-1.5 pr-3 font-semibold">Asal di Pikat</th>
-              <th className="py-1.5 pr-3 font-semibold">Umur</th>
-              <th className="py-1.5 pr-3 font-semibold">Views</th>
-              <th className="py-1.5 font-semibold">Hasil pratinjau</th>
+              <th className="py-1.5 pr-3 font-semibold">Engagement</th>
+              <th className="py-1.5 pr-3 font-semibold">GMV organik</th>
+              <th className="py-1.5 pr-3 font-semibold" title="Biaya & ROAS video ini di GMV Max, 7 snapshot terakhir">Di GMV Max (7 hr)</th>
+              <th className="py-1.5 pr-3 font-semibold">Hasil pratinjau</th>
+              <th className="py-1.5 font-semibold text-right">Aksi</th>
             </tr></thead>
             <tbody>
               {shown.map(r => {
@@ -215,6 +245,8 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
                 const umurDari = r.uploaded_at || r.recorded_at
                 const umur = umurDari && loadedAt ? Math.max(0, Math.floor((loadedAt - Date.parse(umurDari)) / 86400000)) : null
                 const judul = r.preview?.title || r.label || '(tanpa judul)'
+                const erR = er(r)
+                const a = ads.get(String(r.video_id))
                 return (
                   <tr key={r.id} className="border-b border-line/5">
                     <td className="py-2 pr-2">
@@ -223,16 +255,31 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
                     </td>
                     <td className="py-2 pr-3">
                       <a href={tiktokVideoUrl(r.video_id, r.tiktok_username) || '#'} target="_blank" rel="noreferrer"
-                        className="block text-ink hover:text-blue-300 truncate max-w-[300px]">{judul}</a>
-                      <p className="font-mono text-[10.5px] text-ink-faint">{r.video_id} · kode …{String(r.spark_code).slice(-6)}</p>
+                        className="block text-ink hover:text-blue-300 truncate max-w-[280px]">{judul}</a>
+                      <p className="text-[10.5px] text-ink-faint">
+                        {SUMBER[r.source] || r.source || '—'}{r.label && r.preview?.title ? ` · ${r.label}` : ''}{umur == null ? '' : ` · ${umur} hr`}
+                        <span className="font-mono"> · kode …{String(r.spark_code).slice(-6)}</span>
+                      </p>
                     </td>
                     <td className="py-2 pr-3 text-ink-muted whitespace-nowrap">@{r.tiktok_username || '?'}</td>
-                    <td className="py-2 pr-3 text-ink-muted whitespace-nowrap">
-                      {SUMBER[r.source] || r.source || '—'}{r.label && r.preview?.title ? ` · ${r.label}` : ''}
+                    <td className="py-2 pr-3 font-mono whitespace-nowrap">
+                      <p className="text-ink">{fmtViews(r.views)} views</p>
+                      <p className="text-[10.5px] text-ink-faint">{erR == null ? '—' : `ER ${erR.toFixed(1).replace('.', ',')}%`}</p>
                     </td>
-                    <td className="py-2 pr-3 font-mono text-ink-muted whitespace-nowrap">{umur == null ? '—' : `${umur} hr`}</td>
-                    <td className="py-2 pr-3 font-mono text-ink-muted whitespace-nowrap">{fmtViews(r.views)}</td>
-                    <td className="py-2">
+                    <td className={`py-2 pr-3 font-mono whitespace-nowrap ${Number(r.gmv_organic) > 0 ? 'text-emerald-400' : 'text-ink-faint'}`}>
+                      {r.gmv_organic == null ? '—' : fmtRpC(Number(r.gmv_organic))}
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {a && a.cost > 0 ? (
+                        <>
+                          <p className="font-mono text-ink">{fmtRpC(a.cost)} · ROAS {(a.revenue / a.cost).toFixed(1).replace('.', ',')}</p>
+                          <p className="text-[10.5px] text-ink-faint">
+                            {a.authTypes.has('AFFILIATE') ? 'tayang lewat izin afiliasi' : 'sudah tayang'}
+                          </p>
+                        </>
+                      ) : <p className="text-[10.5px] text-ink-faint">belum tayang</p>}
+                    </td>
+                    <td className="py-2 pr-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-semibold ${st.tone}`}
                         title={r.preview?.error || r.preview?.note || ''}>
                         {r.status === 'NEW' && <Loader2 className="w-3 h-3 animate-spin mr-1" />}{st.label}
@@ -240,6 +287,23 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
                       {r.status === 'MISMATCH' && r.preview?.item_id && (
                         <p className="text-[10px] text-ink-faint mt-0.5">kode untuk video {r.preview.item_id}</p>
                       )}
+                    </td>
+                    <td className="py-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {rowBusy === r.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-ink-faint" />}
+                        {r.status === 'READY' && (
+                          <button onClick={() => bindOne(r)} disabled={busy}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                            Ikat
+                          </button>
+                        )}
+                        {selectable(r) && (
+                          <button onClick={() => dismissOne(r)} disabled={busy}
+                            className="px-2 py-1 rounded-lg text-[11px] border border-line/15 text-ink-muted hover:text-ink disabled:opacity-40 transition-colors">
+                            Abaikan
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
