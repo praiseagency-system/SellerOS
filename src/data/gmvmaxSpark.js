@@ -92,18 +92,20 @@ export async function executeSparkBind(approvalRow) {
 // Audit tetap utuh: baris approval dibuat lalu diputuskan APPROVED atas nama
 // user (kill switch tetap dicek di createApproval/decideApproval), eksekusi +
 // read-back + log otomatis sama persis dengan jalur antrean.
-export async function bindSparkNow({ authCode, videoId = null, videoTitle = '', author = '' }) {
+// `source` 'PIKAT' = kode ditarik dari Pikat (kotak "Kode dari Pikat"), bukan tempel manual.
+export async function bindSparkNow({ authCode, videoId = null, videoTitle = '', author = '', source = 'MANUAL', reason = null }) {
   const row = await createApproval({
     actionType: 'SPARK_BIND',
     target: { video_id: videoId, video_title: videoTitle || `kode …${authCode.slice(-6)}`, author },
     currentValue: { terikat: 'belum' },
     proposedValue: { terikat: 'ya', auth_code: authCode },
-    reason: videoTitle ? `Ikat video "${videoTitle.slice(0, 80)}" ke ad account (langsung).` : 'Ikat Spark post ke ad account (langsung).',
+    reason: reason || (videoTitle ? `Ikat video "${videoTitle.slice(0, 80)}" ke ad account (langsung).` : 'Ikat Spark post ke ad account (langsung).'),
     evidence: videoId ? { item_id: videoId } : null,
-    source: 'MANUAL', risk: 'LOW',
+    source, risk: 'LOW',
   })
   const approved = await decideApproval(row.id, 'APPROVED')
-  return executeSparkBind(approved)
+  const result = await executeSparkBind(approved)
+  return { ...result, approval_id: approved.id }
 }
 
 export async function unbindSparkNow({ videoId, videoTitle = '' }) {
