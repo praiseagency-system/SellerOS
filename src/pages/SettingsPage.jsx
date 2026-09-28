@@ -14,6 +14,7 @@ import { listMembers, listPendingInvites, inviteMember, setMemberRole, removeMem
 import { getConnection, deleteConnection, saveAdvertiser } from '../data/tiktokConnection'
 import { getExecutionSettings, saveExecutionSettings, createApproval } from '../data/gmvmaxApprovals'
 import EligibilityAlert from '../components/gmvmax/EligibilityAlert'
+import PikatIntegrasiSection from '../components/gmvmax/PikatIntegrasiSection'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: User },
@@ -49,6 +50,7 @@ export default function SettingsPage({ initialTab = 'profil', currentWorkspace }
       {tab === 'integrasi' && (
         <div className="space-y-6">
           <IntegrasiTab currentWorkspace={currentWorkspace} />
+          <PikatIntegrasiSection currentWorkspace={currentWorkspace} />
           <ExecutionSection currentWorkspace={currentWorkspace} />
         </div>
       )}

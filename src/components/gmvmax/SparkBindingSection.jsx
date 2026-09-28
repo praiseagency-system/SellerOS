@@ -8,6 +8,7 @@ import { Link2, Loader2, RefreshCw, Send, AlertCircle, CheckCircle2, Copy, Check
 import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '../../data/gmvmaxSpark'
 import { listImports, loadCreatives } from '../../data/gmvmaxImports'
 import { fmtRpC, tiktokVideoUrl } from './ui'
+import PikatInboxSection from './PikatInboxSection'
 
 // Kartu panel strategi supply (E2).
 const PANEL_TONE = {
@@ -205,6 +206,9 @@ export default function SparkBindingSection() {
           </SupplyPanel>
         </div>
       )}
+
+      {/* Kode spark dari Pikat — ditarik otomatis, dipratinjau, dipilih tim Ads */}
+      <PikatInboxSection boundIds={boundIds} onBound={loadList} />
 
       <div className="bg-surface rounded-2xl border border-line/10 p-4 space-y-3">
         <div className="flex items-start gap-2.5">
