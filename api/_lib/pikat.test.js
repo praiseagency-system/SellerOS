@@ -116,3 +116,14 @@ describe('planRequests (F4)', () => {
     expect(r).toEqual([{ videoId: '7550000000000000001', detail: 'Iklan 7 hr lewat izin afiliasi: biaya Rp 150 rb · omzet Rp 1,0 jt' }])
   })
 })
+
+import { sanitizeAuthCode } from '../gmvmax/tt-video.js'
+
+describe('sanitizeAuthCode', () => {
+  it("'+' dikirim apa adanya (bukan %2B) — terbukti ke TikTok 28 Sep", () => {
+    expect(sanitizeAuthCode(' #+v08a+b/c= ')).toBe('#+v08a+b/c=')
+  })
+  it('karakter tak terlihat dibuang', () => {
+    expect(sanitizeAuthCode('⁠#abc​')).toBe('#abc')
+  })
+})

@@ -18,8 +18,15 @@ const isUuid = (v) => /^[0-9a-f-]{36}$/i.test(v || '')
 export const pikatBaseUrl = () =>
   String(process.env.PIKAT_API_URL || 'https://app.praiseagency.id').trim().replace(/\/+$/, '')
 
-export const TARIK_HARI = 30
-export const TARIK_BATAS = 300
+// 90 hari / 1000 kode = batas atas feed Pikat. Izin spark berlaku 30/60/365 hari,
+// jadi kode video yang lebih tua dari sebulan masih sering bisa dipakai.
+export const TARIK_HARI = 90
+export const TARIK_BATAS = 1000
+
+// Sampai 28 Sep 2026 kode ber-'+' dikirim sebagai '%2B' dan selalu ditolak TikTok
+// ("Post code is incorrect") — lihat sanitizeAuthCode. Vonis INVALID sebelum
+// perbaikan itu dikembalikan ke NEW supaya diperiksa ulang; setelahnya tidak.
+export const PLUS_FIX_AT = '2026-09-28T13:00:00Z'
 
 export async function roleOf(userJwt, userId, workspaceId) {
   if (!isUuid(workspaceId)) throw new TeamError(400, 'invalid_request', 'workspace_id bukan UUID.')
@@ -162,6 +169,14 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
     }).catch(() => {})
     throw e
   }
+
+  // '+' di query PostgREST wajib %2B — tanpa itu terbaca spasi.
+  await service(
+    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}&status=eq.INVALID` +
+    `&spark_code=like.*%2B*&updated_at=lt.${PLUS_FIX_AT}`,
+    { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'NEW', preview: null, updated_at: nowIso }) }
+  )
 
   const ids = [...new Set(feed.items.map(it => String(it.videoId || '')).filter(v => /^\d{8,25}$/.test(v)))]
   const existing = []
