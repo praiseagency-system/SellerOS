@@ -189,7 +189,10 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
   // harian). Gagal lapor tak menggagalkan tarikan.
   let dilaporkan
   try { dilaporkan = (await reportToPikat(workspaceId, fetchImpl)).reported } catch { dilaporkan = null }
-  return { ditarik: feed.items.length, baru: plan.baru, berubah: plan.berubah, dilaporkan, pikat: feed.workspace || null }
+  // F3/F4 ikut tiap tarikan; gagal tak menggagalkan tarikan.
+  let panen
+  try { panen = await harvestAndRequest(workspaceId, fetchImpl) } catch { panen = null }
+  return { ditarik: feed.items.length, baru: plan.baru, berubah: plan.berubah, dilaporkan, panen, pikat: feed.workspace || null }
 }
 
 // ── Status balik ke Pikat ────────────────────────────────────────────────────
@@ -244,6 +247,90 @@ export async function reportToPikat(workspaceId, fetchImpl = fetch) {
   if (r.status === 401) throw new TeamError(401, 'pikat_token_rejected', 'Token Pikat ditolak — buat token baru di Pikat.')
   if (!r.ok) throw new TeamError(502, 'pikat_error', `Pikat membalas ${r.status} saat menerima status.`)
   return { reported: items.length }
+}
+
+// ── F3 panen kode & F4 permintaan kode ──────────────────────────────────────
+// Dikirim tiap tarikan. Keduanya dihitung dari data yang SUDAH dimiliki worker
+// harian (gmvmax_spark_auth & gmvmax_creatives) — tak ada panggilan TikTok baru.
+
+const rpRingkas = (n) => {
+  const v = Number(n) || 0
+  if (v >= 1e9) return `Rp ${(v / 1e9).toFixed(1).replace('.', ',')} M`
+  if (v >= 1e6) return `Rp ${(v / 1e6).toFixed(1).replace('.', ',')} jt`
+  if (v >= 1e3) return `Rp ${Math.round(v / 1e3)} rb`
+  return `Rp ${Math.round(v)}`
+}
+
+async function latestSparkAuth(workspaceId) {
+  const last = await service(
+    `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&select=snapshot_date&order=snapshot_date.desc&limit=1`
+  )
+  if (!last?.[0]?.snapshot_date) return []
+  return await service(
+    `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&snapshot_date=eq.${last[0].snapshot_date}` +
+    '&select=item_id,auth_code,ad_auth_status,auth_end_time&limit=5000'
+  ) || []
+}
+
+// Video afiliasi yang dibelanjai GMV Max (7 snapshot terakhir) tapi tak berkode aktif.
+export function planRequests(creatives, authorizedIds) {
+  const per = new Map()
+  for (const c of creatives) {
+    const id = String(c.video_id || '')
+    if (!/^\d{8,25}$/.test(id) || authorizedIds.has(id) || !(Number(c.cost) > 0)) continue
+    const o = per.get(id) || { cost: 0, revenue: 0 }
+    o.cost += Number(c.cost) || 0
+    o.revenue += Number(c.gross_revenue) || 0
+    per.set(id, o)
+  }
+  return [...per].map(([videoId, o]) => ({
+    videoId,
+    detail: `Iklan 7 hr lewat izin afiliasi: biaya ${rpRingkas(o.cost)} · omzet ${rpRingkas(o.revenue)}`,
+  }))
+}
+
+async function postPikat(token, path, body, fetchImpl) {
+  const r = await fetchImpl(`${pikatBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const text = await r.text()
+  if (r.status === 401) throw new TeamError(401, 'pikat_token_rejected', 'Token Pikat ditolak — buat token baru di Pikat.')
+  if (!r.ok) throw new TeamError(502, 'pikat_error', `Pikat membalas ${r.status} (${path}).`)
+  try { return text.trim() ? JSON.parse(text) : {} } catch { return {} }
+}
+
+export async function harvestAndRequest(workspaceId, fetchImpl = fetch) {
+  const token = await readLinkToken(workspaceId)
+  if (!token) throw new TeamError(404, 'not_connected', 'Pikat belum tersambung untuk workspace ini.')
+  const auth = await latestSparkAuth(workspaceId)
+  const aktif = auth.filter(a => a.ad_auth_status === 'AUTHORIZED')
+
+  // F3: kode utuh dari ad account → Pikat mengisi video yang kodenya kosong / ditolak.
+  const panen = aktif.filter(a => a.auth_code)
+    .map(a => ({ videoId: String(a.item_id), sparkCode: a.auth_code, authEndTime: a.auth_end_time || null }))
+  const hasilPanen = panen.length ? await postPikat(token, '/api/v1/selleros/spark-harvest', { items: panen }, fetchImpl) : { cocok: 0, diisi: 0 }
+
+  // F4: set penuh permintaan (kosong pun dikirim — menghapus permintaan yang sudah beres).
+  const imps = await service(
+    `gmvmax_imports?workspace_id=eq.${encodeURIComponent(workspaceId)}&is_current=eq.true` +
+    '&select=id&order=snapshot_date.desc&limit=7'
+  ) || []
+  const creatives = []
+  if (imps.length) {
+    for (let from = 0; ; from += 1000) {
+      const page = await service(
+        `gmvmax_creatives?import_id=in.(${imps.map(i => i.id).join(',')})&creative_type=eq.Video&auth_type=eq.AFFILIATE` +
+        `&select=video_id,cost,gross_revenue&order=id.asc&offset=${from}&limit=1000`
+      ) || []
+      creatives.push(...page)
+      if (page.length < 1000) break
+    }
+  }
+  const minta = planRequests(creatives, new Set(aktif.map(a => String(a.item_id))))
+  const hasilMinta = await postPikat(token, '/api/v1/selleros/spark-requests', { items: minta }, fetchImpl)
+  return { panen: hasilPanen, diminta: hasilMinta?.diminta ?? null }
 }
 
 export async function connectLink(workspaceId, userId, token, fetchImpl = fetch) {
