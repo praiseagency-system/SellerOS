@@ -102,3 +102,17 @@ describe('planInbox — metrik', () => {
     expect(isMissingColumn({ description: 'PostgREST 500: boom' })).toBe(false)
   })
 })
+
+import { planRequests } from './pikat.js'
+
+describe('planRequests (F4)', () => {
+  it('video afiliasi berbelanja tanpa kode aktif → satu permintaan per video, dijumlah 7 hari', () => {
+    const r = planRequests([
+      { video_id: '7550000000000000001', cost: 100000, gross_revenue: 900000 },
+      { video_id: '7550000000000000001', cost: 50000, gross_revenue: 100000 },
+      { video_id: '7550000000000000002', cost: 0, gross_revenue: 0 },
+      { video_id: '7550000000000000003', cost: 9000, gross_revenue: 1 },
+    ], new Set(['7550000000000000003']))
+    expect(r).toEqual([{ videoId: '7550000000000000001', detail: 'Iklan 7 hr lewat izin afiliasi: biaya Rp 150 rb · omzet Rp 1,0 jt' }])
+  })
+})

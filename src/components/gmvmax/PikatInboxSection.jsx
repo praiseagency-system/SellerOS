@@ -84,7 +84,12 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     setPulling(true); setError(null); setNote(null)
     try {
       const r = await pullPikat()
-      setNote(r.baru || r.berubah ? `${r.baru} kode baru${r.berubah ? ` · ${r.berubah} kode diperbarui kreator` : ''}` : 'Tak ada kode baru.')
+      const bagian = [
+        r.baru || r.berubah ? `${r.baru} kode baru${r.berubah ? ` · ${r.berubah} diperbarui kreator` : ''}` : 'Tak ada kode baru',
+        r.panen?.panen?.diisi ? `${r.panen.panen.diisi} video di Pikat diisi kode dari ad account` : null,
+        r.panen?.diminta ? `${r.panen.diminta} video afiliasi berbelanja tanpa kode diminta ke kreator` : null,
+      ].filter(Boolean)
+      setNote(`${bagian.join(' · ')}.`)
       setLink(await getPikatLink())
     } catch (e) {
       setError(e.message)
