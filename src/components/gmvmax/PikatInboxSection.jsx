@@ -38,7 +38,9 @@ const FILTERS = [
 const fmtViews = (n) => n == null ? '—' : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} jt` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace('.', ',')} rb` : String(n)
 const jam = (iso) => iso ? new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
-const er = (r) => r.views ? (((r.likes || 0) + (r.comments || 0) + (r.shares || 0)) / r.views) * 100 : null
+// Tanpa likes/comments/shares sama sekali = data belum masuk → "—", bukan 0%.
+const er = (r) => (!r.views || (r.likes == null && r.comments == null && r.shares == null))
+  ? null : (((r.likes || 0) + (r.comments || 0) + (r.shares || 0)) / r.views) * 100
 // Status di Spark Center Pikat ikut diperbarui; gagal lapor tak mengganggu kerja tim Ads.
 const lapor = () => { reportPikat().catch(() => {}) }
 

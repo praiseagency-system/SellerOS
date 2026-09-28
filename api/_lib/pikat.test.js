@@ -20,7 +20,8 @@ describe('planInbox', () => {
     expect(p.full).toEqual([])
     expect(p.meta[0].views).toBe(999)
     expect(p.meta[0]).not.toHaveProperty('status')
-    expect(p.meta[0]).not.toHaveProperty('spark_code')
+    // NOT NULL diperiksa pada baris calon upsert — kode (yang sama) wajib ikut.
+    expect(p.meta[0].spark_code).toBe('#kodeAsli123456789012345')
   })
 
   it('kode berganti → kembali NEW, keputusan lama dihapus', () => {

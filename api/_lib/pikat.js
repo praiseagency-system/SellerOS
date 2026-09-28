@@ -119,7 +119,12 @@ export function planInbox(workspaceId, items, existing, nowIso) {
         approval_id: null, decided_by: null, decided_at: null,
       })
     } else {
-      meta.push(m)
+      // spark_code WAJIB ikut walau tak berubah: upsert = INSERT … ON CONFLICT, dan
+      // Postgres memeriksa NOT NULL pada baris calon SEBELUM konflik — tanpa kolom
+      // ini seluruh kiriman ditolak dan tarikan berhenti di tengah (terjadi 28 Sep:
+      // metrik tak pernah terisi, panen & laporan status tak pernah jalan).
+      // status sengaja TIDAK ikut, jadi keputusan tim Ads tak tersentuh.
+      meta.push({ ...m, spark_code: code })
     }
   }
   return { full, meta, baru, berubah }
