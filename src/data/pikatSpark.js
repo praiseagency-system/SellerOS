@@ -30,6 +30,38 @@ export async function getPikatLink() {
 export const connectPikat = (token) => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'connect', token })
 export const disconnectPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'disconnect' })
 export const pullPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'pull' })
+// Kirim status kotak masuk ke Pikat (Spark Center). Dihitung server dari database.
+export const reportPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'report' })
+
+// Kinerja iklan 7 snapshot terakhir untuk video di kotak masuk — video affiliate
+// sering SUDAH dipakai GMV Max lewat izin afiliasi sebelum kodenya diikat.
+export async function loadAdsStats(videoIds) {
+  const wsId = wsOrThrow()
+  const ids = [...new Set(videoIds.map(String))]
+  const out = new Map()
+  if (!ids.length) return out
+  const { data: imps, error: e1 } = await supabase.from('gmvmax_imports')
+    .select('id').eq('workspace_id', wsId).eq('is_current', true)
+    .order('snapshot_date', { ascending: false, nullsFirst: false }).limit(7)
+  if (e1) throw e1
+  if (!imps?.length) return out
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase.from('gmvmax_creatives')
+      .select('video_id, cost, gross_revenue, auth_type')
+      .in('import_id', imps.map(x => x.id)).in('video_id', ids.slice(i, i + 100))
+      .eq('creative_type', 'Video').limit(5000)
+    if (error) throw error
+    for (const c of data || []) {
+      const k = String(c.video_id)
+      const o = out.get(k) || { cost: 0, revenue: 0, authTypes: new Set() }
+      o.cost += Number(c.cost) || 0
+      o.revenue += Number(c.gross_revenue) || 0
+      if (c.auth_type) o.authTypes.add(c.auth_type)
+      out.set(k, o)
+    }
+  }
+  return out
+}
 
 export async function listInbox() {
   const { data, error } = await supabase.from('pikat_spark_inbox')

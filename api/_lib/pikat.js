@@ -78,6 +78,8 @@ export async function fetchPikatCodes(token, { days = TARIK_HARI, limit = TARIK_
 //                  keputusan lama atas kode lama tak berlaku lagi)
 //   sama         → hanya metadata (views, label) yang disegarkan; status &
 //                  keputusan tim Ads tak disentuh
+const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+
 export function planInbox(workspaceId, items, existing, nowIso) {
   const lama = new Map(existing.map(e => [String(e.video_id), e]))
   const full = []
@@ -93,7 +95,11 @@ export function planInbox(workspaceId, items, existing, nowIso) {
       tiktok_username: it.tiktokUsername || null,
       source: it.source || null,
       label: it.label || null,
-      views: Number.isFinite(Number(it.views)) ? Number(it.views) : null,
+      views: num(it.views),
+      likes: num(it.likes),
+      comments: num(it.comments),
+      shares: num(it.shares),
+      gmv_organic: num(it.gmvOrganik),
       uploaded_at: it.uploadedAt || null,
       recorded_at: it.recordedAt || null,
       updated_at: nowIso,
@@ -112,15 +118,25 @@ export function planInbox(workspaceId, items, existing, nowIso) {
   return { full, meta, baru, berubah }
 }
 
+// Kolom metrik 0065 — bila migrasinya belum dijalankan, tulis tanpa kolom ini.
+export const METRIC_COLS = ['likes', 'comments', 'shares', 'gmv_organic']
+
 const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n))
+
+const strip = (rows) => rows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => !METRIC_COLS.includes(k))))
+export const isMissingColumn = (e) => /PGRST204|Could not find the '(likes|comments|shares|gmv_organic)' column/i.test(String(e?.description || e?.message || ''))
 
 async function upsert(rows) {
   if (!rows.length) return
-  await service('pikat_spark_inbox?on_conflict=workspace_id,video_id', {
+  const send = (body) => service('pikat_spark_inbox?on_conflict=workspace_id,video_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(rows),
+    body: JSON.stringify(body),
   })
+  try { await send(rows) } catch (e) {
+    if (!isMissingColumn(e)) throw e
+    await send(strip(rows))
+  }
 }
 
 export async function readLinkToken(workspaceId) {
@@ -169,7 +185,65 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
       pikat_workspace_name: feed.workspace?.name ?? null,
     }),
   })
-  return { ditarik: feed.items.length, baru: plan.baru, berubah: plan.berubah, pikat: feed.workspace || null }
+  // Status ikut dikirim tiap tarikan (menangkap ikatan & kedaluwarsa dari potret
+  // harian). Gagal lapor tak menggagalkan tarikan.
+  let dilaporkan
+  try { dilaporkan = (await reportToPikat(workspaceId, fetchImpl)).reported } catch { dilaporkan = null }
+  return { ditarik: feed.items.length, baru: plan.baru, berubah: plan.berubah, dilaporkan, pikat: feed.workspace || null }
+}
+
+// ── Status balik ke Pikat ────────────────────────────────────────────────────
+// Vonis kotak masuk + potret otorisasi spark terbaru → status yang dipahami Pikat.
+// Dihitung dari database (bukan kiriman browser) supaya tak bisa dipalsukan.
+export function statusForPikat(row, auth, nowMs = Date.now()) {
+  const base = { videoId: String(row.video_id), sparkCode: row.spark_code }
+  const bound = row.status === 'BOUND' || row.status === 'ALREADY' || auth?.ad_auth_status === 'AUTHORIZED'
+  if (auth?.ad_auth_status === 'EXPIRED') return { ...base, status: 'EXPIRED', authEndTime: auth.auth_end_time || null }
+  if (bound) {
+    const end = auth?.auth_end_time || null
+    const lewat = end && Date.parse(String(end).replace(' ', 'T')) <= nowMs
+    return { ...base, status: lewat ? 'EXPIRED' : 'BOUND', authEndTime: end }
+  }
+  switch (row.status) {
+    case 'INVALID': return { ...base, status: 'INVALID', detail: row.preview?.error || '' }
+    case 'MISMATCH': return { ...base, status: 'MISMATCH', detail: row.preview?.item_id ? `kode untuk video ${row.preview.item_id}` : '' }
+    case 'FAILED': return { ...base, status: 'FAILED', detail: row.preview?.error || '' }
+    case 'DISMISSED': return { ...base, status: 'DISMISSED' }
+    default: return { ...base, status: 'PENDING' }
+  }
+}
+
+export async function reportToPikat(workspaceId, fetchImpl = fetch) {
+  const token = await readLinkToken(workspaceId)
+  if (!token) throw new TeamError(404, 'not_connected', 'Pikat belum tersambung untuk workspace ini.')
+  const rows = await service(
+    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
+    '&select=video_id,spark_code,status,preview&order=updated_at.desc&limit=1000'
+  ) || []
+  if (!rows.length) return { reported: 0 }
+  const last = await service(
+    `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&select=snapshot_date&order=snapshot_date.desc&limit=1`
+  )
+  const authOf = new Map()
+  if (last?.[0]?.snapshot_date) {
+    const ids = rows.map(r => r.video_id)
+    for (const part of chunk(ids, 100)) {
+      const a = await service(
+        `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&snapshot_date=eq.${last[0].snapshot_date}` +
+        `&item_id=in.(${part.join(',')})&select=item_id,ad_auth_status,auth_end_time`
+      )
+      for (const x of a || []) authOf.set(String(x.item_id), x)
+    }
+  }
+  const items = rows.map(r => statusForPikat(r, authOf.get(String(r.video_id))))
+  const r = await fetchImpl(`${pikatBaseUrl()}/api/v1/selleros/spark-status`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ items }),
+  })
+  if (r.status === 401) throw new TeamError(401, 'pikat_token_rejected', 'Token Pikat ditolak — buat token baru di Pikat.')
+  if (!r.ok) throw new TeamError(502, 'pikat_error', `Pikat membalas ${r.status} saat menerima status.`)
+  return { reported: items.length }
 }
 
 export async function connectLink(workspaceId, userId, token, fetchImpl = fetch) {

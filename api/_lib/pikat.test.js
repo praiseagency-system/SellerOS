@@ -69,3 +69,36 @@ describe('connectLink', () => {
     await expect(connectLink(WS, 'u', 'psl_' + 'a'.repeat(43), f)).rejects.toMatchObject({ error: 'pikat_token_rejected' })
   })
 })
+
+import { statusForPikat, isMissingColumn } from './pikat.js'
+
+describe('statusForPikat', () => {
+  const row = (status, preview = null) => ({ video_id: '7550000000000000001', spark_code: '#k', status, preview })
+  const NOW = Date.parse('2026-09-28T00:00:00Z')
+  it('terikat (dari kotak atau potret otorisasi) → BOUND dengan tanggal habis', () => {
+    expect(statusForPikat(row('BOUND'), { ad_auth_status: 'AUTHORIZED', auth_end_time: '2026-10-27 00:00:00' }, NOW))
+      .toMatchObject({ status: 'BOUND', authEndTime: '2026-10-27 00:00:00' })
+    expect(statusForPikat(row('READY'), { ad_auth_status: 'AUTHORIZED', auth_end_time: '2026-10-27 00:00:00' }, NOW).status).toBe('BOUND')
+  })
+  it('izin lewat / EXPIRED → EXPIRED', () => {
+    expect(statusForPikat(row('BOUND'), { ad_auth_status: 'AUTHORIZED', auth_end_time: '2026-09-01 00:00:00' }, NOW).status).toBe('EXPIRED')
+    expect(statusForPikat(row('ALREADY'), { ad_auth_status: 'EXPIRED' }, NOW).status).toBe('EXPIRED')
+  })
+  it('vonis kotak diteruskan; NEW/READY = PENDING', () => {
+    expect(statusForPikat(row('INVALID', { error: 'x' }), null, NOW)).toMatchObject({ status: 'INVALID', detail: 'x' })
+    expect(statusForPikat(row('MISMATCH', { item_id: '9' }), null, NOW).detail).toBe('kode untuk video 9')
+    expect(statusForPikat(row('NEW'), null, NOW).status).toBe('PENDING')
+    expect(statusForPikat(row('DISMISSED'), null, NOW).status).toBe('DISMISSED')
+  })
+})
+
+describe('planInbox — metrik', () => {
+  it('membawa likes/comments/shares/gmv_organic', () => {
+    const p = planInbox(WS, [item({ likes: 5, comments: '2', shares: null, gmvOrganik: 125000 })], [], 'T')
+    expect(p.full[0]).toMatchObject({ likes: 5, comments: 2, shares: null, gmv_organic: 125000 })
+  })
+  it('kenali galat kolom belum ada (0065 belum dijalankan)', () => {
+    expect(isMissingColumn({ description: "PostgREST 400: {\"code\":\"PGRST204\",\"message\":\"Could not find the 'likes' column\"}" })).toBe(true)
+    expect(isMissingColumn({ description: 'PostgREST 500: boom' })).toBe(false)
+  })
+})
