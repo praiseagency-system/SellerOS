@@ -12,7 +12,7 @@ import {
 import { tiktokVideoUrl, fmtRpC } from './ui'
 
 const TARIK_ULANG_MS = 30 * 60 * 1000   // tarik otomatis bila tarikan terakhir > 30 menit
-const PRATINJAU_PER_PUTARAN = 25
+const PRATINJAU_MAKS = 1000            // semua kode baru diperiksa selama halaman terbuka
 const JEDA_PRATINJAU_MS = 1200          // tt-video dibatasi 60/menit per user
 
 const STATUS = {
@@ -50,6 +50,7 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
   const [selected, setSelected] = useState(() => new Set())
   const [pulling, setPulling] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [progress, setProgress] = useState(null)    // { done, total } selama pratinjau berjalan
   const [binding, setBinding] = useState(false)
   const [error, setError] = useState(null)
   const [note, setNote] = useState(null)
@@ -66,18 +67,26 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
 
   // Pratinjau baris NEW satu per satu (read-only ke TikTok), hasil langsung terlihat.
   const checkNew = useCallback(async (data) => {
-    const antre = data.filter(r => r.status === 'NEW').slice(0, PRATINJAU_PER_PUTARAN)
+    const antre = data.filter(r => r.status === 'NEW').slice(0, PRATINJAU_MAKS)
     if (!antre.length) return
     setChecking(true)
+    setProgress({ done: 0, total: antre.length })
     try {
       const bound = new Set([...boundRef.current, ...(boundFromList || [])])
+      let jeda = false
       for (const [i, r] of antre.entries()) {
-        if (i) await sleep(JEDA_PRATINJAU_MS)
+        // Video yang sudah terikat tak perlu bertanya ke TikTok — tanpa jeda.
+        const perluTikTok = !bound.has(String(r.video_id))
+        if (jeda && perluTikTok) await sleep(JEDA_PRATINJAU_MS)
         const hasil = await previewRow(r, bound)
+        jeda = perluTikTok
         setRows(prev => prev.map(x => x.id === r.id ? hasil : x))
+        setProgress({ done: i + 1, total: antre.length })
+        // Lapor bertahap supaya Spark Center tak menunggu seluruh antrean.
+        if ((i + 1) % 50 === 0) lapor()
       }
     } catch (e) { setError(`Pratinjau terhenti: ${e.message}`) }
-    finally { setChecking(false); lapor() }
+    finally { setChecking(false); setProgress(null); lapor() }
   }, [boundFromList])
 
   const pull = useCallback(async () => {
@@ -204,7 +213,7 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-ink-faint">
-            {checking ? 'memeriksa kode…' : `ditarik ${jam(link.last_pulled_at)}`}
+            {checking ? `memeriksa kode ${progress ? `${progress.done}/${progress.total}` : '…'}` : `ditarik ${jam(link.last_pulled_at)}`}
           </span>
           <button onClick={pull} disabled={busy}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-line/15 text-ink hover:bg-fill/5 disabled:opacity-40 transition-colors">

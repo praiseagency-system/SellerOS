@@ -50,8 +50,13 @@ export async function callBusinessTool(token, toolName, params) {
   return { data: payload.data }
 }
 
-// Aturan TikTok: setiap '+' dalam auth code wajib jadi '%2B'.
-export const sanitizeAuthCode = (code) => String(code || '').trim().replace(/\+/g, '%2B')
+// Kode dikirim APA ADANYA (hanya dirapikan). Aturan "'+' wajib jadi '%2B'" di dok
+// TikTok berlaku untuk parameter QUERY URL; di sini kode berjalan di badan JSON
+// tool_execute, jadi '%2B' sampai ke TikTok secara harfiah dan kodenya rusak.
+// Terbukti 28 Sep 2026 (tt_video_info_get, kode yang sama): mentah → OK,
+// '%2B' → "Post code is incorrect". ±60% kode sah mengandung '+'.
+// Karakter tak terlihat (zero-width, BOM) yang ikut tersalin dibuang.
+export const sanitizeAuthCode = (code) => String(code || '').replace(/[\u200b-\u200d\u2060\ufeff]/g, '').trim()
 
 export default async function handler(req, res) {
   // Read-only, tapi tetap relai ke MCP TikTok atas nama token pemanggil →
