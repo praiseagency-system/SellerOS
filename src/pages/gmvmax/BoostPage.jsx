@@ -9,6 +9,7 @@ import { EmptyState, Pill, RoasBadge, VideoLabel, fmtRp, fmtRpC, fmtRoasX, Delta
 import { loadVideosDaily } from '../../data/gmvmaxImports'
 import { boostStatus, boostWindow, computeBoostPerf } from '../../utils/boostPerf'
 import SparkBindingSection from '../../components/gmvmax/SparkBindingSection'
+import { harvestPikat } from '../../data/pikatSpark'
 
 const STATUS = [
   { id: 'diminta', label: 'Diminta ke kreator', tone: 'amber' },
@@ -85,6 +86,14 @@ export default function BoostPage() {
   const { videos, thresholds, boost, hasData, requestBoost, updateBoost, removeBoost } = useGmvMax()
   const [filter, setFilter] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
+  // "Minta kode" = satu-satunya sumber "Diminta tim Ads" di Pikat (keputusan user
+  // 30 Sep 2026) — langsung dikirim, tak menunggu tarikan berikutnya. Workspace yang
+  // belum tersambung ke Pikat: panggilan ditolak diam-diam, pipeline tetap jalan.
+  async function mintaKode(v) {
+    await requestBoost(v)
+    harvestPikat().catch(() => {})
+  }
+
   // Tab terakhir diingat per perangkat — kenyamanan saja, gagal baca/tulis diabaikan.
   const [tab, setTab] = useState(() => {
     try { return localStorage.getItem(TAB_KEY) || 'kode' } catch { return 'kode' }
@@ -163,7 +172,7 @@ export default function BoostPage() {
                     {v.organic && <span className="text-xs px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-500 font-medium">organik · spend kecil</span>}
                   </div>
                 </div>
-                <button onClick={() => requestBoost(v)}
+                <button onClick={() => mintaKode(v)} title="Masuk pipeline & dikirim ke Spark Center Pikat (Diminta tim Ads)"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium flex-shrink-0">
                   <Rocket className="w-4 h-4" /> Minta kode
                 </button>

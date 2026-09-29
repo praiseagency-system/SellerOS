@@ -151,6 +151,19 @@ async function upsert(rows) {
   }
 }
 
+// Tulis kode dari feed Pikat ke kotak masuk (baru/berubah → NEW; sama → metadata).
+export async function mergeIntoInbox(workspaceId, items, nowIso) {
+  const ids = [...new Set(items.map(it => String(it.videoId || '')).filter(v => /^\d{8,25}$/.test(v)))]
+  // Paralel: 1000 kode = 10 potongan; berurutan memakan sebagian besar batas waktu fungsi.
+  const existing = (await Promise.all(chunk(ids, 100).map(part => service(
+    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
+    `&video_id=in.(${part.join(',')})&select=video_id,spark_code,status`
+  )))).flatMap(rows => (Array.isArray(rows) ? rows : []))
+  const plan = planInbox(workspaceId, items, existing, nowIso)
+  await Promise.all([...chunk(plan.full, 200), ...chunk(plan.meta, 200)].map(upsert))
+  return plan
+}
+
 export async function readLinkToken(workspaceId) {
   const rows = await service(
     `pikat_links?workspace_id=eq.${encodeURIComponent(workspaceId)}&select=token&limit=1`
@@ -183,15 +196,7 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
       body: JSON.stringify({ status: 'NEW', preview: null, updated_at: nowIso }) }
   )
 
-  const ids = [...new Set(feed.items.map(it => String(it.videoId || '')).filter(v => /^\d{8,25}$/.test(v)))]
-  // Paralel: 1000 kode = 10 potongan; berurutan memakan sebagian besar batas waktu fungsi.
-  const existing = (await Promise.all(chunk(ids, 100).map(part => service(
-    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
-    `&video_id=in.(${part.join(',')})&select=video_id,spark_code,status`
-  )))).flatMap(rows => (Array.isArray(rows) ? rows : []))
-
-  const plan = planInbox(workspaceId, feed.items, existing, nowIso)
-  await Promise.all([...chunk(plan.full, 200), ...chunk(plan.meta, 200)].map(upsert))
+  const plan = await mergeIntoInbox(workspaceId, feed.items, nowIso)
 
   await service(`pikat_links?workspace_id=eq.${encodeURIComponent(workspaceId)}`, {
     method: 'PATCH', headers: { Prefer: 'return=minimal' },
@@ -266,14 +271,6 @@ export async function reportToPikat(workspaceId, fetchImpl = fetch) {
 // Dikirim tiap tarikan. Keduanya dihitung dari data yang SUDAH dimiliki worker
 // harian (gmvmax_spark_auth & gmvmax_creatives) — tak ada panggilan TikTok baru.
 
-const rpRingkas = (n) => {
-  const v = Number(n) || 0
-  if (v >= 1e9) return `Rp ${(v / 1e9).toFixed(1).replace('.', ',')} M`
-  if (v >= 1e6) return `Rp ${(v / 1e6).toFixed(1).replace('.', ',')} jt`
-  if (v >= 1e3) return `Rp ${Math.round(v / 1e3)} rb`
-  return `Rp ${Math.round(v)}`
-}
-
 async function latestSparkAuth(workspaceId) {
   const last = await service(
     `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&select=snapshot_date&order=snapshot_date.desc&limit=1`
@@ -285,21 +282,17 @@ async function latestSparkAuth(workspaceId) {
   ) || []
 }
 
-// Video afiliasi yang dibelanjai GMV Max (7 snapshot terakhir) tapi tak berkode aktif.
-export function planRequests(creatives, authorizedIds) {
-  const per = new Map()
-  for (const c of creatives) {
-    const id = String(c.video_id || '')
-    if (!/^\d{8,25}$/.test(id) || authorizedIds.has(id) || !(Number(c.cost) > 0)) continue
-    const o = per.get(id) || { cost: 0, revenue: 0 }
-    o.cost += Number(c.cost) || 0
-    o.revenue += Number(c.gross_revenue) || 0
-    per.set(id, o)
-  }
-  return [...per].map(([videoId, o]) => ({
-    videoId,
-    detail: `Iklan 7 hr lewat izin afiliasi: biaya ${rpRingkas(o.cost)} · omzet ${rpRingkas(o.revenue)}`,
-  }))
+// F4 (keputusan user 30 Sep 2026): yang diminta ke kreator HANYA video yang tim Ads
+// klik "Minta kode" — baris pipeline gmvmax_boost berstatus 'diminta' — dan belum
+// terotorisasi di ad account. Bukan lagi semua video afiliasi yang berbelanja.
+export function planRequests(pipeline, authorizedIds) {
+  return pipeline
+    .filter(b => b.status === 'diminta' && /^\d{8,25}$/.test(String(b.video_id || '')) && !authorizedIds.has(String(b.video_id)))
+    .map(b => ({
+      videoId: String(b.video_id),
+      detail: `Diminta tim Ads ${new Date(b.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' })}` +
+        (b.roas != null ? ` · ROAS ${Number(b.roas).toFixed(1).replace('.', ',')}x saat diminta` : ''),
+    }))
 }
 
 async function postPikat(token, path, body, fetchImpl) {
@@ -317,33 +310,51 @@ async function postPikat(token, path, body, fetchImpl) {
 export async function harvestAndRequest(workspaceId, fetchImpl = fetch) {
   const token = await readLinkToken(workspaceId)
   if (!token) throw new TeamError(404, 'not_connected', 'Pikat belum tersambung untuk workspace ini.')
+  const ws = encodeURIComponent(workspaceId)
   const auth = await latestSparkAuth(workspaceId)
   const aktif = auth.filter(a => a.ad_auth_status === 'AUTHORIZED')
+  const aktifIds = new Set(aktif.map(a => String(a.item_id)))
 
-  // F3: kode utuh dari ad account → Pikat mengisi video yang kodenya kosong / ditolak.
-  const panen = aktif.filter(a => a.auth_code)
-    .map(a => ({ videoId: String(a.item_id), sparkCode: a.auth_code, authEndTime: a.auth_end_time || null }))
+  // F3: kode aktif mengisi video Pikat yang kodenya kosong / ditolak; kode EXPIRED
+  // hanya menandai video Pikat yang cocok sebagai Kedaluwarsa (tak mengisi kode).
+  const panen = auth.filter(a => a.auth_code && (a.ad_auth_status === 'AUTHORIZED' || a.ad_auth_status === 'EXPIRED'))
+    .map(a => ({ videoId: String(a.item_id), sparkCode: a.auth_code, authEndTime: a.auth_end_time || null, status: a.ad_auth_status }))
   const hasilPanen = panen.length ? await postPikat(token, '/api/v1/selleros/spark-harvest', { items: panen }, fetchImpl) : { cocok: 0, diisi: 0 }
 
-  // F4: set penuh permintaan (kosong pun dikirim — menghapus permintaan yang sudah beres).
-  const imps = await service(
-    `gmvmax_imports?workspace_id=eq.${encodeURIComponent(workspaceId)}&is_current=eq.true` +
-    '&select=id&order=snapshot_date.desc&limit=7'
+  // F4: set penuh dari pipeline "Minta kode" (kosong pun dikirim — menghapus yang sudah beres).
+  const pipeline = await service(
+    `gmvmax_boost?workspace_id=eq.${ws}&status=in.(diminta,ada_kode)&select=video_id,status,roas,created_at&limit=1000`
   ) || []
-  const creatives = []
-  if (imps.length) {
-    for (let from = 0; ; from += 1000) {
-      const page = await service(
-        `gmvmax_creatives?import_id=in.(${imps.map(i => i.id).join(',')})&creative_type=eq.Video&auth_type=eq.AFFILIATE` +
-        `&select=video_id,cost,gross_revenue&order=id.asc&offset=${from}&limit=1000`
-      ) || []
-      creatives.push(...page)
-      if (page.length < 1000) break
-    }
-  }
-  const minta = planRequests(creatives, new Set(aktif.map(a => String(a.item_id))))
+  const minta = planRequests(pipeline, aktifIds)
   const hasilMinta = await postPikat(token, '/api/v1/selleros/spark-requests', { items: minta }, fetchImpl)
-  return { panen: hasilPanen, diminta: hasilMinta?.diminta ?? null }
+
+  // Video diminta yang ternyata SUDAH berkode di Pikat → masuk kotak (tim Ads mengajukan ke
+  // lonceng) dan pipeline maju ke "Kode tersedia" dengan kodenya.
+  let sudahBerkode = 0
+  const berKode = Array.isArray(hasilMinta?.berKode) ? hasilMinta.berKode : []
+  if (berKode.length) {
+    const nowIso = new Date().toISOString()
+    const plan = await mergeIntoInbox(workspaceId, berKode, nowIso)
+    sudahBerkode = plan.baru + plan.berubah
+    await Promise.all(berKode.map(k => service(
+      `gmvmax_boost?workspace_id=eq.${ws}&video_id=eq.${encodeURIComponent(k.videoId)}&status=eq.diminta`,
+      { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'ada_kode', boost_code: k.sparkCode, updated_at: nowIso }) }
+    ).catch(() => {})))
+  }
+  // Pipeline yang videonya sudah terotorisasi di ad account → "Terpasang (Ads)".
+  const terpasang = pipeline.filter(b => aktifIds.has(String(b.video_id)))
+  if (terpasang.length) {
+    await service(
+      `gmvmax_boost?workspace_id=eq.${ws}&status=in.(diminta,ada_kode)&video_id=in.(${terpasang.map(b => b.video_id).join(',')})`,
+      { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'terpasang', updated_at: new Date().toISOString() }) }
+    ).catch(() => {})
+  }
+  return {
+    panen: hasilPanen, diminta: hasilMinta?.diminta ?? null, sudahBerkode,
+    bukanPikat: hasilMinta?.tidakDikenal ?? null, terpasang: terpasang.length,
+  }
 }
 
 export async function connectLink(workspaceId, userId, token, fetchImpl = fetch) {

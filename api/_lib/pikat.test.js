@@ -106,15 +106,17 @@ describe('planInbox — metrik', () => {
 
 import { planRequests } from './pikat.js'
 
-describe('planRequests (F4)', () => {
-  it('video afiliasi berbelanja tanpa kode aktif → satu permintaan per video, dijumlah 7 hari', () => {
+describe('planRequests (F4) — hanya dari "Minta kode"', () => {
+  it('pipeline berstatus diminta & belum terotorisasi → permintaan', () => {
     const r = planRequests([
-      { video_id: '7550000000000000001', cost: 100000, gross_revenue: 900000 },
-      { video_id: '7550000000000000001', cost: 50000, gross_revenue: 100000 },
-      { video_id: '7550000000000000002', cost: 0, gross_revenue: 0 },
-      { video_id: '7550000000000000003', cost: 9000, gross_revenue: 1 },
+      { video_id: '7550000000000000001', status: 'diminta', roas: 8.7, created_at: '2026-09-29T03:00:00Z' },
+      { video_id: '7550000000000000002', status: 'ada_kode', roas: 5, created_at: '2026-09-29T03:00:00Z' },
+      { video_id: '7550000000000000003', status: 'diminta', roas: null, created_at: '2026-09-29T03:00:00Z' },
     ], new Set(['7550000000000000003']))
-    expect(r).toEqual([{ videoId: '7550000000000000001', detail: 'Iklan 7 hr lewat izin afiliasi: biaya Rp 150 rb · omzet Rp 1,0 jt' }])
+    expect(r).toEqual([{ videoId: '7550000000000000001', detail: 'Diminta tim Ads 29 Sep · ROAS 8,7x saat diminta' }])
+  })
+  it('tanpa klik Minta kode → tak ada permintaan', () => {
+    expect(planRequests([], new Set())).toEqual([])
   })
 })
 
