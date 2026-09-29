@@ -89,9 +89,20 @@ export default function BoostPage() {
   // "Minta kode" = satu-satunya sumber "Diminta tim Ads" di Pikat (keputusan user
   // 30 Sep 2026) — langsung dikirim, tak menunggu tarikan berikutnya. Workspace yang
   // belum tersambung ke Pikat: panggilan ditolak diam-diam, pipeline tetap jalan.
+  // Dulu galatnya ditelan (tombol tampak "tak berfungsi" — laporan user 30 Sep 2026):
+  // kini tombol menunjukkan proses & pesan galat asli dari database per video.
+  const [meminta, setMeminta] = useState(null)       // video_id yang sedang diproses
+  const [galatMinta, setGalatMinta] = useState({})   // video_id → pesan galat
   async function mintaKode(v) {
-    await requestBoost(v)
-    harvestPikat().catch(() => {})
+    setMeminta(v.videoId)
+    setGalatMinta(g => { const n = { ...g }; delete n[v.videoId]; return n })
+    try {
+      await requestBoost(v)
+      harvestPikat().catch(() => {})
+    } catch (e) {
+      const pesan = [e?.message, e?.details, e?.hint, e?.code && `kode ${e.code}`].filter(Boolean).join(' · ')
+      setGalatMinta(g => ({ ...g, [v.videoId]: pesan || 'Gagal menyimpan ke pipeline.' }))
+    } finally { setMeminta(null) }
   }
 
   // Tab terakhir diingat per perangkat — kenyamanan saja, gagal baca/tulis diabaikan.
@@ -172,10 +183,16 @@ export default function BoostPage() {
                     {v.organic && <span className="text-xs px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-500 font-medium">organik · spend kecil</span>}
                   </div>
                 </div>
-                <button onClick={() => mintaKode(v)} title="Masuk pipeline & dikirim ke Spark Center Pikat (Diminta tim Ads)"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium flex-shrink-0">
-                  <Rocket className="w-4 h-4" /> Minta kode
-                </button>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0 max-w-[340px]">
+                  <button onClick={() => mintaKode(v)} disabled={meminta === v.videoId}
+                    title="Masuk pipeline & dikirim ke Spark Center Pikat (Diminta tim Ads)"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-60">
+                    <Rocket className="w-4 h-4" /> {meminta === v.videoId ? 'Memproses…' : 'Minta kode'}
+                  </button>
+                  {galatMinta[v.videoId] && (
+                    <p className="text-[11px] text-red-400 text-right leading-snug">Gagal: {galatMinta[v.videoId]}</p>
+                  )}
+                </div>
               </div>
             ))}
           </div>
