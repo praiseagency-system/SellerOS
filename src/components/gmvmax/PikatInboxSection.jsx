@@ -111,8 +111,10 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
       const bagian = [
         r.baru || r.berubah ? `${r.baru} kode baru${r.berubah ? ` · ${r.berubah} diperbarui kreator` : ''}` : 'Tak ada kode baru',
         h?.panen?.diisi ? `${h.panen.diisi} video di Pikat diisi kode dari ad account` : null,
-        h?.diminta ? `${h.diminta} video afiliasi berbelanja tanpa kode diminta ke kreator` : null,
-        h?.sudahBerkode ? `${h.sudahBerkode} video yang dibelanjai iklan ternyata sudah berkode di Pikat — masuk kotak` : null,
+        h?.diminta ? `${h.diminta} video "Minta kode" ditagih ke kreator lewat Pikat` : null,
+        h?.sudahBerkode ? `${h.sudahBerkode} video "Minta kode" ternyata sudah berkode di Pikat — masuk kotak` : null,
+        h?.bukanPikat ? `${h.bukanPikat} video "Minta kode" bukan kreator Pikat (minta manual)` : null,
+        h?.terpasang ? `${h.terpasang} video di pipeline sudah terpasang di ad account` : null,
       ].filter(Boolean)
       setNote(`${bagian.join(' · ')}.`)
       setLink(await getPikatLink())
