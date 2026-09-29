@@ -9,6 +9,7 @@ import {
   getPikatLink, pullPikat, reportPikat, harvestPikat, listInbox, loadBoundVideoIds, loadAdsStats, previewRow, bindRow, dismissRows,
   OPEN_STATUSES,
 } from '../../data/pikatSpark'
+import { APPROVAL_EVENT } from '../../data/gmvmaxApprovals'
 import { tiktokVideoUrl, fmtRpC } from './ui'
 import { usePaged, Pager } from '../ui/DataTable'
 import { prioritasIkat, bandingPrioritas, roasTerpercaya, engagementRate, STATUS_TAYANG, MIN_SPEND } from '../../utils/pikatPriority'
@@ -29,9 +30,14 @@ const STATUS = {
 }
 const SUMBER = { campaign: 'Campaign', sample: 'Sampel', manual: 'Input manual' }
 
+// READY + approval_id = sudah diajukan, menunggu disetujui di lonceng.
+const diLonceng = (r) => r.status === 'READY' && !!r.approval_id
+const LONCENG = { label: 'Menunggu di lonceng', tone: 'bg-blue-500/15 text-blue-300' }
+
 const FILTERS = [
-  { id: 'open', label: 'Perlu keputusan', match: r => OPEN_STATUSES.includes(r.status) },
-  { id: 'ready', label: 'Siap diikat', match: r => r.status === 'READY' },
+  { id: 'open', label: 'Perlu keputusan', match: r => OPEN_STATUSES.includes(r.status) && !diLonceng(r) },
+  { id: 'ready', label: 'Siap diajukan', match: r => r.status === 'READY' && !r.approval_id },
+  { id: 'lonceng', label: 'Menunggu di lonceng', match: diLonceng },
   { id: 'cek', label: 'Perlu dicek', match: r => ['INVALID', 'MISMATCH', 'FAILED'].includes(r.status) },
   { id: 'bound', label: 'Sudah terikat', match: r => ['ALREADY', 'BOUND'].includes(r.status) },
   { id: 'dismissed', label: 'Diabaikan', match: r => r.status === 'DISMISSED' },
@@ -136,6 +142,20 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Keputusan di 🔔 (setuju → dieksekusi, tolak, kedaluwarsa) langsung tercermin di
+  // kotak ini, dan status baru ikut dikirim ke Spark Center Pikat.
+  useEffect(() => {
+    let t = null
+    const onChange = () => {
+      clearTimeout(t)
+      t = setTimeout(async () => {
+        try { await refresh(); lapor(); onBound?.() } catch { /* dicoba lagi di keputusan berikutnya */ }
+      }, 800)
+    }
+    window.addEventListener(APPROVAL_EVENT, onChange)
+    return () => { clearTimeout(t); window.removeEventListener(APPROVAL_EVENT, onChange) }
+  }, [refresh, onBound])
+
   // M1: satu baris = { row, ads, p }, diurut prioritas ikat (lihat utils/pikatPriority).
   const f = FILTERS.find(x => x.id === filter) || FILTERS[0]
   const items = rows.filter(f.match)
@@ -155,9 +175,9 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
   }
 
   const counts = Object.fromEntries(FILTERS.map(x => [x.id, rows.filter(x.match).length]))
-  const selectable = (r) => OPEN_STATUSES.includes(r.status) && r.status !== 'NEW'
+  const selectable = (r) => OPEN_STATUSES.includes(r.status) && r.status !== 'NEW' && !diLonceng(r)
   const pickedRows = rows.filter(r => selected.has(r.id))
-  const readyPicked = pickedRows.filter(r => r.status === 'READY')
+  const readyPicked = pickedRows.filter(r => r.status === 'READY' && !r.approval_id)
 
   function toggle(id) {
     setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -177,10 +197,8 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     }
     setSelected(new Set())
     await refresh()
-    setNote(`${ok} video terikat${gagal ? ` · ${gagal} gagal (lihat tab Perlu dicek)` : ''}.`)
+    setNote(`${ok} video diajukan ke lonceng — setujui di sana untuk mengikat${gagal ? ` · ${gagal} gagal diajukan` : ''}.`)
     setBinding(false)
-    lapor()
-    if (ok) onBound?.()
   }
 
   async function bindOne(r) {
@@ -189,9 +207,8 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     setSelected(prev => { const n = new Set(prev); n.delete(r.id); return n })
     await refresh()
     setRowBusy(null)
-    if (hasil.ok) { setNote(`@${r.tiktok_username || '?'} terikat${hasil.verified ? ' ✓ terverifikasi' : ''}.`); onBound?.() }
-    else setError(`Gagal mengikat @${r.tiktok_username || '?'}: ${hasil.error}`)
-    lapor()
+    if (hasil.ok) setNote(`@${r.tiktok_username || '?'} diajukan ke lonceng — setujui di sana untuk mengikat.`)
+    else setError(`Gagal mengajukan @${r.tiktok_username || '?'}: ${hasil.error}`)
   }
 
   async function dismissOne(r) {
@@ -271,7 +288,7 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
               <span className="text-right">Aksi</span>
             </div>
             {pg.paged.map(({ row: r, ads: a, p }) => {
-              const st = STATUS[r.status] || STATUS.NEW
+              const st = diLonceng(r) ? LONCENG : (STATUS[r.status] || STATUS.NEW)
               const umurDari = r.uploaded_at || r.recorded_at
               const umur = umurDari && loadedAt ? Math.max(0, Math.floor((loadedAt - Date.parse(umurDari)) / 86400000)) : null
               const judul = r.preview?.title || r.label || '(tanpa judul)'
@@ -321,10 +338,10 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
                   </div>
                   <div className="flex items-center justify-end gap-1.5">
                     {rowBusy === r.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-ink-faint" />}
-                    {r.status === 'READY' && (
-                      <button onClick={() => bindOne(r)} disabled={busy}
+                    {r.status === 'READY' && !r.approval_id && (
+                      <button onClick={() => bindOne(r)} disabled={busy} title="Ajukan ikatan ke lonceng persetujuan"
                         className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
-                        Ikat
+                        Ajukan
                       </button>
                     )}
                     {selectable(r) && (
@@ -344,8 +361,8 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
 
       <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
         <p className="text-[11px] text-ink-faint leading-relaxed max-w-[560px]">
-          Setiap ikatan tercatat di antrean persetujuan &amp; Log Optimasi dan tunduk pada kill switch. Video yang diikat
-          masuk kolam GMV Max dan bisa langsung memakai budget iklan.
+          Ajukan → video masuk lonceng persetujuan. Setelah disetujui di sana, kodenya diikat ke ad account, tercatat di
+          Log Optimasi, dan tunduk pada kill switch. Video yang diikat masuk kolam GMV Max dan bisa langsung memakai budget iklan.
         </p>
         <div className="flex items-center gap-2">
           <button onClick={dismissPicked} disabled={busy || !pickedRows.length}
@@ -355,7 +372,7 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
           <button onClick={bindPicked} disabled={busy || !readyPicked.length}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
             {binding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-            Ikat {readyPicked.length || ''} video terpilih
+            Ajukan {readyPicked.length || ''} video ke lonceng
           </button>
         </div>
       </div>

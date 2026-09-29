@@ -92,6 +92,21 @@ export async function executeSparkBind(approvalRow) {
 // Audit tetap utuh: baris approval dibuat lalu diputuskan APPROVED atas nama
 // user (kill switch tetap dicek di createApproval/decideApproval), eksekusi +
 // read-back + log otomatis sama persis dengan jalur antrean.
+// Ajukan ikatan ke 🔔 TANPA langsung menyetujui — dipakai kotak Kode dari Pikat
+// (keputusan user 29 Sep 2026: ikatan dari Pikat lewat lonceng). Eksekusi terjadi
+// saat approval disetujui di 🔔 (ApprovalBell → executeSparkBind).
+export async function proposeSparkBind({ authCode, videoId = null, videoTitle = '', author = '', source = 'PIKAT', reason = null }) {
+  return createApproval({
+    actionType: 'SPARK_BIND',
+    target: { video_id: videoId, video_title: videoTitle || `kode …${authCode.slice(-6)}`, author },
+    currentValue: { terikat: 'belum' },
+    proposedValue: { terikat: 'ya', auth_code: authCode },
+    reason: reason || 'Ikat Spark post ke ad account.',
+    evidence: videoId ? { item_id: videoId } : null,
+    source, risk: 'LOW',
+  })
+}
+
 // `source` 'PIKAT' = kode ditarik dari Pikat (kotak "Kode dari Pikat"), bukan tempel manual.
 export async function bindSparkNow({ authCode, videoId = null, videoTitle = '', author = '', source = 'MANUAL', reason = null }) {
   const row = await createApproval({
