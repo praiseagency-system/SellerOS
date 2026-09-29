@@ -9,7 +9,7 @@ import { EmptyState, Pill, RoasBadge, VideoLabel, fmtRp, fmtRpC, fmtRoasX, Delta
 import { loadVideosDaily } from '../../data/gmvmaxImports'
 import { boostStatus, boostWindow, computeBoostPerf } from '../../utils/boostPerf'
 import SparkBindingSection from '../../components/gmvmax/SparkBindingSection'
-import { harvestPikat } from '../../data/pikatSpark'
+import { harvestPikat, PIKAT_HARVEST_EVENT } from '../../data/pikatSpark'
 
 const STATUS = [
   { id: 'diminta', label: 'Diminta ke kreator', tone: 'amber' },
@@ -22,6 +22,16 @@ const STATUS_TONE = {
   green: 'bg-emerald-500/15 text-emerald-500', muted: 'bg-fill/10 text-ink-faint',
 }
 const TAB_KEY = 'boost_center_tab_v1'
+// Nasib video di Pikat setelah "Minta kode" (kolom pikat_status, migrasi 0067).
+const PIKAT_STATUS = {
+  ditagih: { label: 'Ditagih lewat Pikat', tone: 'bg-blue-500/15 text-blue-300', sub: (b) => b.pikat_kreator ? `DM ke @${b.pikat_kreator} lewat Reminder Spark` : 'masuk Diminta tim Ads' },
+  ditagih_ulang: { label: 'Kode ditolak · ditagih ulang', tone: 'bg-amber-500/15 text-amber-400', sub: (b) => b.pikat_kreator ? `@${b.pikat_kreator} diminta kode baru` : '' },
+  berkode: { label: 'Sudah berkode di Pikat', tone: 'bg-emerald-500/15 text-emerald-400', sub: () => 'kodenya masuk tab Kode dari Pikat — ajukan ke lonceng' },
+  terikat: { label: 'Sudah terikat', tone: 'bg-emerald-500/15 text-emerald-400', sub: () => '' },
+  bukan_pikat: { label: 'Bukan kreator Pikat · minta manual', tone: 'bg-red-500/15 text-red-300', sub: () => 'video tak disetor di Pikat — Pikat tak bisa menagihnya' },
+  lain: { label: 'Tercatat di Pikat', tone: 'bg-fill/10 text-ink-muted', sub: () => '' },
+}
+
 const statusMeta = id => STATUS.find(s => s.id === id) || STATUS[0]
 
 const fmtD = (iso) => {
@@ -83,7 +93,7 @@ function PerfCell({ label, value, delta, tone = 'text-ink-strong' }) {
 }
 
 export default function BoostPage() {
-  const { videos, thresholds, boost, hasData, requestBoost, updateBoost, removeBoost } = useGmvMax()
+  const { videos, thresholds, boost, hasData, requestBoost, updateBoost, removeBoost, reloadBoost } = useGmvMax()
   const [filter, setFilter] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
   // "Minta kode" = satu-satunya sumber "Diminta tim Ads" di Pikat (keputusan user
@@ -104,6 +114,12 @@ export default function BoostPage() {
       setGalatMinta(g => ({ ...g, [v.videoId]: pesan || 'Gagal menyimpan ke pipeline.' }))
     } finally { setMeminta(null) }
   }
+
+  useEffect(() => {
+    const onHarvest = () => { reloadBoost?.() }
+    window.addEventListener(PIKAT_HARVEST_EVENT, onHarvest)
+    return () => window.removeEventListener(PIKAT_HARVEST_EVENT, onHarvest)
+  }, [reloadBoost])
 
   // Tab terakhir diingat per perangkat — kenyamanan saja, gagal baca/tulis diabaikan.
   const [tab, setTab] = useState(() => {
@@ -313,7 +329,14 @@ function BoostRow({ b, daily, onUpdate, onRemove }) {
   const [note, setNote] = useState(b.note || '')
   const [copied, setCopied] = useState(false)
   const [confirm, setConfirm] = useState(false)
+  const [salinOutreach, setSalinOutreach] = useState(false)
   const meta = statusMeta(b.status)
+  const pk = b.status === 'diminta' || b.status === 'ada_kode' ? PIKAT_STATUS[b.pikat_status] : null
+  const outreach = () => {
+    const teks = `@${b.tiktok_account || '?'} — ${String(b.video_title || '').slice(0, 80)} — https://www.tiktok.com/@${String(b.tiktok_account || '').split(/[\s|]/)[0]}/video/${b.video_id}`
+    navigator.clipboard?.writeText(teks)
+    setSalinOutreach(true); setTimeout(() => setSalinOutreach(false), 1500)
+  }
   const dirty = code !== (b.boost_code || '') || note !== (b.note || '')
   const win = boostWindow(b)
 
@@ -339,6 +362,20 @@ function BoostRow({ b, daily, onUpdate, onRemove }) {
             {win && <span className="text-xs text-ink-faint">{fmtD(win.start)} {win.ongoing ? '→ kini' : `– ${fmtD(win.end)}`} · {win.lengthDays} hari</span>}
             {!win && b.roas != null && <span className="text-xs text-ink-faint">ROAS {(+b.roas).toFixed(1)}x</span>}
           </div>
+          {pk && (
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${pk.tone}`}>Pikat: {pk.label}</span>
+              {pk.sub(b) && <span className="text-[11px] text-ink-faint">{pk.sub(b)}</span>}
+              {b.pikat_status === 'bukan_pikat' && (
+                <button onClick={outreach} className="text-[11px] font-semibold text-blue-400 hover:text-blue-300">
+                  {salinOutreach ? '✓ tersalin' : 'salin untuk outreach'}
+                </button>
+              )}
+            </div>
+          )}
+          {(b.status === 'diminta') && !b.pikat_status && (
+            <p className="text-[11px] text-ink-faint mt-1.5">Pikat: menunggu dicek — muncul setelah tarikan / Minta kode berikutnya</p>
+          )}
         </div>
         <select value={b.status} onChange={e => onUpdate(b.video_id, { status: e.target.value })}
           className="px-2 py-1.5 rounded-lg bg-surface2 border border-line/15 text-ink text-xs">

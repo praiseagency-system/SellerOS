@@ -524,6 +524,11 @@ export function GmvMaxProvider({ children }) {
     setBoost(prev => ({ ...prev, [videoId]: row }))
     return row
   }
+  // Muat ulang pipeline dari DB — dipakai setelah Pikat menulis status (pikat_status,
+  // 'Kode tersedia', 'Terpasang') di sisi server.
+  async function reloadBoost() {
+    try { setBoost(await listBoost()) } catch { /* biarkan state lama */ }
+  }
   async function removeBoost(videoId) {
     await deleteBoost(videoId)
     setBoost(prev => { const n = { ...prev }; delete n[videoId]; return n })
@@ -542,7 +547,7 @@ export function GmvMaxProvider({ children }) {
     missingAccountCount, enriching,
     upload, importDataset, removeImport, updateThresholds, setNote, clearNote, enrichUsernames,
     logAction, removeActionLog,
-    requestBoost, updateBoost, removeBoost,
+    requestBoost, updateBoost, removeBoost, reloadBoost,
     reload,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
