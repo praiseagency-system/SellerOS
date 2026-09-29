@@ -5,7 +5,7 @@
 import { supabase } from '../lib/supabase'
 import { postJson as post } from '../lib/apiClient'
 import { getCurrentWorkspaceId } from '../utils/workspace'
-import { fetchSparkInfo, bindSparkNow } from './gmvmaxSpark'
+import { fetchSparkInfo, proposeSparkBind } from './gmvmaxSpark'
 
 // Status yang masih menunggu keputusan tim Ads (tampil di tab utama).
 export const OPEN_STATUSES = ['NEW', 'READY', 'INVALID', 'MISMATCH', 'FAILED']
@@ -74,9 +74,9 @@ export async function listInbox() {
   const { data, error } = await supabase.from('pikat_spark_inbox')
     .select('*').eq('workspace_id', wsOrThrow())
     .order('recorded_at', { ascending: false, nullsFirst: false })
-    .limit(500)
+    .limit(1000)                                   // = batas tarikan & batas PostgREST
   if (error) throw error
-  return data || []
+  return syncWithApprovals(data || [])
 }
 
 // Video yang sudah terikat menurut potret spark_auth terbaru dari worker —
@@ -127,25 +127,54 @@ export async function previewRow(row, boundIds) {
   return { ...row, ...verdict }
 }
 
+// Ajukan ikatan ke 🔔 (approval PENDING bersumber PIKAT). Baris tetap READY dengan
+// approval_id terisi = "menunggu di lonceng"; syncWithApprovals yang memindahkannya
+// ke BOUND/FAILED setelah approval diputuskan & dieksekusi di 🔔.
 export async function bindRow(row) {
   const { data: userRes } = await supabase.auth.getUser()
-  const decided = { decided_by: userRes?.user?.id ?? null, decided_at: new Date().toISOString() }
   try {
-    const r = await bindSparkNow({
+    const ap = await proposeSparkBind({
       authCode: row.spark_code,
       videoId: row.video_id,
       videoTitle: row.preview?.title || row.label || '',
       author: row.preview?.author || row.tiktok_username || '',
-      source: 'PIKAT',
       reason: `Kode dari Pikat (${row.source || 'kreator'}${row.label ? ` · ${row.label}` : ''}) — @${row.tiktok_username || '?'}`,
     })
-    await patchRow(row.id, { status: 'BOUND', approval_id: r?.approval_id ?? null, ...decided })
-    return { ok: true, verified: r?.read_back?.verified === true }
+    await patchRow(row.id, { approval_id: ap.id, decided_by: userRes?.user?.id ?? null, decided_at: new Date().toISOString() })
+    return { ok: true, queued: true }
   } catch (e) {
-    await patchRow(row.id, { status: 'FAILED', preview: { ...(row.preview || {}), error: String(e.message || e).slice(0, 200) }, ...decided })
-      .catch(() => {})
     return { ok: false, error: e.message || String(e) }
   }
+}
+
+// Keputusan 🔔 → status kotak masuk. Murni, supaya aturannya teruji.
+export function statusFromApproval(ap) {
+  if (!ap) return { approval_id: null }                       // approval hilang → ajukan ulang
+  if (ap.status === 'EXECUTED') return { status: 'BOUND' }
+  if (ap.status === 'FAILED') return { status: 'FAILED', preview_error: ap.execution_result?.error || 'eksekusi gagal' }
+  if (ap.status === 'REJECTED' || ap.status === 'EXPIRED') return { approval_id: null }
+  return null                                                  // PENDING / APPROVED: masih berjalan
+}
+
+// Samakan baris "menunggu di lonceng" dengan status approval-nya.
+export async function syncWithApprovals(rows) {
+  const tunggu = rows.filter(r => r.approval_id && r.status === 'READY')
+  if (!tunggu.length) return rows
+  const { data, error } = await supabase.from('gmvmax_approvals')
+    .select('id, status, execution_result').eq('workspace_id', wsOrThrow())
+    .in('id', tunggu.map(r => r.approval_id))
+  if (error) return rows
+  const apOf = new Map((data || []).map(a => [a.id, a]))
+  const out = new Map()
+  for (const r of tunggu) {
+    const ubah = statusFromApproval(apOf.get(r.approval_id))
+    if (!ubah) continue
+    const { preview_error, ...patch } = ubah
+    if (preview_error) patch.preview = { ...(r.preview || {}), error: String(preview_error).slice(0, 200) }
+    await patchRow(r.id, patch).catch(() => {})
+    out.set(r.id, { ...r, ...patch })
+  }
+  return rows.map(r => out.get(r.id) || r)
 }
 
 export async function dismissRows(ids) {
