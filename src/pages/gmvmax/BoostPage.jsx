@@ -20,6 +20,7 @@ const STATUS_TONE = {
   amber: 'bg-amber-500/15 text-amber-500', blue: 'bg-blue-500/15 text-blue-500',
   green: 'bg-emerald-500/15 text-emerald-500', muted: 'bg-fill/10 text-ink-faint',
 }
+const TAB_KEY = 'boost_center_tab_v1'
 const statusMeta = id => STATUS.find(s => s.id === id) || STATUS[0]
 
 const fmtD = (iso) => {
@@ -84,6 +85,11 @@ export default function BoostPage() {
   const { videos, thresholds, boost, hasData, requestBoost, updateBoost, removeBoost } = useGmvMax()
   const [filter, setFilter] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
+  // Tab terakhir diingat per perangkat — kenyamanan saja, gagal baca/tulis diabaikan.
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem(TAB_KEY) || 'kode' } catch { return 'kode' }
+  })
+  const pilihTab = (t) => { setTab(t); try { localStorage.setItem(TAB_KEY, t) } catch { /* abaikan */ } }
 
   // Metrik harian per video yang punya tanggal boost → hitung performa sejak
   // boost. Di-load sekali; refresh saat daftar video-berjangka berubah.
@@ -127,10 +133,14 @@ export default function BoostPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* ── Spark Binding (Execute Layer E1) ─────────────────────── */}
-      <SparkBindingSection />
+      {/* ── Spark Binding + tab (Kode dari Pikat · Ter-otorisasi · Rekomendasi · Pipeline) ── */}
+      <SparkBindingSection tab={tab} onTab={pilihTab} extraTabs={[
+        { id: 'rekomendasi', label: 'Rekomendasi minta kode', count: recs.length },
+        { id: 'pipeline', label: 'Pipeline boost', count: counts.all },
+      ]}>
 
       {/* ── Rekomendasi ─────────────────────────────────────────── */}
+      {tab === 'rekomendasi' && (
       <section>
         <div className="flex items-center gap-2 mb-3">
           <span className="w-7 h-7 rounded-lg bg-violet-500/15 text-violet-500 flex items-center justify-center"><Zap className="w-4 h-4" /></span>
@@ -162,8 +172,10 @@ export default function BoostPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* ── Pipeline ────────────────────────────────────────────── */}
+      {tab === 'pipeline' && (
       <section>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-ink-strong">Pipeline boost</h3>
@@ -205,6 +217,8 @@ export default function BoostPage() {
           </>
         )}
       </section>
+      )}
+      </SparkBindingSection>
     </div>
   )
 }

@@ -34,7 +34,10 @@ const pickItemId = (info) => info?.item_id || info?.item_info?.item_id || info?.
 const pickTitle = (info) => info?.text || info?.item_info?.text || info?.video_info?.title || info?.title || ''
 const pickAuthor = (info) => info?.user_name || info?.item_info?.user_name || info?.author_name || ''
 
-export default function SparkBindingSection() {
+// Tab Boost Center (29 Sep 2026): panel supply selalu tampil; di bawahnya tab.
+// `tab`/`onTab` dipegang halaman, `extraTabs` = tab milik halaman (rekomendasi,
+// pipeline) yang isinya dirender halaman sendiri lewat `children`.
+export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, extraTabs = [], children = null }) {
   const [codes, setCodes] = useState('')
   const [busy, setBusy] = useState(false)
   const [results, setResults] = useState([])   // [{code, ok, msg}]
@@ -207,10 +210,26 @@ export default function SparkBindingSection() {
         </div>
       )}
 
+      <div role="tablist" aria-label="Boost Center" className="flex items-center gap-1 border-b border-line/10 mb-3 overflow-x-auto">
+        {[
+          { id: 'kode', label: 'Kode dari Pikat' },
+          { id: 'otorisasi', label: 'Video ter-otorisasi', count: list?.page_info?.total_number ?? rows.length },
+          ...extraTabs,
+        ].map(t => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => onTab(t.id)}
+            className={`px-3.5 py-2.5 -mb-px text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${tab === t.id
+              ? 'border-blue-500 text-ink-strong' : 'border-transparent text-ink-muted hover:text-ink'}`}>
+            {t.label}{t.count != null && <span className="ml-1.5 text-ink-faint font-normal">{t.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'kode' && (<>
       {/* Kode spark dari Pikat — ditarik otomatis, dipratinjau, dipilih tim Ads */}
       <PikatInboxSection boundIds={boundIds} onBound={loadList} />
 
       <div className="bg-surface rounded-2xl border border-line/10 p-4 space-y-3">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Tempel kode manual</p>
         <div className="flex items-start gap-2.5">
           <textarea value={codes} onChange={e => setCodes(e.target.value)} rows={2} disabled={busy}
             placeholder={'Tempel kode spark di sini — satu kode per baris'}
@@ -236,8 +255,13 @@ export default function SparkBindingSection() {
           </div>
         )}
 
+      </div>
+      </>)}
+
+      {tab === 'otorisasi' && (
+      <div className="bg-surface rounded-2xl border border-line/10 p-4 space-y-3">
         {/* Daftar terikat — sumber kebenaran tt_video_list_get */}
-        <div className="pt-3 border-t border-line/10">
+        <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
               Video ter-otorisasi ke ad account {list?.page_info?.total_number != null && `· ${list.page_info.total_number}`}
@@ -340,6 +364,9 @@ export default function SparkBindingSection() {
           )}
         </div>
       </div>
+      )}
+
+      {children}
     </section>
   )
 }

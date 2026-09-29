@@ -10,6 +10,8 @@ import {
   OPEN_STATUSES,
 } from '../../data/pikatSpark'
 import { tiktokVideoUrl, fmtRpC } from './ui'
+import { usePaged, Pager } from '../ui/DataTable'
+import { prioritasIkat, bandingPrioritas, roasTerpercaya, engagementRate, STATUS_TAYANG, MIN_SPEND } from '../../utils/pikatPriority'
 
 const TARIK_ULANG_MS = 30 * 60 * 1000   // tarik otomatis bila tarikan terakhir > 30 menit
 const PRATINJAU_MAKS = 1000            // semua kode baru diperiksa selama halaman terbuka
@@ -38,9 +40,12 @@ const FILTERS = [
 const fmtViews = (n) => n == null ? '—' : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} jt` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace('.', ',')} rb` : String(n)
 const jam = (iso) => iso ? new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
-// Tanpa likes/comments/shares sama sekali = data belum masuk → "—", bukan 0%.
-const er = (r) => (!r.views || (r.likes == null && r.comments == null && r.shares == null))
-  ? null : (((r.likes || 0) + (r.comments || 0) + (r.shares || 0)) / r.views) * 100
+const PRIORITAS = {
+  tinggi: { label: 'Tinggi', tone: 'bg-emerald-500/15 text-emerald-400' },
+  sedang: { label: 'Sedang', tone: 'bg-amber-500/15 text-amber-400' },
+  rendah: { label: 'Rendah', tone: 'bg-fill/10 text-ink-muted' },
+}
+const angka = (n) => (n == null ? '—' : Number(n).toLocaleString('id-ID'))
 // Status di Spark Center Pikat ikut diperbarui; gagal lapor tak mengganggu kerja tim Ads.
 const lapor = () => { reportPikat().catch(() => {}) }
 
@@ -131,6 +136,14 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // M1: satu baris = { row, ads, p }, diurut prioritas ikat (lihat utils/pikatPriority).
+  const f = FILTERS.find(x => x.id === filter) || FILTERS[0]
+  const items = rows.filter(f.match)
+    .map(row => { const a = ads.get(String(row.video_id)); return { row, ads: a, p: prioritasIkat(row, a) } })
+    .sort(bandingPrioritas)
+  const shown = items.map(i => i.row)
+  const pg = usePaged(items)
+
   if (link === undefined) return null
   if (link === null) {
     return (
@@ -141,10 +154,6 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     )
   }
 
-  const f = FILTERS.find(x => x.id === filter) || FILTERS[0]
-  // GMV organik tertinggi dulu — video yang paling menghasilkan paling perlu diamankan kodenya.
-  const shown = rows.filter(f.match).sort((a, b) =>
-    (Number(b.gmv_organic) || 0) - (Number(a.gmv_organic) || 0) || (b.views || 0) - (a.views || 0))
   const counts = Object.fromEntries(FILTERS.map(x => [x.id, rows.filter(x.match).length]))
   const selectable = (r) => OPEN_STATUSES.includes(r.status) && r.status !== 'NEW'
   const pickedRows = rows.filter(r => selected.has(r.id))
@@ -243,91 +252,93 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-[11.5px] min-w-[980px]">
-            <thead><tr className="text-left text-ink-faint border-b border-line/10">
-              <th className="py-1.5 pr-2 w-8">
-                <input type="checkbox" aria-label="Pilih semua" checked={allShownPicked} onChange={toggleAll}
-                  disabled={!shown.some(selectable) || busy} className="accent-blue-600" />
-              </th>
-              <th className="py-1.5 pr-3 font-semibold">Video</th>
-              <th className="py-1.5 pr-3 font-semibold">Kreator</th>
-              <th className="py-1.5 pr-3 font-semibold">Engagement</th>
-              <th className="py-1.5 pr-3 font-semibold">GMV organik</th>
-              <th className="py-1.5 pr-3 font-semibold" title="Biaya & ROAS video ini di GMV Max, 7 snapshot terakhir">Di GMV Max (7 hr)</th>
-              <th className="py-1.5 pr-3 font-semibold">Hasil pratinjau</th>
-              <th className="py-1.5 font-semibold text-right">Aksi</th>
-            </tr></thead>
-            <tbody>
-              {shown.map(r => {
-                const st = STATUS[r.status] || STATUS.NEW
-                const umurDari = r.uploaded_at || r.recorded_at
-                const umur = umurDari && loadedAt ? Math.max(0, Math.floor((loadedAt - Date.parse(umurDari)) / 86400000)) : null
-                const judul = r.preview?.title || r.label || '(tanpa judul)'
-                const erR = er(r)
-                const a = ads.get(String(r.video_id))
-                return (
-                  <tr key={r.id} className="border-b border-line/5">
-                    <td className="py-2 pr-2">
-                      <input type="checkbox" aria-label={`Pilih video ${r.video_id}`} checked={selected.has(r.id)}
-                        onChange={() => toggle(r.id)} disabled={!selectable(r) || busy} className="accent-blue-600" />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <a href={tiktokVideoUrl(r.video_id, r.tiktok_username) || '#'} target="_blank" rel="noreferrer"
-                        className="block text-ink hover:text-blue-300 truncate max-w-[280px]">{judul}</a>
-                      <p className="text-[10.5px] text-ink-faint">
-                        {SUMBER[r.source] || r.source || '—'}{r.label && r.preview?.title ? ` · ${r.label}` : ''}{umur == null ? '' : ` · ${umur} hr`}
-                        <span className="font-mono"> · kode …{String(r.spark_code).slice(-6)}</span>
-                      </p>
-                    </td>
-                    <td className="py-2 pr-3 text-ink-muted whitespace-nowrap">@{r.tiktok_username || '?'}</td>
-                    <td className="py-2 pr-3 font-mono whitespace-nowrap">
-                      <p className="text-ink">{fmtViews(r.views)} views</p>
-                      <p className="text-[10.5px] text-ink-faint">{erR == null ? '—' : `ER ${erR.toFixed(1).replace('.', ',')}%`}</p>
-                    </td>
-                    <td className={`py-2 pr-3 font-mono whitespace-nowrap ${Number(r.gmv_organic) > 0 ? 'text-emerald-400' : 'text-ink-faint'}`}>
-                      {r.gmv_organic == null ? '—' : fmtRpC(Number(r.gmv_organic))}
-                    </td>
-                    <td className="py-2 pr-3 whitespace-nowrap">
-                      {a && a.cost > 0 ? (
-                        <>
-                          <p className="font-mono text-ink">{fmtRpC(a.cost)} · ROAS {(a.revenue / a.cost).toFixed(1).replace('.', ',')}</p>
-                          <p className="text-[10.5px] text-ink-faint">
-                            {a.authTypes.has('AFFILIATE') ? 'tayang lewat izin afiliasi' : 'sudah tayang'}
-                          </p>
-                        </>
-                      ) : <p className="text-[10.5px] text-ink-faint">belum tayang</p>}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-semibold ${st.tone}`}
-                        title={r.preview?.error || r.preview?.note || ''}>
-                        {r.status === 'NEW' && <Loader2 className="w-3 h-3 animate-spin mr-1" />}{st.label}
-                      </span>
-                      {r.status === 'MISMATCH' && r.preview?.item_id && (
-                        <p className="text-[10px] text-ink-faint mt-0.5">kode untuk video {r.preview.item_id}</p>
-                      )}
-                    </td>
-                    <td className="py-2">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {rowBusy === r.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-ink-faint" />}
-                        {r.status === 'READY' && (
-                          <button onClick={() => bindOne(r)} disabled={busy}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
-                            Ikat
-                          </button>
-                        )}
-                        {selectable(r) && (
-                          <button onClick={() => dismissOne(r)} disabled={busy}
-                            className="px-2 py-1 rounded-lg text-[11px] border border-line/15 text-ink-muted hover:text-ink disabled:opacity-40 transition-colors">
-                            Abaikan
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="min-w-[1000px]">
+            <div className="grid grid-cols-[28px_minmax(220px,2.2fr)_minmax(170px,1.8fr)_minmax(190px,2fr)_minmax(140px,1.3fr)_minmax(110px,0.9fr)] gap-x-3.5 text-[10px] font-bold tracking-wider text-ink-faint">
+              <span />
+              <span />
+              <span className="pb-1 border-b-2 border-emerald-500/50">ORGANIK (PIKAT)</span>
+              <span className="pb-1 border-b-2 border-blue-500/60">IKLAN GMV MAX · 7 HARI</span>
+              <span />
+              <span />
+            </div>
+            <div className="grid grid-cols-[28px_minmax(220px,2.2fr)_minmax(170px,1.8fr)_minmax(190px,2fr)_minmax(140px,1.3fr)_minmax(110px,0.9fr)] gap-x-3.5 items-center py-2 text-[11px] font-semibold text-ink-faint border-b border-line/10">
+              <input type="checkbox" aria-label="Pilih semua" checked={allShownPicked} onChange={toggleAll}
+                disabled={!shown.some(selectable) || busy} className="accent-blue-600 justify-self-center" />
+              <span>Video</span>
+              <span>Views · interaksi · GMV</span>
+              <span>Omzet · biaya · ROAS · status</span>
+              <span>Prioritas ikat</span>
+              <span className="text-right">Aksi</span>
+            </div>
+            {pg.paged.map(({ row: r, ads: a, p }) => {
+              const st = STATUS[r.status] || STATUS.NEW
+              const umurDari = r.uploaded_at || r.recorded_at
+              const umur = umurDari && loadedAt ? Math.max(0, Math.floor((loadedAt - Date.parse(umurDari)) / 86400000)) : null
+              const judul = r.preview?.title || r.label || '(tanpa judul)'
+              const erR = engagementRate(r)
+              const roas = roasTerpercaya(a)
+              const pr = PRIORITAS[p.level]
+              return (
+                <div key={r.id} className="grid grid-cols-[28px_minmax(220px,2.2fr)_minmax(170px,1.8fr)_minmax(190px,2fr)_minmax(140px,1.3fr)_minmax(110px,0.9fr)] gap-x-3.5 items-center py-2.5 border-b border-line/5 text-[11.5px]">
+                  <input type="checkbox" aria-label={`Pilih video ${r.video_id}`} checked={selected.has(r.id)}
+                    onChange={() => toggle(r.id)} disabled={!selectable(r) || busy} className="accent-blue-600 justify-self-center" />
+                  <div className="min-w-0">
+                    <a href={tiktokVideoUrl(r.video_id, r.tiktok_username) || '#'} target="_blank" rel="noreferrer"
+                      className="block text-ink hover:text-blue-300 truncate">{judul}</a>
+                    <p className="text-[10.5px] text-ink-faint truncate">
+                      @{r.tiktok_username || '?'} · {SUMBER[r.source] || r.source || '—'}{umur == null ? '' : ` · ${umur} hr`}
+                      <span className="font-mono"> · …{String(r.spark_code).slice(-6)}</span>
+                    </p>
+                    <span className={`inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.tone}`}
+                      title={r.preview?.error || r.preview?.note || (r.status === 'MISMATCH' && r.preview?.item_id ? `kode untuk video ${r.preview.item_id}` : '')}>
+                      {r.status === 'NEW' && <Loader2 className="w-3 h-3 animate-spin mr-1" />}{st.label}
+                    </span>
+                  </div>
+                  <div className="font-mono space-y-0.5">
+                    <p className="text-ink">{fmtViews(r.views)} views <span className="text-ink-faint">· ER {erR == null ? '—' : `${erR.toFixed(1).replace('.', ',')}%`}</span></p>
+                    <p className="text-[10.5px] text-ink-faint">{angka(r.likes)} suka · {angka(r.comments)} komentar · {angka(r.shares)} share</p>
+                    <p className={`text-[11px] ${Number(r.gmv_organic) > 0 ? 'text-emerald-400' : 'text-ink-faint'}`}>
+                      GMV {r.gmv_organic == null ? '—' : fmtRpC(Number(r.gmv_organic))}
+                    </p>
+                  </div>
+                  <div className="font-mono space-y-0.5">
+                    {a && (a.cost > 0 || a.revenue > 0) ? (
+                      <>
+                        <p className="text-ink">Omzet {fmtRpC(a.revenue)} <span className="text-ink-faint">· {a.orders} order</span></p>
+                        <p className="text-[10.5px] text-ink-faint">
+                          biaya {fmtRpC(a.cost)} · ROAS {roas == null ? '—' : roas.toFixed(1).replace('.', ',')}
+                          {roas == null && a.cost > 0 && <span className="text-amber-400"> belanja &lt; {fmtRpC(MIN_SPEND)}</span>}
+                        </p>
+                        <p className="text-[10.5px] text-blue-300 font-sans">
+                          ● {STATUS_TAYANG[a.status] || a.status || '—'}{a.authTypes.has('AFFILIATE') ? ' · izin afiliasi' : ''}
+                        </p>
+                      </>
+                    ) : <p className="text-[10.5px] text-ink-faint font-sans">belum tayang di GMV Max</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-[10.5px] font-bold ${pr.tone}`}>{pr.label}</span>
+                    <p className="text-[10.5px] text-ink-faint leading-snug">{p.alasan}</p>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5">
+                    {rowBusy === r.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-ink-faint" />}
+                    {r.status === 'READY' && (
+                      <button onClick={() => bindOne(r)} disabled={busy}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                        Ikat
+                      </button>
+                    )}
+                    {selectable(r) && (
+                      <button onClick={() => dismissOne(r)} disabled={busy} aria-label="Abaikan" title="Abaikan"
+                        className="w-7 h-7 rounded-lg text-[13px] border border-line/15 text-ink-muted hover:text-ink disabled:opacity-40 transition-colors">
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            <Pager {...pg} unit="kode" />
+          </div>
         </div>
       )}
 
