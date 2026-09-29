@@ -32,6 +32,8 @@ export const disconnectPikat = () => post('/api/pikat/spark-codes', { workspace_
 export const pullPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'pull' })
 // Kirim status kotak masuk ke Pikat (Spark Center). Dihitung server dari database.
 export const reportPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'report' })
+// Panen kode ad account + permintaan kode (F3/F4) — panggilan terpisah dari tarikan.
+export const harvestPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'harvest' })
 
 // Kinerja iklan 7 snapshot terakhir untuk video di kotak masuk — video affiliate
 // sering SUDAH dipakai GMV Max lewat izin afiliasi sebelum kodenya diikat.
@@ -41,22 +43,27 @@ export async function loadAdsStats(videoIds) {
   const out = new Map()
   if (!ids.length) return out
   const { data: imps, error: e1 } = await supabase.from('gmvmax_imports')
-    .select('id').eq('workspace_id', wsId).eq('is_current', true)
+    .select('id, snapshot_date').eq('workspace_id', wsId).eq('is_current', true)
     .order('snapshot_date', { ascending: false, nullsFirst: false }).limit(7)
   if (e1) throw e1
   if (!imps?.length) return out
+  // Urutan snapshot (0 = terbaru) — status tayang diambil dari snapshot paling baru.
+  const urutan = new Map(imps.map((x, i) => [x.id, i]))
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await supabase.from('gmvmax_creatives')
-      .select('video_id, cost, gross_revenue, auth_type')
+      .select('import_id, video_id, cost, gross_revenue, sku_orders, status, auth_type')
       .in('import_id', imps.map(x => x.id)).in('video_id', ids.slice(i, i + 100))
       .eq('creative_type', 'Video').limit(5000)
     if (error) throw error
     for (const c of data || []) {
       const k = String(c.video_id)
-      const o = out.get(k) || { cost: 0, revenue: 0, authTypes: new Set() }
+      const o = out.get(k) || { cost: 0, revenue: 0, orders: 0, authTypes: new Set(), status: null, statusRank: Infinity }
       o.cost += Number(c.cost) || 0
       o.revenue += Number(c.gross_revenue) || 0
+      o.orders += Number(c.sku_orders) || 0
       if (c.auth_type) o.authTypes.add(c.auth_type)
+      const rank = urutan.get(c.import_id) ?? Infinity
+      if (c.status && rank < o.statusRank) { o.status = c.status; o.statusRank = rank }
       out.set(k, o)
     }
   }

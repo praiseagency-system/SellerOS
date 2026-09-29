@@ -119,7 +119,12 @@ export function planInbox(workspaceId, items, existing, nowIso) {
         approval_id: null, decided_by: null, decided_at: null,
       })
     } else {
-      meta.push(m)
+      // spark_code WAJIB ikut walau tak berubah: upsert = INSERT … ON CONFLICT, dan
+      // Postgres memeriksa NOT NULL pada baris calon SEBELUM konflik — tanpa kolom
+      // ini seluruh kiriman ditolak dan tarikan berhenti di tengah (terjadi 28 Sep:
+      // metrik tak pernah terisi, panen & laporan status tak pernah jalan).
+      // status sengaja TIDAK ikut, jadi keputusan tim Ads tak tersentuh.
+      meta.push({ ...m, spark_code: code })
     }
   }
   return { full, meta, baru, berubah }
@@ -179,18 +184,14 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
   )
 
   const ids = [...new Set(feed.items.map(it => String(it.videoId || '')).filter(v => /^\d{8,25}$/.test(v)))]
-  const existing = []
-  for (const part of chunk(ids, 100)) {
-    const rows = await service(
-      `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
-      `&video_id=in.(${part.join(',')})&select=video_id,spark_code,status`
-    )
-    if (Array.isArray(rows)) existing.push(...rows)
-  }
+  // Paralel: 1000 kode = 10 potongan; berurutan memakan sebagian besar batas waktu fungsi.
+  const existing = (await Promise.all(chunk(ids, 100).map(part => service(
+    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
+    `&video_id=in.(${part.join(',')})&select=video_id,spark_code,status`
+  )))).flatMap(rows => (Array.isArray(rows) ? rows : []))
 
   const plan = planInbox(workspaceId, feed.items, existing, nowIso)
-  for (const part of chunk(plan.full, 200)) await upsert(part)
-  for (const part of chunk(plan.meta, 200)) await upsert(part)
+  await Promise.all([...chunk(plan.full, 200), ...chunk(plan.meta, 200)].map(upsert))
 
   await service(`pikat_links?workspace_id=eq.${encodeURIComponent(workspaceId)}`, {
     method: 'PATCH', headers: { Prefer: 'return=minimal' },
@@ -204,10 +205,9 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
   // harian). Gagal lapor tak menggagalkan tarikan.
   let dilaporkan
   try { dilaporkan = (await reportToPikat(workspaceId, fetchImpl)).reported } catch { dilaporkan = null }
-  // F3/F4 ikut tiap tarikan; gagal tak menggagalkan tarikan.
-  let panen
-  try { panen = await harvestAndRequest(workspaceId, fetchImpl) } catch { panen = null }
-  return { ditarik: feed.items.length, baru: plan.baru, berubah: plan.berubah, dilaporkan, panen, pikat: feed.workspace || null }
+  // F3/F4 (panen & permintaan) sengaja TIDAK di sini: browser memanggil action
+  // 'harvest' terpisah sesudah tarikan, supaya satu fungsi tak melewati batas waktu.
+  return { ditarik: feed.items.length, baru: plan.baru, berubah: plan.berubah, dilaporkan, pikat: feed.workspace || null }
 }
 
 // ── Status balik ke Pikat ────────────────────────────────────────────────────
@@ -245,13 +245,11 @@ export async function reportToPikat(workspaceId, fetchImpl = fetch) {
   const authOf = new Map()
   if (last?.[0]?.snapshot_date) {
     const ids = rows.map(r => r.video_id)
-    for (const part of chunk(ids, 100)) {
-      const a = await service(
-        `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&snapshot_date=eq.${last[0].snapshot_date}` +
-        `&item_id=in.(${part.join(',')})&select=item_id,ad_auth_status,auth_end_time`
-      )
-      for (const x of a || []) authOf.set(String(x.item_id), x)
-    }
+    const parts = await Promise.all(chunk(ids, 100).map(part => service(
+      `gmvmax_spark_auth?workspace_id=eq.${encodeURIComponent(workspaceId)}&snapshot_date=eq.${last[0].snapshot_date}` +
+      `&item_id=in.(${part.join(',')})&select=item_id,ad_auth_status,auth_end_time`
+    )))
+    for (const x of parts.flat()) if (x) authOf.set(String(x.item_id), x)
   }
   const items = rows.map(r => statusForPikat(r, authOf.get(String(r.video_id))))
   const r = await fetchImpl(`${pikatBaseUrl()}/api/v1/selleros/spark-status`, {

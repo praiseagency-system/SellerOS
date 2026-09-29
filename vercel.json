@@ -9,6 +9,9 @@
   "functions": {
     "api/assistant/*.js": {
       "maxDuration": 60
+    },
+    "api/pikat/*.js": {
+      "maxDuration": 60
     }
   }
 }
