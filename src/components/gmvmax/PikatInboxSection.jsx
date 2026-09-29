@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, RefreshCw, Link2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import {
-  getPikatLink, pullPikat, reportPikat, listInbox, loadBoundVideoIds, loadAdsStats, previewRow, bindRow, dismissRows,
+  getPikatLink, pullPikat, reportPikat, harvestPikat, listInbox, loadBoundVideoIds, loadAdsStats, previewRow, bindRow, dismissRows,
   OPEN_STATUSES,
 } from '../../data/pikatSpark'
 import { tiktokVideoUrl, fmtRpC } from './ui'
@@ -95,10 +95,12 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
     setPulling(true); setError(null); setNote(null)
     try {
       const r = await pullPikat()
+      // Panen kode ad account & permintaan kode: panggilan kedua, gagal tak menggagalkan tarikan.
+      const h = await harvestPikat().catch(() => null)
       const bagian = [
         r.baru || r.berubah ? `${r.baru} kode baru${r.berubah ? ` · ${r.berubah} diperbarui kreator` : ''}` : 'Tak ada kode baru',
-        r.panen?.panen?.diisi ? `${r.panen.panen.diisi} video di Pikat diisi kode dari ad account` : null,
-        r.panen?.diminta ? `${r.panen.diminta} video afiliasi berbelanja tanpa kode diminta ke kreator` : null,
+        h?.panen?.diisi ? `${h.panen.diisi} video di Pikat diisi kode dari ad account` : null,
+        h?.diminta ? `${h.diminta} video afiliasi berbelanja tanpa kode diminta ke kreator` : null,
       ].filter(Boolean)
       setNote(`${bagian.join(' · ')}.`)
       setLink(await getPikatLink())

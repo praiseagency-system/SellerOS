@@ -32,6 +32,8 @@ export const disconnectPikat = () => post('/api/pikat/spark-codes', { workspace_
 export const pullPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'pull' })
 // Kirim status kotak masuk ke Pikat (Spark Center). Dihitung server dari database.
 export const reportPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'report' })
+// Panen kode ad account + permintaan kode (F3/F4) — panggilan terpisah dari tarikan.
+export const harvestPikat = () => post('/api/pikat/spark-codes', { workspace_id: wsOrThrow(), action: 'harvest' })
 
 // Kinerja iklan 7 snapshot terakhir untuk video di kotak masuk — video affiliate
 // sering SUDAH dipakai GMV Max lewat izin afiliasi sebelum kodenya diikat.
