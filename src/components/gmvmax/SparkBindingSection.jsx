@@ -9,6 +9,8 @@ import { fetchSparkInfo, fetchSparkList, bindSparkNow, unbindSparkNow } from '..
 import { listImports, loadCreatives } from '../../data/gmvmaxImports'
 import { fmtRpC, tiktokVideoUrl } from './ui'
 import PikatInboxSection from './PikatInboxSection'
+import { loadBindTimes } from '../../data/gmvmaxSparkAuth'
+import { izinInfo, waktuIkat } from '../../utils/sparkBindTime'
 
 // Kartu panel strategi supply (E2).
 const PANEL_TONE = {
@@ -53,12 +55,24 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
   const [snapDate, setSnapDate] = useState(null)
   const [copied, setCopied] = useState(null)
   const [loadedAt, setLoadedAt] = useState(0) // timestamp muat daftar (utk hitung sisa hari otorisasi)
+  const [bindTimes, setBindTimes] = useState(null) // kapan diikat (lihat loadBindTimes)
+  const [urut, setUrut] = useState('baru')         // baru = terbaru diikat · habis = segera habis
 
   const loadList = useCallback(async () => {
     setLoadingList(true); setListErr(null)
     try {
-      const [spark, imports] = await Promise.all([fetchSparkList({ page: 1 }), listImports()])
-      setList(spark); setLoadedAt(Date.now())
+      const [first, imports, times] = await Promise.all([
+        fetchSparkList({ page: 1 }), listImports(), loadBindTimes().catch(() => null),
+      ])
+      // Semua halaman (dulu hanya halaman 1 = 50 dari 125). Maks 20 halaman.
+      const semua = [...(first?.list || [])]
+      const totalPage = Math.min(first?.page_info?.total_page || 1, 20)
+      for (let p = 2; p <= totalPage; p++) {
+        const next = await fetchSparkList({ page: p })
+        semua.push(...(next?.list || []))
+      }
+      setList({ ...first, list: semua }); setLoadedAt(Date.now())
+      if (times) setBindTimes(times)
       const latest = imports?.[0]
       if (latest) {
         setSnapDate(latest.snapshot_date || null)
@@ -125,7 +139,15 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
     finally { setUnbinding(null) }
   }
 
-  const rows = list?.list || []
+  const idOf = (it) => String(it.item_info?.item_id ?? it.item_id ?? '')
+  const rows = [...(list?.list || [])].sort((a, b) => {
+    if (urut === 'habis') {
+      const ha = izinInfo(a.auth_info, loadedAt).habisMs ?? Infinity
+      const hb = izinInfo(b.auth_info, loadedAt).habisMs ?? Infinity
+      return ha - hb
+    }
+    return waktuIkat(idOf(b), bindTimes).ms - waktuIkat(idOf(a), bindTimes).ms
+  })
   const pg = usePaged(rows)
 
   // ── Panel strategi supply (E2) — dihitung dari data yang sudah dimuat ──────
@@ -266,10 +288,20 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
             <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
               Video ter-otorisasi ke ad account {list?.page_info?.total_number != null && `· ${list.page_info.total_number}`}
             </p>
+            <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+              Urutkan
+              <select value={urut} onChange={e => setUrut(e.target.value)}
+                className="bg-surface2 border border-line/15 rounded-lg px-2 py-1 text-[11px] text-ink">
+                <option value="baru">Terbaru diikat</option>
+                <option value="habis">Segera habis</option>
+              </select>
+            </label>
             <button onClick={loadList} disabled={loadingList}
               className="flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40">
               {loadingList ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Muat ulang
             </button>
+            </div>
           </div>
           {listErr && <p className="text-[11px] text-red-300">{listErr}</p>}
           {!listErr && rows.length === 0 && !loadingList && (
@@ -285,7 +317,7 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
                   <th className="py-1.5 pr-3 font-semibold">Dipakai campaign</th>
                   <th className="py-1.5 pr-3 font-semibold">Kode</th>
                   <th className="py-1.5 pr-3 font-semibold">Status</th>
-                  <th className="py-1.5 pr-3 font-semibold">Berlaku s/d</th>
+                  <th className="py-1.5 pr-3 font-semibold" title="Izin kreator (mulai → habis) dan kapan video diikat ke ad account">Izin &amp; diikat</th>
                   <th className="py-1.5 font-semibold"></th>
                 </tr></thead>
                 <tbody>
@@ -334,7 +366,23 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
                           ) : '—'}
                         </td>
                         <td className="py-1.5 pr-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${tone}`}>{authStatus}</span></td>
-                        <td className="py-1.5 pr-3 font-mono text-ink-muted whitespace-nowrap">{it.auth_info?.auth_end_time?.slice(0, 10) || '—'}</td>
+                        <td className="py-1.5 pr-3 whitespace-nowrap">
+                          {(() => {
+                            const iz = izinInfo(it.auth_info, loadedAt)
+                            const ik = waktuIkat(id, bindTimes)
+                            const tone = iz.sisaHari == null ? 'text-ink-faint' : iz.sisaHari <= 0 ? 'text-red-400' : iz.sisaHari <= 7 ? 'text-amber-400' : 'text-ink-faint'
+                            return (
+                              <>
+                                <p className="font-mono text-ink-muted">{iz.mulai || '—'} → {iz.habis || '—'}</p>
+                                <p className="text-[10.5px]">
+                                  <span className={tone}>{iz.sisaHari == null ? '' : iz.sisaHari <= 0 ? 'sudah habis' : `sisa ${iz.sisaHari} hr`}</span>
+                                  {iz.durasiHari != null && <span className="text-ink-faint"> · izin {iz.durasiHari} hr</span>}
+                                </p>
+                                <p className={`text-[10.5px] ${ik.persis ? 'text-blue-300' : 'text-ink-faint'}`}>{ik.label}</p>
+                              </>
+                            )
+                          })()}
+                        </td>
                         <td className="py-1.5 whitespace-nowrap">
                           {authStatus === 'AUTHORIZED' && (
                             confirmUnbind === id ? (
