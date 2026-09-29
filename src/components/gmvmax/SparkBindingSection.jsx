@@ -67,10 +67,16 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
       // Semua halaman (dulu hanya halaman 1 = 50 dari 125). Maks 20 halaman.
       const semua = [...(first?.list || [])]
       const totalPage = Math.min(first?.page_info?.total_page || 1, 20)
+      // Halaman berikutnya gagal (batas laju / jaringan) tak boleh menghapus halaman
+      // yang sudah didapat — daftar tetap tampil, galatnya disebut.
+      let gagalHalaman = null
       for (let p = 2; p <= totalPage; p++) {
-        const next = await fetchSparkList({ page: p })
-        semua.push(...(next?.list || []))
+        try {
+          const next = await fetchSparkList({ page: p })
+          semua.push(...(next?.list || []))
+        } catch (e) { gagalHalaman = `Halaman ${p}/${totalPage} gagal dimuat: ${e.message}`; break }
       }
+      if (gagalHalaman) setListErr(gagalHalaman)
       setList({ ...first, list: semua }); setLoadedAt(Date.now())
       if (times) setBindTimes(times)
       const latest = imports?.[0]
@@ -235,7 +241,7 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
       <div role="tablist" aria-label="Boost Center" className="flex items-center gap-1 border-b border-line/10 mb-3 overflow-x-auto">
         {[
           { id: 'kode', label: 'Kode dari Pikat' },
-          { id: 'otorisasi', label: 'Video ter-otorisasi', count: list?.page_info?.total_number ?? rows.length },
+          { id: 'otorisasi', label: 'Video ter-otorisasi', count: list ? (list.page_info?.total_number ?? rows.length) : (loadingList ? '…' : '!') },
           ...extraTabs,
         ].map(t => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => onTab(t.id)}
