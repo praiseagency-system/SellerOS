@@ -151,6 +151,19 @@ async function upsert(rows) {
   }
 }
 
+// Tulis kode dari feed Pikat ke kotak masuk (baru/berubah → NEW; sama → metadata).
+export async function mergeIntoInbox(workspaceId, items, nowIso) {
+  const ids = [...new Set(items.map(it => String(it.videoId || '')).filter(v => /^\d{8,25}$/.test(v)))]
+  // Paralel: 1000 kode = 10 potongan; berurutan memakan sebagian besar batas waktu fungsi.
+  const existing = (await Promise.all(chunk(ids, 100).map(part => service(
+    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
+    `&video_id=in.(${part.join(',')})&select=video_id,spark_code,status`
+  )))).flatMap(rows => (Array.isArray(rows) ? rows : []))
+  const plan = planInbox(workspaceId, items, existing, nowIso)
+  await Promise.all([...chunk(plan.full, 200), ...chunk(plan.meta, 200)].map(upsert))
+  return plan
+}
+
 export async function readLinkToken(workspaceId) {
   const rows = await service(
     `pikat_links?workspace_id=eq.${encodeURIComponent(workspaceId)}&select=token&limit=1`
@@ -183,15 +196,7 @@ export async function pullIntoInbox(workspaceId, fetchImpl = fetch) {
       body: JSON.stringify({ status: 'NEW', preview: null, updated_at: nowIso }) }
   )
 
-  const ids = [...new Set(feed.items.map(it => String(it.videoId || '')).filter(v => /^\d{8,25}$/.test(v)))]
-  // Paralel: 1000 kode = 10 potongan; berurutan memakan sebagian besar batas waktu fungsi.
-  const existing = (await Promise.all(chunk(ids, 100).map(part => service(
-    `pikat_spark_inbox?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
-    `&video_id=in.(${part.join(',')})&select=video_id,spark_code,status`
-  )))).flatMap(rows => (Array.isArray(rows) ? rows : []))
-
-  const plan = planInbox(workspaceId, feed.items, existing, nowIso)
-  await Promise.all([...chunk(plan.full, 200), ...chunk(plan.meta, 200)].map(upsert))
+  const plan = await mergeIntoInbox(workspaceId, feed.items, nowIso)
 
   await service(`pikat_links?workspace_id=eq.${encodeURIComponent(workspaceId)}`, {
     method: 'PATCH', headers: { Prefer: 'return=minimal' },
@@ -285,18 +290,21 @@ async function latestSparkAuth(workspaceId) {
   ) || []
 }
 
+export const REQUEST_MIN_SPEND = 5000
+
 // Video afiliasi yang dibelanjai GMV Max (7 snapshot terakhir) tapi tak berkode aktif.
 export function planRequests(creatives, authorizedIds) {
   const per = new Map()
   for (const c of creatives) {
     const id = String(c.video_id || '')
-    if (!/^\d{8,25}$/.test(id) || authorizedIds.has(id) || !(Number(c.cost) > 0)) continue
+    if (!/^\d{8,25}$/.test(id) || authorizedIds.has(id)) continue
     const o = per.get(id) || { cost: 0, revenue: 0 }
     o.cost += Number(c.cost) || 0
     o.revenue += Number(c.gross_revenue) || 0
     per.set(id, o)
   }
-  return [...per].map(([videoId, o]) => ({
+  // Belanja receh tanpa omzet (Rp 2, Rp 4) bukan sinyal — jangan jadi tagihan ke kreator.
+  return [...per].filter(([, o]) => o.revenue > 0 || o.cost >= REQUEST_MIN_SPEND).map(([videoId, o]) => ({
     videoId,
     detail: `Iklan 7 hr lewat izin afiliasi: biaya ${rpRingkas(o.cost)} · omzet ${rpRingkas(o.revenue)}`,
   }))
@@ -343,7 +351,14 @@ export async function harvestAndRequest(workspaceId, fetchImpl = fetch) {
   }
   const minta = planRequests(creatives, new Set(aktif.map(a => String(a.item_id))))
   const hasilMinta = await postPikat(token, '/api/v1/selleros/spark-requests', { items: minta }, fetchImpl)
-  return { panen: hasilPanen, diminta: hasilMinta?.diminta ?? null }
+  // Video yang diminta tapi ternyata SUDAH berkode di Pikat → langsung masuk kotak
+  // (biasanya lebih tua dari jangkauan tarikan) supaya tim Ads bisa mengajukannya.
+  let sudahBerkode = 0
+  if (Array.isArray(hasilMinta?.berKode) && hasilMinta.berKode.length) {
+    const plan = await mergeIntoInbox(workspaceId, hasilMinta.berKode, new Date().toISOString())
+    sudahBerkode = plan.baru + plan.berubah
+  }
+  return { panen: hasilPanen, diminta: hasilMinta?.diminta ?? null, sudahBerkode }
 }
 
 export async function connectLink(workspaceId, userId, token, fetchImpl = fetch) {

@@ -116,6 +116,13 @@ describe('planRequests (F4)', () => {
     ], new Set(['7550000000000000003']))
     expect(r).toEqual([{ videoId: '7550000000000000001', detail: 'Iklan 7 hr lewat izin afiliasi: biaya Rp 150 rb · omzet Rp 1,0 jt' }])
   })
+  it('belanja receh tanpa omzet bukan permintaan; omzet dari belanja kecil tetap', () => {
+    const r = planRequests([
+      { video_id: '7550000000000000004', cost: 2, gross_revenue: 0 },
+      { video_id: '7550000000000000005', cost: 6, gross_revenue: 76000 },
+    ], new Set())
+    expect(r.map(x => x.videoId)).toEqual(['7550000000000000005'])
+  })
 })
 
 import { sanitizeAuthCode } from '../gmvmax/tt-video.js'
