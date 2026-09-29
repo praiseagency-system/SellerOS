@@ -328,6 +328,18 @@ export async function harvestAndRequest(workspaceId, fetchImpl = fetch) {
   const minta = planRequests(pipeline, aktifIds)
   const hasilMinta = await postPikat(token, '/api/v1/selleros/spark-requests', { items: minta }, fetchImpl)
 
+  // Nasib tiap video di Pikat → kolom pikat_status pipeline (0067). Kolom belum ada =
+  // dilewati diam-diam; label di Pipeline boost baru muncul setelah migrasi.
+  const perVideo = Array.isArray(hasilMinta?.perVideo) ? hasilMinta.perVideo : []
+  if (perVideo.length) {
+    const cekIso = new Date().toISOString()
+    await Promise.all(perVideo.map(v => service(
+      `gmvmax_boost?workspace_id=eq.${ws}&video_id=eq.${encodeURIComponent(v.videoId)}`,
+      { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ pikat_status: v.hasil, pikat_kreator: v.kreator || null, pikat_checked_at: cekIso }) }
+    ).catch(() => {})))
+  }
+
   // Video diminta yang ternyata SUDAH berkode di Pikat → masuk kotak (tim Ads mengajukan ke
   // lonceng) dan pipeline maju ke "Kode tersedia" dengan kodenya.
   let sudahBerkode = 0
