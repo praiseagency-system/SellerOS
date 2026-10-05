@@ -6,6 +6,7 @@
 // Jawaban dijaga ringkas (limit, top-N, agregasi) karena tiap byte hasil tool
 // dikirim balik ke model sebagai token.
 import { restGet, restGetAll } from './rest.js'
+import { checkpointsFormat, windowOf } from '../../../src/gmvmax/skills/experimentWindows.mjs'
 import {
   summarizeQuadrant, pickProducts, compactRow, summarizeStore, summarizeGmvMax, monthKeyWib,
 } from './aggregate.js'
@@ -197,13 +198,28 @@ async function gmvmaxExperiments(ctx, input) {
   let q = `gmvmax_experiments?workspace_id=eq.${ctx.workspaceId}&select=experiment_type,creative_video_id,product_id,campaign_id,treatment,start_at,status,conclusion,confidence,notes,checkpoints,contaminated&order=start_at.desc&limit=${clampInt(input.limit, 1, 30, 15)}`
   if (input.status) q += `&status=eq.${enc(String(input.status).toUpperCase())}`
   const rows = await restGet(ctx.token, q)
-  return (rows || []).map(e => ({
-    tipe: e.experiment_type, video_id: e.creative_video_id, produk_id: e.product_id, campaign_id: e.campaign_id,
-    perlakuan: e.treatment ? String(e.treatment).slice(0, 160) : null, mulai: e.start_at, status: e.status,
-    kesimpulan: e.conclusion, keyakinan: e.confidence, terkontaminasi: !!e.contaminated,
-    checkpoint_terakhir: Array.isArray(e.checkpoints) && e.checkpoints.length ? e.checkpoints[e.checkpoints.length - 1] : null,
-    catatan: e.notes ? String(e.notes).slice(0, 160) : null,
-  }))
+  // Aturan v2: vonis dari DUA jendela kumulatif. Yang dikirim ke model ringkasan
+  // jendelanya saja — tanpa deret harian (boros token) dan dengan penanda
+  // `lengkap`, supaya ROI jendela yang baru berisi 2 hari tak dibaca sebagai
+  // "ROI 7 hari". Baris berformat lama tetap mengirim titik ukur terakhirnya.
+  const jendela = (w) => (w ? {
+    rentang: w.label, dari: w.from, sampai: w.to, lengkap: !!w.complete,
+    hari_berdata: w.counted, hari: w.days, belanja: w.spend, omzet: w.revenue, pesanan: w.orders,
+    roi_gabungan: w.spend > 0 ? Math.round((w.revenue / w.spend) * 100) / 100 : null,
+  } : null)
+  return (rows || []).map(e => {
+    const v2 = checkpointsFormat(e.checkpoints) === 'v2'
+    const w7 = v2 ? windowOf(e.checkpoints, 'w7') : null
+    return {
+      tipe: e.experiment_type, video_id: e.creative_video_id, produk_id: e.product_id, campaign_id: e.campaign_id,
+      perlakuan: e.treatment ? String(e.treatment).slice(0, 160) : null, mulai: e.start_at, status: e.status,
+      kesimpulan: e.conclusion, keyakinan: e.confidence, terkontaminasi: !!e.contaminated,
+      ...(v2
+        ? { aturan: 'jendela_kumulatif', jendela_3_hari: jendela(windowOf(e.checkpoints, 'w3')), jendela_7_hari: jendela(w7), ambang_saat_dihitung: w7?.cfg ?? null, boost_lain_mulai_hari_ke: w7?.overlap_day ?? null }
+        : { aturan: 'titik_ukur_satu_hari', checkpoint_terakhir: Array.isArray(e.checkpoints) && e.checkpoints.length ? e.checkpoints[e.checkpoints.length - 1] : null }),
+      catatan: e.notes ? String(e.notes).slice(0, 160) : null,
+    }
+  })
 }
 
 async function boostSessions(ctx, input) {
@@ -238,7 +254,7 @@ export const ASSISTANT_TOOLS = [
   { name: 'get_gmvmax_summary', description: 'Ringkasan iklan GMV Max TikTok N hari terakhir per hari: belanja, GMV, pesanan, ROAS/ROI, tayangan, klik, CTR, CVR, jumlah campaign aktif, budget & pemakaiannya, plus perbandingan vs rata-rata 7 hari.', input_schema: { type: 'object', properties: { days: { type: 'integer', description: '1-30, default 7' } } } },
   { name: 'get_gmvmax_top_creatives', description: 'Video/kreatif GMV Max teratas dari snapshot terbaru, diurutkan menurut metrik pilihan.', input_schema: { type: 'object', properties: { metric: { type: 'string', enum: ['gross_revenue', 'cost', 'roas', 'sku_orders', 'impressions'] }, status: { type: 'string', description: 'mis. DELIVERING, LEARNING, NOT_DELIVERING' }, limit: { type: 'integer' } } } },
   { name: 'get_gmvmax_decision', description: 'Vonis harian "Aksi Hari Ini" GMV Max terbaru: aksi utama yang direkomendasikan sistem, tingkat & keyakinan, per skill.', input_schema: { type: 'object', properties: {} } },
-  { name: 'get_gmvmax_experiments', description: 'Eksperimen GMV Max (uji kreatif, boost manual, dll): status RUNNING/CONCLUDED/STOPPED, kesimpulan, checkpoint terakhir.', input_schema: { type: 'object', properties: { status: { type: 'string', enum: ['RUNNING', 'CONCLUDED', 'STOPPED'] }, limit: { type: 'integer' } } } },
+  { name: 'get_gmvmax_experiments', description: 'Eksperimen GMV Max (uji kreatif, boost manual, dll): status RUNNING/CONCLUDED/STOPPED, kesimpulan, dan dasar vonisnya — total jendela 3 hari & 7 hari pertama (ROI gabungan, belanja, omzet; "lengkap" = semua harinya sudah masuk). Eksperimen yang belum dihitung ulang masih memakai titik ukur satu hari.', input_schema: { type: 'object', properties: { status: { type: 'string', enum: ['RUNNING', 'CONCLUDED', 'STOPPED'] }, limit: { type: 'integer' } } } },
   { name: 'get_boost_sessions', description: 'Sesi boost (Max Delivery / Creative Boost) yang tertangkap dari TikTok N hari terakhir: budget, jadwal, video/produk, status.', input_schema: { type: 'object', properties: { days: { type: 'integer', description: '1-60, default 14' } } } },
 ]
 

@@ -17,6 +17,8 @@
 //   WINDOW_PASSED : umur eksperimen melewati jendela 7 hari. Ini kepastian
 //                   aritmetika, bukan dugaan.
 
+import { checkpointsFormat, windowOf } from '../gmvmax/skills/experimentWindows.mjs'
+
 export const WINDOW_DAYS = 7
 const DAY = 86400000
 
@@ -39,7 +41,12 @@ export function experimentAlerts({ exp, session = null, latestSeen = null, now =
   const startMs = Date.parse(exp.start_at)
   if (Number.isFinite(startMs)) {
     const days = Math.floor((now - startMs) / DAY)
-    if (days >= WINDOW_DAYS) out.push({ kind: 'WINDOW_PASSED', days })
+    // Baris berformat jendela (aturan v2): "lewat" baru benar bila data hari
+    // ke-7 SUDAH masuk. Umur 7×24 jam selalu tercapai 6–23 jam sebelum data itu
+    // tiba; menutup di celah itu berarti menutup sebelum vonis akhirnya ada.
+    const v2 = checkpointsFormat(exp.checkpoints) === 'v2'
+    const settled = !v2 || windowOf(exp.checkpoints, 'w7')?.complete === true
+    if (days >= WINDOW_DAYS && settled) out.push({ kind: 'WINDOW_PASSED', days })
   }
 
   return out

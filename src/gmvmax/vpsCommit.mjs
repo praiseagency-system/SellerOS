@@ -190,13 +190,13 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       } catch (e) { safeLog({ event: 'EXP_CONTAMINATION_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
     }
 
-    // 6) Evaluasi eksperimen (#3b-server, NON-FATAL, flag). Hitung checkpoint
-    //    H+1/H+3/H+7 eksperimen RUNNING dari time-series kanonik. Default OFF
+    // 6) Evaluasi eksperimen (#3b-server, NON-FATAL, flag). Hitung jendela
+    //    hari ke-1–3 / ke-1–7 eksperimen dari time-series kanonik. Default OFF
     //    sampai GMVMAX_EVAL_EXPERIMENTS=1. Tak menyentuh kanonik.
     if (!dryRun && process.env.GMVMAX_EVAL_EXPERIMENTS === '1') {
       try {
         const r = await evaluateExperiments({ sb, workspaceId })
-        safeLog({ event: 'EXP_EVAL_OK', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, absent: r.absent === true })
+        safeLog({ event: 'EXP_EVAL_OK', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, failed: r.failed?.length || 0, rule_version: r.rule_version, absent: r.absent === true })
       } catch (e) {
         safeLog({ event: 'EXP_EVAL_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
       }
