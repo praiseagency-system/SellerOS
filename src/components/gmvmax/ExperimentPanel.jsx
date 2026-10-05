@@ -2,28 +2,44 @@
 // + stop/simpulkan manual; checkpoint H+1/H+3/H+7 & kesimpulan OTOMATIS diisi
 // server (pipeline) dari time-series kanonik. Read-only ke TikTok — pencatatan.
 import { useEffect, useState, useCallback } from 'react'
-import { EmptyState } from './ui'
 import {
-  listExperiments, createExperiment, closeExperiment, deleteExperiment,
+  LayoutGrid, TriangleAlert, Rocket, Sparkles, Zap, Ban, Clapperboard, Users, Package, Radio, FlaskConical,
+} from 'lucide-react'
+import { EmptyState, fmtRoasX } from './ui'
+import {
+  listExperiments, createExperiment, closeExperiment,
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
 import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
 import { getThresholds, saveExperimentRoiFloor } from '../../data/gmvmaxSettings'
+import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
 import { experimentAlerts, indexSessions, latestSeenOf } from '../../utils/gmvmaxExperimentAlerts'
+import {
+  ALL, CLOSE, buildTiles, applyFilter, resolveFilter, verdictBucket,
+} from '../../utils/gmvmaxExperimentGroups'
 import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
-const STATUS = {
-  RUNNING: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
-  CONCLUDED: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
-  STOPPED: 'text-ink-muted border-line/30 bg-fill/5',
+const BLUE = 'bg-blue-500/10 text-blue-400'
+const VIOLET = 'bg-violet-500/10 text-violet-400'
+const PLAIN = 'bg-fill/5 text-ink-muted'
+// Ikon + warna per jenis — pembeda sekilas di baris; jenis tak dikenal jatuh ke labu.
+const TYPE_ICON = {
+  MANUAL_BOOST: [Rocket, BLUE], ACCELERATE_TESTING: [Zap, BLUE],
+  NEW_CREATIVE_TEST: [Sparkles, VIOLET], CONTENT_ANGLE_TEST: [Clapperboard, VIOLET],
+  PRODUCT_CREATIVE_TEST: [Package, VIOLET], LIVE_CREATIVE_TEST: [Radio, VIOLET],
+  AFFILIATE_TEST: [Users, PLAIN], CREATIVE_EXCLUSION: [Ban, PLAIN],
 }
-const CONC = {
-  SUSTAINABLE_WINNER: 'text-emerald-400', WINNER_CANDIDATE: 'text-emerald-400',
-  TEMPORARY_SPIKE: 'text-amber-400', WEAK: 'text-red-400',
-  INCONCLUSIVE: 'text-ink-muted', STOPPED: 'text-ink-muted', DATA_INSUFFICIENT: 'text-ink-faint',
+const typeIcon = (t) => TYPE_ICON[t] || [FlaskConical, PLAIN]
+// Satu warna per keranjang vonis — dipakai lencana baris DAN garis sebaran ubin.
+const VERDICT = {
+  win: { badge: 'bg-emerald-500/10 text-emerald-400', bar: 'bg-emerald-500', label: 'Menang' },
+  spike: { badge: 'bg-amber-500/10 text-amber-400', bar: 'bg-amber-400', label: 'Lonjakan sementara' },
+  weak: { badge: 'bg-red-500/10 text-red-400', bar: 'bg-red-500', label: 'Lemah' },
+  none: { badge: 'bg-fill/5 text-ink-muted', bar: 'bg-line/30', label: 'Belum ada vonis' },
 }
+const BUCKETS = ['win', 'spike', 'weak', 'none']
 const iso = (d) => d.toISOString().slice(0, 10)
 const fmtD = (s) => (s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '—')
 
@@ -33,9 +49,11 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   const [showForm, setShowForm] = useState(!!draft)
   const [roiFloor, setRoiFloor] = useState(null)
   const [detail, setDetail] = useState(null) // eksperimen yang dibuka di drawer
+  const [filter, setFilter] = useState(ALL) // ubin ringkasan yang sedang dipilih
   // Potret sesi boost — dipakai HANYA untuk peringatan "boost tak terlihat lagi".
   // Gagal memuat sengaja didiamkan: peringatan itu tambahan, bukan syarat panel.
   const [sessions, setSessions] = useState([])
+  const { productNames } = useGmvMax()
 
   const reload = useCallback(() => {
     setState(s => ({ ...s, loading: true }))
@@ -51,24 +69,33 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   if (state.available === false) return <EmptyState title="Belum aktif" desc="Tabel eksperimen (migrasi 0031) belum di-apply." />
 
   const rows = state.rows || []
-  const running = rows.filter(r => r.status === 'RUNNING')
-  const done = rows.filter(r => r.status !== 'RUNNING')
   const bySession = indexSessions(sessions)
   const latestSeen = latestSeenOf(sessions)
-  const alertsFor = (e) => experimentAlerts({
-    exp: e, session: e.source_session_id ? bySession.get(String(e.source_session_id)) : null, latestSeen,
+  // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
+  const items = rows.map(e => {
+    const oc = liveConclusion(e, roiFloor)
+    return {
+      exp: e, oc, conclusion: oc.conclusion,
+      alerts: experimentAlerts({
+        exp: e, session: e.source_session_id ? bySession.get(String(e.source_session_id)) : null, latestSeen,
+      }),
+    }
   })
-  const perluDitutup = running.filter(e => alertsFor(e).length > 0).length
+  const tiles = buildTiles(items)
+  const active = resolveFilter(tiles, filter)
+  const shown = applyFilter(items, active)
+  const running = shown.filter(it => it.exp.status === 'RUNNING')
+  const done = shown.filter(it => it.exp.status !== 'RUNNING')
+  const nRunning = rows.filter(r => r.status === 'RUNNING').length
+  const row = (it) => (
+    <ExperimentRow key={it.exp.id} it={it} roiFloor={roiFloor} productNames={productNames}
+      onChanged={reload} onOpen={() => setDetail(it.exp)} />
+  )
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm text-ink-muted">
-          {running.length} berjalan · {done.length} selesai
-          {perluDitutup > 0 && (
-            <span className="text-amber-400"> · {perluDitutup} kemungkinan sudah usai</span>
-          )}
-        </p>
+        <p className="text-sm text-ink-muted">{nRunning} berjalan · {rows.length - nRunning} selesai</p>
         <button onClick={() => setShowForm(v => !v)} className="text-sm px-3 py-1.5 rounded-lg bg-accent/15 text-accent font-medium hover:bg-accent/20">
           {showForm ? 'Tutup form' : '+ Eksperimen baru'}
         </button>
@@ -82,22 +109,123 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
         <EmptyState title="Belum ada eksperimen" desc="Catat aksi (mis. boost, uji kreatif) sebagai eksperimen untuk melacak hasilnya vs baseline." />
       )}
 
-      {running.length > 0 && <div className="space-y-2">
+      {rows.length > 0 && <>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+          {tiles.map(t => <Tile key={t.key} tile={t} active={t.key === active} onClick={() => setFilter(t.key)} />)}
+        </div>
+        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-ink-faint">
+          {BUCKETS.map(b => (
+            <span key={b} className="inline-flex items-center gap-1.5">
+              <i className={`w-2 h-2 rounded-sm ${VERDICT[b].bar}`} />{VERDICT[b].label}
+            </span>
+          ))}
+          <span className="ml-auto">{shown.length} dari {rows.length} ditampilkan · klik baris untuk rincian</span>
+        </div>
+      </>}
+
+      {running.length > 0 && <div className="space-y-1.5">
         <h4 className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Berjalan</h4>
-        {running.map(e => (
-          <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} alerts={alertsFor(e)}
-            onChanged={reload} onOpen={() => setDetail(e)} />
-        ))}
+        {running.map(row)}
       </div>}
-      {done.length > 0 && <div className="space-y-2">
+      {done.length > 0 && <div className="space-y-1.5">
         <h4 className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Selesai</h4>
-        {done.map(e => <ExperimentCard key={e.id} e={e} roiFloor={roiFloor} alerts={[]} onChanged={reload} onOpen={() => setDetail(e)} />)}
+        {done.map(row)}
       </div>}
 
       {detail && (
         <ExperimentDetailDrawer exp={detail} roiFloor={roiFloor} onNavigate={onNavigate}
           onClose={() => setDetail(null)} onChanged={reload} />
       )}
+    </div>
+  )
+}
+
+// Ubin ringkasan = saringan. Garis di bawah angka = sebaran vonis kelompok itu.
+function Tile({ tile, active, onClick }) {
+  const warn = tile.key === CLOSE
+  const [Icon] = tile.key === ALL ? [LayoutGrid] : warn ? [TriangleAlert] : typeIcon(tile.type)
+  const label = tile.key === ALL ? 'Semua' : warn ? 'Perlu ditutup' : typeLabel(tile.type)
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active} title={label}
+      className={`text-left rounded-xl border p-3 transition-colors ${active
+        ? 'border-accent/60 bg-accent/[0.07]' : 'border-line/15 bg-surface hover:border-line/30'}`}>
+      <div className={`flex items-center gap-1.5 text-[11px] ${warn ? 'text-amber-400' : 'text-ink-muted'}`}>
+        <Icon size={13} className="shrink-0" /><span className="truncate">{label}</span>
+      </div>
+      <div className="text-2xl font-semibold text-ink-strong leading-tight mt-0.5">{tile.total}</div>
+      <div className="flex h-1 gap-0.5 mt-2 rounded-full overflow-hidden">
+        {BUCKETS.filter(b => tile[b] > 0).map(b => (
+          <i key={b} className={VERDICT[b].bar} style={{ flexGrow: tile[b], flexBasis: 0 }}
+            title={`${VERDICT[b].label}: ${tile[b]}`} />
+        ))}
+      </div>
+    </button>
+  )
+}
+
+// Peringatan diringkas jadi satu frasa di baris. SENGAJA tak mengubah status apa
+// pun: mesin memberi tahu, pemilik yang memutuskan (lihat gmvmaxExperimentAlerts.js).
+function alertText(alerts) {
+  const ended = alerts.find(a => a.kind === 'BOOST_ENDED')
+  const passed = alerts.find(a => a.kind === 'WINDOW_PASSED')
+  return [
+    ended && `boost tak terlihat lagi sejak ${fmtD(ended.lastSeen)}`,
+    passed && `jendela 7 hari lewat (${passed.days} hari)`,
+  ].filter(Boolean).join(' · ')
+}
+
+// Satu eksperimen = satu baris; rincian, Tutup, dan Hapus ada di drawer detail.
+// Tombol Tutup hanya muncul di baris yang berperingatan, supaya bersih-bersih
+// tak perlu membuka drawer satu per satu.
+function ExperimentRow({ it, roiFloor, productNames, onChanged, onOpen }) {
+  const { exp: e, oc, alerts } = it
+  const [busy, setBusy] = useState(false)
+  const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
+  const [Icon, tint] = typeIcon(e.experiment_type)
+  const v = VERDICT[verdictBucket(oc.conclusion)]
+  const warn = alertText(alerts)
+  const pid = e.product_id ? String(e.product_id).trim() : null
+  const sub = [typeLabel(e.experiment_type), pid && (productNames?.[pid] || `produk ${pid}`), `mulai ${fmtD(e.start_at)}`]
+    .filter(Boolean).join(' · ')
+  // Warna checkpoint hanya bila ambang ROI diisi — tanpa ambang tak ada patokan.
+  const cpTone = (roi) => (roi == null || roiFloor == null ? 'bg-fill/5 text-ink-muted'
+    : roi >= roiFloor ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400')
+  async function close(ev) {
+    ev.stopPropagation()
+    setBusy(true)
+    try { await closeExperiment(e); onChanged() } catch (err) { alert('Gagal: ' + err.message); setBusy(false) }
+  }
+  return (
+    <div onClick={onOpen} role="button" tabIndex={0}
+      onKeyDown={(ev) => { if (ev.key === 'Enter') onOpen?.() }}
+      className="rounded-xl border border-line/15 bg-surface px-3 py-2.5 cursor-pointer hover:border-line/30 transition-colors flex items-center gap-x-3 gap-y-2 flex-wrap md:flex-nowrap">
+      <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${tint}`}><Icon size={15} /></span>
+      <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] md:basis-0">
+        <p className="text-sm text-ink-strong truncate">{e.treatment || '—'}</p>
+        <p className="text-[11px] text-ink-faint md:truncate" title={warn ? `${sub} · ${warn}` : sub}>
+          {sub}{warn && <span className="text-amber-400"> · {warn}</span>}
+        </p>
+      </div>
+      {/* Lebar kolom dipatok di layar lebar supaya vonis sejajar antarbaris. */}
+      <div className={`gap-1 shrink-0 md:w-56 md:justify-end ${checkpoints.length ? 'flex' : 'hidden md:flex'}`}>
+        {checkpoints.map((c, i) => (
+          <span key={i} className={`text-[11px] rounded-md px-1.5 py-1 tabular-nums ${cpTone(c.roi)}`}
+            title={c.roi_delta_vs_baseline != null
+              ? `${c.label}: ${c.roi_delta_vs_baseline >= 0 ? '+' : ''}${Number(c.roi_delta_vs_baseline).toFixed(1)} vs baseline` : c.label}>
+            <span className="opacity-60">{c.label}</span> {c.roi != null ? fmtRoasX(Number(c.roi)) : '—'}
+          </span>
+        ))}
+      </div>
+      <span className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-52 truncate text-center ${v.badge}`}>
+        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}{oc.confidence && oc.confidence !== 'DATA_INSUFFICIENT' ? ` (${oc.confidence})` : ''}
+      </span>
+      <span className={`shrink-0 md:w-14 justify-end ${warn ? 'flex' : 'hidden md:flex'}`}>
+        {warn && <button disabled={busy} onClick={close}
+          title="Menutup catatan eksperimen saja — tidak menghentikan iklan di TikTok"
+          className="shrink-0 text-[11px] font-medium text-amber-200 border border-amber-500/40 rounded-lg px-2.5 py-1 hover:bg-amber-500/10 disabled:opacity-50">
+          Tutup
+        </button>}
+      </span>
     </div>
   )
 }
@@ -154,88 +282,6 @@ function ExperimentForm({ draft, onDone, onCancel }) {
         <button disabled={saving} onClick={onCancel} className="text-sm px-3 py-2 rounded-lg text-ink-muted border border-line/20">Batal</button>
       </div>
       <p className="text-[11px] text-ink-faint">Checkpoint H+1/H+3/H+7 & kesimpulan diisi otomatis oleh pipeline harian dari data kanonik. Read-only — tak mengeksekusi apa pun.</p>
-    </div>
-  )
-}
-
-// Peringatan pada kartu. SENGAJA tak mengubah status apa pun: mesin memberi
-// tahu, pemilik yang memutuskan (lihat gmvmaxExperimentAlerts.js).
-function AlertRow({ alerts, conclusion, busy, onClose }) {
-  if (!alerts.length) return null
-  const ended = alerts.find(a => a.kind === 'BOOST_ENDED')
-  const passed = alerts.find(a => a.kind === 'WINDOW_PASSED')
-  return (
-    <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2">
-      <span className="text-amber-400 text-xs leading-5">⚠</span>
-      <div className="flex-1 min-w-0">
-        {ended && (
-          <p className="text-[11.5px] text-amber-200/90 leading-relaxed">
-            Boost-nya <b>tak terlihat lagi</b> pada potret {fmtD(ended.latestSeen)} — terakhir terlihat {fmtD(ended.lastSeen)}.
-            Kemungkinan sudah ditarik di Seller Centre.
-          </p>
-        )}
-        {passed && (
-          <p className="text-[11.5px] text-amber-200/90 leading-relaxed">
-            Jendela 7 hari sudah lewat — eksperimen ini berumur {passed.days} hari
-            {conclusion ? <> dan vonisnya sudah keluar: <b>{CONCLUSION_LABEL[conclusion] || conclusion}</b>.</> : '.'}
-          </p>
-        )}
-        <p className="text-[10.5px] text-ink-faint mt-1">Statusnya tetap kubiarkan RUNNING — kamu yang menutup.</p>
-      </div>
-      <button disabled={busy} onClick={onClose}
-        title="Menutup catatan eksperimen saja — tidak menghentikan iklan di TikTok"
-        className="shrink-0 text-[11px] font-medium text-amber-200 border border-amber-500/40 rounded-lg px-2.5 py-1 hover:bg-amber-500/10 disabled:opacity-50">
-        Tutup
-      </button>
-    </div>
-  )
-}
-
-function ExperimentCard({ e, roiFloor, alerts = [], onChanged, onOpen }) {
-  const [busy, setBusy] = useState(false)
-  const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
-  // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
-  const oc = liveConclusion(e, roiFloor)
-  const showConc = e.status !== 'RUNNING' || oc.conclusion !== 'DATA_INSUFFICIENT'
-  async function act(fn) {
-    setBusy(true)
-    try { await fn(e.id); onChanged() } catch (err) { alert('Gagal: ' + err.message); setBusy(false) }
-  }
-  // Seluruh kartu bisa diklik → drawer detail; tombol aksi menghentikan bubble.
-  return (
-    <div onClick={onOpen} role="button" tabIndex={0}
-      onKeyDown={(ev) => { if (ev.key === 'Enter') onOpen?.() }}
-      className="rounded-xl border border-line/15 bg-surface p-4 cursor-pointer hover:border-line/30 transition-colors">
-      <div className="flex items-center gap-2 flex-wrap mb-1.5">
-        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${STATUS[e.status] || STATUS.STOPPED}`}>{e.status}</span>
-        <span className="text-[11px] text-ink-faint">{typeLabel(e.experiment_type)}</span>
-        {showConc && <span className={`text-[11px] font-medium ${CONC[oc.conclusion] || 'text-ink-muted'}`}>· {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}{oc.confidence ? ` (${oc.confidence})` : ''}</span>}
-        <span className="ml-auto text-[11px] text-ink-faint">mulai {fmtD(e.start_at)}</span>
-      </div>
-      <p className="text-sm text-ink-strong">{e.treatment || '—'}</p>
-      <p className="text-[11px] text-ink-faint mt-0.5">
-        Baseline {fmtD(e.baseline_start)}–{fmtD(e.baseline_end)}{e.stop_condition ? ` · Stop bila: ${e.stop_condition}` : ''}{e.product_id ? ` · produk ${e.product_id}` : ''}
-      </p>
-      {checkpoints.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {checkpoints.map((c, i) => (
-            <span key={i} className="text-[11px] rounded-md border border-line/15 bg-fill/5 px-2 py-1 text-ink-muted">
-              {c.label}: {c.roi != null ? `${Number(c.roi).toFixed(1)}x` : '—'}{c.roi_delta_vs_baseline != null ? ` (${c.roi_delta_vs_baseline >= 0 ? '+' : ''}${Number(c.roi_delta_vs_baseline).toFixed(1)})` : ''}
-            </span>
-          ))}
-        </div>
-      )}
-      <AlertRow alerts={alerts} conclusion={oc.conclusion !== 'DATA_INSUFFICIENT' ? oc.conclusion : null}
-        busy={busy} onClose={(ev) => { ev.stopPropagation(); act(() => closeExperiment(e)) }} />
-
-      {e.status === 'RUNNING' && (
-        <div className="mt-2.5 flex items-center gap-2">
-          <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); act(() => closeExperiment(e)) }}
-            title="Menutup catatan eksperimen saja — tidak menghentikan iklan di TikTok"
-            className="text-xs text-ink-muted border border-line/25 rounded-lg px-2.5 py-1 hover:bg-fill/5 disabled:opacity-50">Tutup</button>
-          <button disabled={busy} onClick={(ev) => { ev.stopPropagation(); if (confirm('Hapus eksperimen ini?')) act(deleteExperiment) }} className="text-xs text-red-400/80 border border-red-500/20 rounded-lg px-2.5 py-1 hover:bg-red-500/5 disabled:opacity-50">Hapus</button>
-        </div>
-      )}
     </div>
   )
 }
