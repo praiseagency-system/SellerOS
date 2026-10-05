@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   LayoutGrid, TriangleAlert, Rocket, Sparkles, Zap, Ban, Clapperboard, Users, Package, Radio, FlaskConical,
 } from 'lucide-react'
-import { EmptyState, fmtRoasX } from './ui'
+import { EmptyState } from './ui'
 import {
   listExperiments, createExperiment, closeExperiment,
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
@@ -18,6 +18,7 @@ import { experimentAlerts, indexSessions, latestSeenOf } from '../../utils/gmvma
 import {
   ALL, CLOSE, buildTiles, applyFilter, resolveFilter, verdictBucket,
 } from '../../utils/gmvmaxExperimentGroups'
+import { fmtRoiID, CONFIDENCE_LABEL } from '../../utils/gmvmaxExperimentFormat'
 import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
@@ -211,13 +212,14 @@ function ExperimentRow({ it, roiFloor, productNames, onChanged, onOpen }) {
         {checkpoints.map((c, i) => (
           <span key={i} className={`text-[11px] rounded-md px-1.5 py-1 tabular-nums ${cpTone(c.roi)}`}
             title={c.roi_delta_vs_baseline != null
-              ? `${c.label}: ${c.roi_delta_vs_baseline >= 0 ? '+' : ''}${Number(c.roi_delta_vs_baseline).toFixed(1)} vs baseline` : c.label}>
-            <span className="opacity-60">{c.label}</span> {c.roi != null ? fmtRoasX(Number(c.roi)) : '—'}
+              ? `${c.label}: ${c.roi_delta_vs_baseline >= 0 ? '+' : ''}${Number(c.roi_delta_vs_baseline).toFixed(1)} vs sebelum boost` : c.label}>
+            <span className="opacity-60">{c.label}</span> {c.roi != null ? fmtRoiID(Number(c.roi)) : '—'}
           </span>
         ))}
       </div>
-      <span className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-52 truncate text-center ${v.badge}`}>
-        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}{oc.confidence && oc.confidence !== 'DATA_INSUFFICIENT' ? ` (${oc.confidence})` : ''}
+      <span title={CONFIDENCE_LABEL[oc.confidence] ? `keyakinan ${CONFIDENCE_LABEL[oc.confidence]}` : undefined}
+        className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-44 truncate text-center ${v.badge}`}>
+        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}
       </span>
       <span className={`shrink-0 md:w-14 justify-end ${warn ? 'flex' : 'hidden md:flex'}`}>
         {warn && <button disabled={busy} onClick={close}
