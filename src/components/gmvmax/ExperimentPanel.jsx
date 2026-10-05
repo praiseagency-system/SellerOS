@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   LayoutGrid, TriangleAlert, Rocket, Sparkles, Zap, Ban, Clapperboard, Users, Package, Radio, FlaskConical,
 } from 'lucide-react'
-import { EmptyState, fmtRoasX } from './ui'
+import { EmptyState } from './ui'
 import {
   listExperiments, createExperiment, closeExperiment,
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
@@ -18,6 +18,8 @@ import { experimentAlerts, indexSessions, latestSeenOf } from '../../utils/gmvma
 import {
   ALL, CLOSE, buildTiles, applyFilter, resolveFilter, verdictBucket,
 } from '../../utils/gmvmaxExperimentGroups'
+import { fmtRoiID, fmtSignedX, CONFIDENCE_LABEL } from '../../utils/gmvmaxExperimentFormat'
+import { addDaysISO, fmtDayID, latestWorkerSnapshot } from '../../utils/gmvmaxExperimentDaily'
 import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
@@ -53,7 +55,7 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   // Potret sesi boost — dipakai HANYA untuk peringatan "boost tak terlihat lagi".
   // Gagal memuat sengaja didiamkan: peringatan itu tambahan, bukan syarat panel.
   const [sessions, setSessions] = useState([])
-  const { productNames } = useGmvMax()
+  const { productNames, imports } = useGmvMax()
 
   const reload = useCallback(() => {
     setState(s => ({ ...s, loading: true }))
@@ -70,7 +72,10 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
 
   const rows = state.rows || []
   const bySession = indexSessions(sessions)
-  const latestSeen = latestSeenOf(sessions)
+  // Saksi yang sama dengan drawer: stempel sesi mana pun ATAU potret harian
+  // worker — tanpa itu, toko yang boost-nya satu per satu tak pernah diperingatkan.
+  const latestSeen = [latestSeenOf(sessions), latestWorkerSnapshot(imports || [])]
+    .filter(Boolean).map(d => String(d).slice(0, 10)).sort().pop() || null
   // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
   const items = rows.map(e => {
     const oc = liveConclusion(e, roiFloor)
@@ -106,7 +111,7 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
       {showForm && <ExperimentForm draft={draft} onDone={() => { setShowForm(false); onDraftUsed?.(); reload() }} onCancel={() => { setShowForm(false); onDraftUsed?.() }} />}
 
       {rows.length === 0 && !showForm && (
-        <EmptyState title="Belum ada eksperimen" desc="Catat aksi (mis. boost, uji kreatif) sebagai eksperimen untuk melacak hasilnya vs baseline." />
+        <EmptyState title="Belum ada eksperimen" desc="Catat aksi (mis. boost, uji kreatif) sebagai eksperimen untuk melacak hasilnya dibanding sebelum mulai." />
       )}
 
       {rows.length > 0 && <>
@@ -169,7 +174,9 @@ function alertText(alerts) {
   const ended = alerts.find(a => a.kind === 'BOOST_ENDED')
   const passed = alerts.find(a => a.kind === 'WINDOW_PASSED')
   return [
-    ended && `boost tak terlihat lagi sejak ${fmtD(ended.lastSeen)}`,
+    // lastSeen = STEMPEL potret (tanggal data kemarin); potretnya diambil pagi
+    // berikutnya, jadi boost terakhir terlihat pada lastSeen + 1.
+    ended && `boost terakhir terlihat ${fmtDayID(addDaysISO(String(ended.lastSeen).slice(0, 10), 1))}`,
     passed && `jendela 7 hari lewat (${passed.days} hari)`,
   ].filter(Boolean).join(' · ')
 }
@@ -211,13 +218,14 @@ function ExperimentRow({ it, roiFloor, productNames, onChanged, onOpen }) {
         {checkpoints.map((c, i) => (
           <span key={i} className={`text-[11px] rounded-md px-1.5 py-1 tabular-nums ${cpTone(c.roi)}`}
             title={c.roi_delta_vs_baseline != null
-              ? `${c.label}: ${c.roi_delta_vs_baseline >= 0 ? '+' : ''}${Number(c.roi_delta_vs_baseline).toFixed(1)} vs baseline` : c.label}>
-            <span className="opacity-60">{c.label}</span> {c.roi != null ? fmtRoasX(Number(c.roi)) : '—'}
+              ? `${c.label}: ${fmtSignedX(Number(c.roi_delta_vs_baseline))} dibanding sebelum mulai` : c.label}>
+            <span className="opacity-60">{c.label}</span> {c.roi != null ? fmtRoiID(Number(c.roi)) : '—'}
           </span>
         ))}
       </div>
-      <span className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-52 truncate text-center ${v.badge}`}>
-        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}{oc.confidence && oc.confidence !== 'DATA_INSUFFICIENT' ? ` (${oc.confidence})` : ''}
+      <span title={CONFIDENCE_LABEL[oc.confidence] ? `keyakinan ${CONFIDENCE_LABEL[oc.confidence]}` : undefined}
+        className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-44 truncate text-center ${v.badge}`}>
+        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}
       </span>
       <span className={`shrink-0 md:w-14 justify-end ${warn ? 'flex' : 'hidden md:flex'}`}>
         {warn && <button disabled={busy} onClick={close}
@@ -249,7 +257,7 @@ function ExperimentForm({ draft, onDone, onCancel }) {
   const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.value }))
 
   async function save() {
-    if (!f.treatment.trim()) { setErr('Isi "treatment" (apa yang diubah).'); return }
+    if (!f.treatment.trim()) { setErr('Isi "Perlakuan" (apa yang diubah).'); return }
     setSaving(true); setErr(null)
     try {
       await createExperiment({ ...f, start_at: new Date(f.start_at).toISOString() })
@@ -266,14 +274,14 @@ function ExperimentForm({ draft, onDone, onCancel }) {
           <select value={f.experiment_type} onChange={set('experiment_type')} className={inp}>
             {EXPERIMENT_TYPES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select></div>
-        <div><label className={lbl}>Treatment (satu variabel yang diubah)</label>
+        <div><label className={lbl}>Perlakuan (satu hal yang diubah)</label>
           <input value={f.treatment} onChange={set('treatment')} placeholder="mis. naikkan budget 20% / boost video X" className={inp} /></div>
         <div><label className={lbl}>Product ID (opsional)</label><input value={f.product_id} onChange={set('product_id')} className={inp} /></div>
         <div><label className={lbl}>Video ID / Campaign ID (opsional)</label><input value={f.creative_video_id} onChange={set('creative_video_id')} className={inp} /></div>
-        <div><label className={lbl}>Baseline mulai</label><input type="date" value={f.baseline_start} onChange={set('baseline_start')} className={inp} /></div>
-        <div><label className={lbl}>Baseline selesai</label><input type="date" value={f.baseline_end} onChange={set('baseline_end')} className={inp} /></div>
+        <div><label className={lbl}>Sebelum mulai — dari</label><input type="date" value={f.baseline_start} onChange={set('baseline_start')} className={inp} /></div>
+        <div><label className={lbl}>Sebelum mulai — sampai</label><input type="date" value={f.baseline_end} onChange={set('baseline_end')} className={inp} /></div>
         <div><label className={lbl}>Mulai eksperimen</label><input type="date" value={f.start_at} onChange={set('start_at')} className={inp} /></div>
-        <div><label className={lbl}>Stop bila (kondisi henti)</label><input value={f.stop_condition} onChange={set('stop_condition')} placeholder="mis. ROI < 3x 2 hari berturut" className={inp} /></div>
+        <div><label className={lbl}>Hentikan bila</label><input value={f.stop_condition} onChange={set('stop_condition')} placeholder="mis. ROI < 3x 2 hari berturut" className={inp} /></div>
       </div>
       <div><label className={lbl}>Catatan (opsional)</label><input value={f.notes} onChange={set('notes')} className={inp} /></div>
       {err && <p className="text-xs text-red-400">{err}</p>}
@@ -281,7 +289,7 @@ function ExperimentForm({ draft, onDone, onCancel }) {
         <button disabled={saving} onClick={save} className="text-sm px-4 py-2 rounded-lg bg-accent text-white font-medium disabled:opacity-50">{saving ? 'Menyimpan…' : 'Simpan eksperimen'}</button>
         <button disabled={saving} onClick={onCancel} className="text-sm px-3 py-2 rounded-lg text-ink-muted border border-line/20">Batal</button>
       </div>
-      <p className="text-[11px] text-ink-faint">Checkpoint H+1/H+3/H+7 & kesimpulan diisi otomatis oleh pipeline harian dari data kanonik. Read-only — tak mengeksekusi apa pun.</p>
+      <p className="text-[11px] text-ink-faint">Titik ukur H+1/H+3/H+7 dan vonis diisi otomatis tiap pagi dari data harian. Hanya pencatatan — tidak mengubah apa pun di TikTok.</p>
     </div>
   )
 }
@@ -301,7 +309,7 @@ function RoiFloorSetting({ roiFloor, onSaved }) {
     <div className="rounded-xl border border-line/15 bg-fill/[0.03] p-3 flex items-center gap-3 flex-wrap">
       <div className="text-sm text-ink">
         <span className="font-medium">Ambang ROI vonis</span>
-        <span className="text-ink-faint text-xs ml-2">roiFloor — ROI ≥ ini = kandidat menang; kosong = vonis konservatif (belum konklusif)</span>
+        <span className="text-ink-faint text-xs ml-2">ROI ≥ angka ini = kandidat menang; kosong = belum ada vonis (belum konklusif)</span>
       </div>
       <div className="ml-auto flex items-center gap-2">
         <input type="number" step="0.1" min="0" value={val} onChange={e => setVal(e.target.value)} placeholder="mis. 5"
