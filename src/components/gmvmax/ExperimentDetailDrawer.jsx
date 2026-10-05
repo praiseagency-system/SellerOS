@@ -94,28 +94,41 @@ function SavedCheckpoints({ rows, kindOf, roiFloor }) {
 }
 
 export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onChanged, onNavigate }) {
-  const [daily, setDaily] = useState(null)     // null=memuat, []=kosong
+  // null = memuat. Deret harian disimpan BERSAMA daftar tanggal data yang
+  // berlaku saat ia dimuat, supaya keduanya tak pernah beda umur: daftar di
+  // context menyegarkan diri (fokus tab, tiap 10 menit), dan tanggal yang ada di
+  // daftar tapi belum ada di deret akan terbaca sebagai "tak tayang".
+  const [daily, setDaily] = useState(null)
   const [dailyErr, setDailyErr] = useState(false)
   const [allSessions, setAllSessions] = useState([])
+  const [sessionsReady, setSessionsReady] = useState(false)
   const [ident, setIdent] = useState() // undefined=memuat · null=tak ketemu · objek={videoTitle,…}
   const [metaAcct, setMetaAcct] = useState(null) // fallback akun dari cache oEmbed
   const { productNames, imports, freshness } = useGmvMax()
   const [spendFloor, setSpendFloor] = useState(null)
   const [busy, setBusy] = useState(false)
   const [retry, setRetry] = useState(0)
-  const lastDataDate = freshness?.date || null
+  const liveLast = freshness?.date || null
+  // Tanggal yang datanya masuk (semua potret current) — pembeda "tak tayang"
+  // dari "data tidak masuk" tanpa query tambahan.
+  const liveSnaps = useMemo(
+    () => new Set((imports || []).map(i => i.snapshot_date).filter(Boolean)), [imports])
+  const liveSpans = useMemo(() => spanDaysByDate(imports || []), [imports])
+  // Muat ulang hanya bila ISI daftar potret berubah (jumlah atau tanggal
+  // terakhir), bukan tiap kali context membuat larik baru.
+  const importsSig = `${(imports || []).length}:${liveLast || ''}`
 
-  // Deret harian dimuat ulang bila tanggal data terakhir berubah: daftar tanggal
-  // data di context menyegarkan diri (fokus tab, tiap 10 menit). Tanpa ini, hari
-  // yang baru masuk ada di daftar tanggal tapi tidak di deret harian — dan
-  // terbaca sebagai "tak tayang".
   useEffect(() => {
     let on = true
+    const at = { snapshotDates: liveSnaps, lastDataDate: liveLast, spanByDate: liveSpans }
     loadExperimentDaily({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id })
-      .then(r => { if (on) { setDaily(r); setDailyErr(false) } })
-      .catch(() => { if (on) { setDaily([]); setDailyErr(true) } })
+      .then(rows => { if (on) { setDaily({ rows, ...at }); setDailyErr(false) } })
+      .catch(() => { if (on) { setDaily({ rows: [], ...at }); setDailyErr(true) } })
     return () => { on = false }
-  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, lastDataDate, retry])
+    // liveSnaps/liveSpans sengaja tak masuk dependensi: keduanya berganti
+    // identitas tiap context memuat ulang; importsSig mewakili isinya.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, importsSig, retry])
 
   useEffect(() => {
     let on = true
@@ -125,6 +138,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
       loadBoostSessions({ days: 60 })
         .then(all => { if (on) setAllSessions(all) })
         .catch(() => {})
+        .finally(() => { if (on) setSessionsReady(true) })
       // Kolom AKUN export sering kosong — cache oEmbed jadi cadangan nama kreator.
       loadVideoMeta([e.creative_video_id])
         .then(m => { if (on) setMetaAcct(m[e.creative_video_id] || null) })
@@ -144,15 +158,12 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   }, [onClose])
 
   const startDate = String(e.start_at || '').slice(0, 10) || null
-  // Tanggal yang datanya masuk (semua potret current) — pembeda "tak tayang"
-  // dari "data tidak masuk" tanpa query tambahan.
-  const snapshotDates = useMemo(
-    () => new Set((imports || []).map(i => i.snapshot_date).filter(Boolean)), [imports])
-  const spanByDate = useMemo(() => spanDaysByDate(imports || []), [imports])
-  const calendar = useMemo(() => (daily && daily.length && startDate ? buildCalendar({
-    daily, startDate, startAt: e.start_at, baselineStart: e.baseline_start || null, baselineEnd: e.baseline_end || null,
-    snapshotDates, lastDataDate, spanByDate,
-  }) : []), [daily, startDate, e.start_at, e.baseline_start, e.baseline_end, snapshotDates, lastDataDate, spanByDate])
+  const lastDataDate = daily ? daily.lastDataDate : liveLast
+  const calendar = useMemo(() => (daily && daily.rows.length && startDate ? buildCalendar({
+    daily: daily.rows, startDate, startAt: e.start_at,
+    baselineStart: e.baseline_start || null, baselineEnd: e.baseline_end || null,
+    snapshotDates: daily.snapshotDates, lastDataDate: daily.lastDataDate, spanByDate: daily.spanByDate,
+  }) : []), [daily, startDate, e.start_at, e.baseline_start, e.baseline_end])
   const noun = BOOST_TYPES.has(e.experiment_type) ? 'boost' : 'perubahan'
   // Formulir manual hanya menyimpan tanggal — jangan menulis jam karangan.
   const startLabel = fmtStartWib(e.start_at, { dateOnly: !e.source_session_id && !e.source_approval_id })
@@ -211,6 +222,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
       : e.campaign_id ? 'Angka di bawah = jumlah semua materi iklan di campaign ini.'
         : 'Eksperimen ini tidak punya sasaran (video, produk, atau campaign): titik ukur dihitung untuk seluruh toko dan data harian tidak tersedia.'
   const conf = CONFIDENCE_LABEL[oc.confidence]
+  const viewReady = !e.creative_video_id || sessionsReady
 
   return createPortal(
     <div className="fixed inset-0 z-[70]">
@@ -257,7 +269,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
               <span className="text-ink min-w-0 break-words">{ident?.campaignNames?.length ? ident.campaignNames.join(' · ') : <span className="font-mono break-all">{e.campaign_id}</span>}</span>
             </div>
           )}
-          {(e.product_id || ident?.productIds?.length) && (
+          {(e.product_id || (ident?.productIds?.length ?? 0) > 0) && (
             <div className="flex items-start gap-2">
               <span className="text-ink-faint shrink-0 w-16">Produk</span>
               <span className="text-ink min-w-0 break-words">
@@ -307,7 +319,9 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
         </div>
 
         {/* Data harian: kartu rentang → grafik → tabel → pembanding → retensi */}
-        {daily == null && <p className="mt-5 text-xs text-ink-faint py-6 text-center">Memuat data harian…</p>}
+        {/* Sasaran video menunggu sesi boost juga: kartu keempat bergantung padanya,
+            dan kartu yang berganti setelah tampil membuat klik salah sasaran. */}
+        {(daily == null || (calendar.length > 0 && !viewReady)) && <p className="mt-5 text-xs text-ink-faint py-6 text-center">Memuat data harian…</p>}
         {daily != null && calendar.length === 0 && (
           <div className="mt-5">
             <SubHead>Titik ukur tersimpan</SubHead>
@@ -320,7 +334,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
             <SavedCheckpoints rows={ckRows} kindOf={kindOf} roiFloor={roiFloor} />
           </div>
         )}
-        {calendar.length > 0 && (
+        {calendar.length > 0 && viewReady && (
           <ExperimentDailyView key={e.id} calendar={calendar} roiFloor={roiFloor} spendFloor={spendFloor}
             preComparable={preComparable} checkpoints={checkpoints} boost={boost} isVideo={!!e.creative_video_id}
             startLabel={startLabel} noun={noun} />

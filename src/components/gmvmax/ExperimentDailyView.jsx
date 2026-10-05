@@ -61,7 +61,7 @@ export default function ExperimentDailyView({
   })
   const [pick, setPick] = useState(null)       // hari pertama rentang sendiri yang sedang dipilih
   const [crossed, setCrossed] = useState(false) // klik kedua jatuh di sisi lain tanggal mulai
-  const [openPre, setOpenPre] = useState(false)
+  const [openPre, setOpenPre] = useState(() => picked.key === 'pre')
   const [openLate, setOpenLate] = useState(false)
   const [detail, setDetail] = useState({})
   const [read, setRead] = useState(null)
@@ -75,7 +75,10 @@ export default function ExperimentDailyView({
   const sel = live ? { key: live.key, from: live.from, to: live.to } : picked
   if (!presets.length || !sel.from) return null
 
-  const ckByDate = new Map(checkpoints.filter(c => c.date).map(c => [c.date, c]))
+  // ◎ hanya untuk titik ukur yang BENAR-BENAR terukur: eksperimen yang ditutup
+  // sebelum H+7 tidak boleh menggambar cincin H+7 dari angka harian — vonis
+  // tidak pernah membacanya.
+  const ckByDate = new Map(checkpoints.filter(c => c.date && c.roi != null).map(c => [c.date, c]))
   const selDays = daysIn(calendar, sel.from, sel.to)
   const selAgg = aggregateDays(selDays, roiFloor)
   const selSide = selDays.length ? sideOf(selDays[0]) : 'post'
@@ -170,6 +173,7 @@ export default function ExperimentDailyView({
           <span><span className="text-amber-400">●</span> ROI hari itu</span>
           <span><span className="text-amber-400">◎</span> titik ukur</span>
           {pre && <span>arsiran = sebelum {noun}</span>}<span>pita = rentang terpilih</span><span>kotak putus = data tidak masuk</span>
+          {boost && <span><i className="inline-block w-3 h-0.5 bg-accent mr-1 align-middle" />boost terlihat (perkiraan)</span>}
         </p>
         <CalendarChart days={chartDays} sel={sel} ckByDate={ckByDate} boost={boost} noun={noun} onRead={setRead} />
         <p className="text-[11px] text-ink-faint mt-1">
@@ -244,7 +248,7 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
   const notes = empty ? [] : emptyNotes(agg)
   if (provisional) notes.push(`sementara — baru ${agg.counted} dari ${agg.calendarDays} hari`)
   if (p.approx) notes.push('tanggal dicabut = perkiraan')
-  if (isPre && preComparable === false) notes.push(`Belanja terlalu kecil untuk dibandingkan (lantai belanja ${fmtRpRbID(spendFloor)})`)
+  if (small) notes.push(`Belanja terlalu kecil untuk dibandingkan${spendFloor != null ? ` (lantai belanja ${fmtRpRbID(spendFloor)})` : ''}`)
   if (!isPre && !empty && agg.cost > 0 && spendFloor != null && agg.cost < spendFloor) {
     notes.push(`belanja di bawah lantai belanja ${fmtRpRbID(spendFloor)}`)
   }
@@ -316,7 +320,7 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
   const b0 = boost ? firstIdx(d => d.date >= boost.firstSeen) : -1
   const b1 = boost ? lastIdx(d => d.date <= boost.lastSeen) : -1
   const hasBoost = b0 >= 0 && b1 >= b0
-  const H = B + (hasBoost ? 46 : 32)
+  const H = B + (hasBoost ? 42 : 32)
   const bx0 = hasBoost ? x(b0) + 2 : 0, bx1 = hasBoost ? x(b1) + STEP - 2 : 0
   const halo = { paintOrder: 'stroke', stroke: 'rgb(var(--c-surface))', strokeWidth: 3 }
 
@@ -350,13 +354,13 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
           const dayNum = +d.date.slice(8, 10)
           const ck = ckByDate.has(d.date)
           const sub = ck ? hLabel(d) : (i === 0 || dayNum === 1) ? fmtDayID(d.date).split(' ')[1] : ''
-          const hc = Math.max(2, B - y(d.cost))
+          const hc = d.cost > 0 ? Math.max(2, B - y(d.cost)) : 0
           return (
             <g key={d.date}>
               {d.state === 'data' && (
                 <>
                   <rect x={cx - BW - 1} width={BW} y={y(d.revenue)} height={B - y(d.revenue)} rx="1" fill="currentColor" className="text-emerald-500" opacity={dim} />
-                  <rect x={cx + 1} width={BW} y={B - hc} height={hc} rx="1" fill="currentColor" className="text-ink-faint" opacity={dim} />
+                  {hc > 0 && <rect x={cx + 1} width={BW} y={B - hc} height={hc} rx="1" fill="currentColor" className="text-ink-faint" opacity={dim} />}
                 </>
               )}
               {d.state === 'idle' && <line x1={cx - BW} x2={cx + BW} y1={B - 2} y2={B - 2} stroke="currentColor" className="text-ink-faint" strokeWidth="2" />}
@@ -372,9 +376,6 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
         {hasBoost && (
           <>
             <line x1={bx0} x2={bx1} y1={B + 36} y2={B + 36} stroke="currentColor" className="text-accent" strokeWidth="2" />
-            {bx1 + 150 <= W
-              ? <text x={bx1 + 4} y={B + 40} fontSize="10" fill="currentColor" className="text-accent">boost terlihat (perkiraan)</text>
-              : <text x={bx0 - 4} y={B + 40} textAnchor="end" fontSize="10" fill="currentColor" className="text-accent">boost terlihat (perkiraan)</text>}
           </>
         )}
         {/* Titik ROI digambar setelah semua batang supaya tak tertimpa. */}
@@ -382,7 +383,8 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
           if (d.state !== 'data' || d.roi == null) return null
           const cx = x(i) + STEP / 2, cy = yr(d.roi)
           const dim = d.date >= sel.from && d.date <= sel.to ? 1 : 0.4
-          if (!ckByDate.has(d.date)) {
+          const ck = ckByDate.get(d.date)
+          if (!ck) {
             return <circle key={d.date} cx={cx} cy={cy} r="2.5" fill="rgb(251 191 36)" style={{ stroke: 'rgb(var(--c-surface))' }} opacity={dim} />
           }
           const tx = Math.min(Math.max(cx, 34), W - 34)
@@ -390,7 +392,7 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
             <g key={d.date}>
               <circle cx={cx} cy={cy} r="4" style={{ fill: 'rgb(var(--c-surface))' }} stroke="rgb(251 191 36)" strokeWidth="1.5" />
               <text x={tx} y={Math.max(24, Math.min(cy, y(d.revenue)) - 8)} textAnchor="middle" fontSize="10" fontWeight="600" fill="rgb(251 191 36)" style={halo}>
-                {hLabel(d)} · {fmtRoiID(d.roi)}
+                {ck.label} · {fmtRoiID(Number(ck.roi))}
               </text>
             </g>
           )
@@ -460,7 +462,10 @@ function DailyTable({
     return [
       <tr key={d.date} onClick={idle ? undefined : () => onDay(d)}
         role={idle ? undefined : 'button'} tabIndex={idle ? undefined : 0}
-        onKeyDown={idle ? undefined : (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) onDay(d) }}
+        onKeyDown={idle ? undefined : (ev) => {
+          if (ev.target !== ev.currentTarget) return // Enter di tombol rincian bukan klik baris
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onDay(d) }
+        }}
         className={`border-t border-line/10 ${idle ? 'text-ink-muted' : 'text-ink cursor-pointer hover:bg-fill/[0.04]'} ${hi}`}>
         <td className="py-1.5 px-1 text-left align-top">
           {label}{sub && <div className="text-[10.5px] text-ink-faint">{sub}</div>}
@@ -503,7 +508,10 @@ function DailyTable({
   function groupRow({ key, label, agg, open, onToggle, lit, neutral }) {
     return (
       <tr key={key} onClick={onToggle} role="button" tabIndex={0} aria-expanded={open}
-        onKeyDown={(ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) onToggle() }}
+        onKeyDown={(ev) => {
+          if (ev.target !== ev.currentTarget) return
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onToggle() }
+        }}
         className={`border-t border-line/10 text-ink cursor-pointer hover:bg-fill/[0.04] ${lit ? 'bg-accent/10' : ''}`}>
         <td className="py-1.5 px-1 text-left font-medium">
           {open ? <ChevronDown className="inline w-3.5 h-3.5 -mt-0.5" /> : <ChevronRight className="inline w-3.5 h-3.5 -mt-0.5" />} {label}
@@ -538,7 +546,7 @@ function DailyTable({
   }
 
   return (
-    <table className="w-full text-xs table-fixed">
+    <table className={`w-full text-xs table-fixed ${isVideo ? 'min-w-[540px]' : 'min-w-[420px]'}`}>
       <colgroup>
         {isVideo
           ? <><col style={{ width: 124 }} /><col style={{ width: 86 }} /><col style={{ width: 92 }} /><col style={{ width: 54 }} /><col style={{ width: 44 }} /><col style={{ width: 52 }} /><col style={{ width: 52 }} /><col /></>
@@ -558,7 +566,7 @@ function DailyTable({
             lit: !openPre && selSide === 'pre',
           })}
           {preAgg && (
-            <tr key="pre-note" className="border-t border-line/10">
+            <tr className="border-t border-line/10">
               <td colSpan={cols} className={note}>
                 {fmtSpanID(presets.pre.from, presets.pre.to)} · {[`${preAgg.counted} hari`, ...emptyNotes(preAgg)].join(', ')}
                 {preComparable === false && ` · ROI tidak dibandingkan — belanja di bawah lantai belanja ${fmtRpRbID(spendFloor)}`}
@@ -577,9 +585,9 @@ function DailyTable({
             open: openLate, onToggle: onToggleLate, lit: !openLate && selSide === 'post' && sel.to >= lateDays[0].date,
           })}
           {lateAgg && (
-            <tr key="late-note" className="border-t border-line/10">
+            <tr className="border-t border-line/10">
               <td colSpan={cols} className={note}>
-                {fmtSpanID(lateDays[0].date, lateDays[lateDays.length - 1].date)} · {[`${lateDays.length} hari`, ...emptyNotes(lateAgg), lateAgg.pending > 0 && `${lateAgg.pending} hari menunggu data`].filter(Boolean).join(', ')}
+                {fmtSpanID(lateDays[0].date, lateDays[lateDays.length - 1].date)} · {[`${lateDays.length} hari`, ...emptyNotes(lateAgg)].join(', ')}
               </td>
             </tr>
           )}
