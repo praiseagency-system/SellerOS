@@ -127,6 +127,61 @@ export async function loadCreatives(importIds = null) {
   return all
 }
 
+// Baris creatives lintas banyak import DENGAN saringan tambahan (`filter`
+// menerima builder query dan mengembalikannya), UTUH melewati batas PostgREST
+// ~1000 baris/permintaan. Dua jalur, dipilih pemanggil menurut lebar sasaran:
+//
+// fetchCreativesPerImport — SATU import per query, dipaginasi, konkuren
+// terbatas (pola loadCreatives). Untuk sasaran lebar (campaign, produk): satu
+// campaign bisa ribuan baris per 25 import. JANGAN diganti
+// `.in('import_id', banyak).order('id').range()` — Postgres lalu menyusuri
+// indeks id seisi tabel sambil menyaring: terukur lambat lalu HTTP 500 di
+// produksi (5 Okt 2026).
+async function fetchCreativesPerImport(importIds, cols, filter) {
+  async function fetchOne(importId) {
+    const out = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await filter(
+        supabase.from('gmvmax_creatives').select(cols).eq('import_id', importId)
+      ).order('id', { ascending: true }).range(from, from + PAGE - 1)
+      if (error) throw error
+      if (data) out.push(...data)
+      if (!data || data.length < PAGE) break
+    }
+    return out
+  }
+
+  const all = []
+  for (let i = 0; i < importIds.length; i += CONCURRENCY) {
+    const batch = await Promise.all(importIds.slice(i, i + CONCURRENCY).map(fetchOne))
+    for (const rows of batch) for (const r of rows) all.push(r)
+  }
+  return all
+}
+
+// fetchCreativesChunked — untuk sasaran SEMPIT (video): 25 import per
+// permintaan, tanpa order/range (jadi tak kena jebakan di atas), hemat ~25×
+// jumlah permintaan. Jawaban yang penuh satu halaman berarti MUNGKIN terpotong
+// → chunk itu diambil ulang per import, sehingga daftar video yang panjang pun
+// tetap utuh.
+const IMPORT_CHUNK = 25
+async function fetchCreativesChunked(importIds, cols, filter) {
+  const all = []
+  for (let i = 0; i < importIds.length; i += IMPORT_CHUNK) {
+    const chunk = importIds.slice(i, i + IMPORT_CHUNK)
+    const { data, error } = await filter(
+      supabase.from('gmvmax_creatives').select(cols).in('import_id', chunk)
+    ).limit(PAGE)
+    if (error) throw error
+    const rows = data && data.length >= PAGE
+      ? await fetchCreativesPerImport(chunk, cols, filter)
+      : data || []
+    // Bukan push(...rows): hasil jalur per-import bisa puluhan ribu baris.
+    for (const r of rows) all.push(r)
+  }
+  return all
+}
+
 // Riwayat LENGKAP video yang PERNAH di-exclude untuk satu produk, LINTAS SEMUA
 // snapshot (bukan hanya window aktif). Read-only, di-scope product_id → ringan.
 // Balik: [{ videoId, title, account, campaign, first, last, dayCount }] urut
@@ -229,32 +284,28 @@ export async function loadProductVideoIds(productId) {
 
 // Metrik HARIAN per video (cost/revenue/orders per snapshot_date) untuk
 // sekumpulan videoId, lintas semua snapshot. Read-only, di-scope video_id →
-// ringan. Dipakai menghitung "performa sejak di-boost". Balik:
+// ringan; daftar video yang panjang (>1000 baris per 25 import) otomatis jatuh
+// ke jalur per-import. Dipakai menghitung "performa sejak di-boost". Balik:
 // Map<videoId, [{ date, cost, revenue, orders }]> (belum terurut).
 export async function loadVideosDaily(videoIds) {
   const ids = [...new Set((videoIds || []).filter(Boolean))]
   if (ids.length === 0) return new Map()
-  const imports = await listImports()
+  const imports = (await listImports()).filter(i => i.snapshot_date)
   if (imports.length === 0) return new Map()
-  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
-  const impIds = imports.map(i => i.id)
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date]))
 
+  const rows = await fetchCreativesChunked(
+    imports.map(i => i.id),
+    'video_id, cost, gross_revenue, sku_orders, import_id',
+    q => q.in('video_id', ids),
+  )
   const out = new Map(ids.map(v => [v, []]))
-  for (let i = 0; i < impIds.length; i += 25) {
-    const chunk = impIds.slice(i, i + 25)
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('video_id, cost, gross_revenue, sku_orders, import_id')
-      .in('import_id', chunk)
-      .in('video_id', ids)
-    if (error) throw error
-    for (const r of data || []) {
-      const d = dateById[r.import_id]
-      if (!d || !out.has(r.video_id)) continue
-      out.get(r.video_id).push({
-        date: d, cost: num(r.cost) || 0, revenue: num(r.gross_revenue) || 0, orders: num(r.sku_orders) || 0,
-      })
-    }
+  for (const r of rows) {
+    const d = dateById[r.import_id]
+    if (!d || !out.has(r.video_id)) continue
+    out.get(r.video_id).push({
+      date: d, cost: num(r.cost) || 0, revenue: num(r.gross_revenue) || 0, orders: num(r.sku_orders) || 0,
+    })
   }
   return out
 }
@@ -266,41 +317,46 @@ export async function loadVideosDaily(videoIds) {
 // impresi/klik dijumlah; ROI = Σomzet/Σbiaya, CTR = Σklik/Σimpresi, CVR =
 // Σorder/Σklik (BUKAN rata-rata rasio harian); retensi vr_* = rata-rata
 // tertimbang impresi. Semua rasio dalam fraksi 0–1 (apa adanya dari export).
+//
+// Sasaran campaign/produk bisa ribuan baris per 25 import → diambil per import
+// (lihat fetchCreativesPerImport); tanpa itu deret terpotong DIAM-DIAM di 1000
+// baris dan sebagian besar hari hilang. `from` (YYYY-MM-DD, opsional) melewati
+// snapshot yang lebih tua — pemanggil yang hanya butuh deret sejak baseline
+// sebaiknya mengisinya agar tak menarik seluruh riwayat.
 const VR_KEYS = ['vr_2s', 'vr_6s', 'vr_25', 'vr_50', 'vr_75', 'vr_100']
-export async function loadExperimentDaily({ videoId, productId, campaignId }) {
+const EXPERIMENT_DAILY_COLS =
+  'import_id, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100'
+export async function loadExperimentDaily({ videoId, productId, campaignId, from = null }) {
   const target = videoId ? ['video_id', videoId]
     : productId ? ['product_id', productId]
       : campaignId ? ['campaign_id', campaignId] : null
   if (!target) return []
-  const imports = await listImports()
+  const imports = (await listImports()).filter(i => i.snapshot_date && (!from || i.snapshot_date >= from))
   if (imports.length === 0) return []
-  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date]))
   const impIds = imports.map(i => i.id)
 
+  const filter = q => q.eq(target[0], target[1])
+  const rows = target[0] === 'video_id'
+    ? await fetchCreativesChunked(impIds, EXPERIMENT_DAILY_COLS, filter)
+    : await fetchCreativesPerImport(impIds, EXPERIMENT_DAILY_COLS, filter)
+
   const byDate = new Map()
-  for (let i = 0; i < impIds.length; i += 25) {
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('import_id, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
-      .in('import_id', impIds.slice(i, i + 25))
-      .eq(target[0], target[1])
-    if (error) throw error
-    for (const r of data || []) {
-      const d = dateById[r.import_id]
-      if (!d) continue
-      const a = byDate.get(d) || {
-        date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
-        vrW: [0, 0, 0, 0, 0, 0],
-      }
-      const imp = num(r.impressions) || 0
-      a.cost += num(r.cost) || 0
-      a.revenue += num(r.gross_revenue) || 0
-      a.orders += num(r.sku_orders) || 0
-      a.impressions += imp
-      a.clicks += num(r.clicks) || 0
-      if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
-      byDate.set(d, a)
+  for (const r of rows) {
+    const d = dateById[r.import_id]
+    if (!d) continue
+    const a = byDate.get(d) || {
+      date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
+      vrW: [0, 0, 0, 0, 0, 0],
     }
+    const imp = num(r.impressions) || 0
+    a.cost += num(r.cost) || 0
+    a.revenue += num(r.gross_revenue) || 0
+    a.orders += num(r.sku_orders) || 0
+    a.impressions += imp
+    a.clicks += num(r.clicks) || 0
+    if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
+    byDate.set(d, a)
   }
   return [...byDate.values()]
     .sort((x, y) => (x.date < y.date ? -1 : 1))

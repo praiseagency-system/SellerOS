@@ -159,7 +159,10 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
 
   useEffect(() => {
     let on = true
-    loadExperimentDaily({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id })
+    // Lembar ini hanya memakai deret sejak awal baseline (atau sejak mulai) —
+    // snapshot yang lebih tua tak perlu ditarik.
+    const from = [e.baseline_start, String(e.start_at || '').slice(0, 10)].filter(Boolean).sort()[0] || null
+    loadExperimentDaily({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id, from })
       .then(r => { if (on) setDaily(r) })
       .catch(() => { if (on) setDaily([]) })
     if (e.creative_video_id) {
@@ -176,7 +179,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
       .catch(() => { if (on) setIdent(null) })
     getThresholds().then(t => { if (on) setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
     return () => { on = false }
-  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id])
+  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, e.baseline_start, e.start_at])
 
   useEffect(() => {
     const onKey = (ev) => { if (ev.key === 'Escape') onClose() }
