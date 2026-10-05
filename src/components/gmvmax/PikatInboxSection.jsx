@@ -313,6 +313,12 @@ export default function PikatInboxSection({ boundIds: boundFromList, onBound }) 
                       title={r.preview?.error || r.preview?.note || (r.status === 'MISMATCH' && r.preview?.item_id ? `kode untuk video ${r.preview.item_id}` : '')}>
                       {r.status === 'NEW' && <Loader2 className="w-3 h-3 animate-spin mr-1" />}{st.label}
                     </span>
+                    {/* Alasan gagal/tak valid ditulis di baris — tim Ads tak perlu hover untuk tahu kenapa. */}
+                    {['FAILED', 'INVALID', 'MISMATCH'].includes(r.status) && (r.preview?.error || r.preview?.item_id) && (
+                      <p className="mt-0.5 text-[10.5px] text-red-300/80 break-words">
+                        {r.preview?.error || `kode untuk video ${r.preview.item_id}`}
+                      </p>
+                    )}
                   </div>
                   <div className="font-mono space-y-0.5">
                     <p className="text-ink">{fmtViews(r.views)} views <span className="text-ink-faint">· ER {erR == null ? '—' : `${erR.toFixed(1).replace('.', ',')}%`}</span></p>
