@@ -2,9 +2,9 @@
 // digabung dengan performa periode terpilih. Setting dari gmvmax_campaign_settings
 // (di-capture worker harian via MCP campaign_gmv_max_info_get); performa dari
 // rollupCampaigns (di-join pakai campaignId). Bagian bawah: log perubahan
-// otomatis hasil diff antar-hari.
+// otomatis hasil diff antar-hari + dampak tiap perubahan (ChangeLogPanel).
 import { useState, useEffect, useMemo } from 'react'
-import { Megaphone, TrendingUp, Wallet, Target, Info, History, Loader2 } from 'lucide-react'
+import { Megaphone, TrendingUp, Wallet, Target, Info, Loader2 } from 'lucide-react'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { EmptyState, StatCard, DeltaBadge, fmtRp, fmtRpC, fmtRoasX } from '../../components/gmvmax/ui'
 import { loadCampaignSettingsHistory, latestPerCampaign } from '../../data/gmvmaxCampaignSettings'
@@ -12,6 +12,7 @@ import { buildChangeLog } from '../../utils/gmvmaxCampaignDiff'
 import CampaignActionDialog from '../../components/gmvmax/CampaignActionDialog'
 import CampaignProductsDialog from '../../components/gmvmax/CampaignProductsDialog'
 import CampaignStatusMatrix from '../../components/gmvmax/CampaignStatusMatrix'
+import ChangeLogPanel from '../../components/gmvmax/ChangeLogPanel'
 
 const n = (v) => (v || 0).toLocaleString('id-ID')
 const isOn = (s) => s === 'ENABLE'
@@ -20,6 +21,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
   const { campaigns, hasData, periodName, prev, productNames } = useGmvMax()
   const [settings, setSettings] = useState([])
   const [changes, setChanges] = useState([])
+  const [history, setHistory] = useState([]) // potret mentah → budget/target per hari utk dampak
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const [dialog, setDialog] = useState(null) // { action, campaign } | null
@@ -32,7 +34,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true); setErr(null)
     loadCampaignSettingsHistory({ days: 30 })
-      .then(rows => { if (!active) return; setSettings(latestPerCampaign(rows)); setChanges(buildChangeLog(rows)) })
+      .then(rows => { if (!active) return; setSettings(latestPerCampaign(rows)); setChanges(buildChangeLog(rows)); setHistory(rows) })
       .catch(e => { if (active) setErr(e.message || 'Gagal memuat setting campaign.') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -160,7 +162,7 @@ export default function CampaignAdsPage({ onOpenUpload }) {
         )
       })()}
 
-      <ChangeLog changes={changes} productNames={productNames} />
+      <ChangeLogPanel changes={changes} history={history} settings={settings} productNames={productNames} />
 
       {dialog && dialog.action !== 'PRODUCTS' && (
         <CampaignActionDialog action={dialog.action} campaign={dialog.campaign}
@@ -307,80 +309,6 @@ function Cell({ label, value, tone = 'ink', delta = null }) {
       <p className="text-[10px] text-ink-faint uppercase tracking-wide truncate">{label}</p>
       <p className={`text-sm font-semibold tabular-nums truncate ${TONE[tone]}`}>{value}</p>
       {delta && <p className="text-[10px] leading-tight mt-0.5">{delta} <span className="text-ink-faint">vs periode sblm</span></p>}
-    </div>
-  )
-}
-
-// Badge delta untuk perubahan numerik: arah + selisih + persen.
-// Naik budget = netral-biru (keputusan scale); turun = amber. Untuk Target ROAS
-// dibalik: turun bid = melonggarkan (biru), naik = mengetatkan (amber).
-function DeltaChange({ c }) {
-  const a = Number(c.from), b = Number(c.to)
-  if (!Number.isFinite(a) || !Number.isFinite(b) || a === b || a === 0) return null
-  const diff = b - a
-  const pct = (diff / Math.abs(a)) * 100
-  const up = diff > 0
-  const tone = c.field === 'roas_bid'
-    ? (up ? 'bg-amber-500/15 text-amber-400' : 'bg-blue-500/15 text-blue-400')
-    : (up ? 'bg-blue-500/15 text-blue-400' : 'bg-amber-500/15 text-amber-400')
-  const diffTxt = c.money ? fmtRp(Math.abs(Math.round(diff))) : String(Math.abs(Math.round(diff * 10) / 10))
-  return (
-    <span className={`ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums ${tone}`}>
-      {up ? '▲' : '▼'} {diffTxt} ({pct > 0 ? '+' : ''}{pct.toFixed(pct % 1 === 0 ? 0 : 1)}%)
-    </span>
-  )
-}
-
-function ChangeLog({ changes, productNames = {} }) {
-  const fmtVal = (v, money) => (v == null || v === '' ? '—' : money ? fmtRp(Number(v)) : String(v))
-  return (
-    <div className="bg-surface rounded-2xl border border-line/10 shadow-sm p-4">
-      <h3 className="text-sm font-semibold text-ink-strong mb-1 flex items-center gap-2">
-        <History className="w-4 h-4 text-blue-400" /> Perubahan setting
-      </h3>
-      <p className="text-[11px] text-ink-faint mb-3">
-        Terdeteksi otomatis dari perbandingan snapshot harian pukul 07:30 WIB — bukan catatan waktu dari TikTok.
-      </p>
-      {changes.length === 0 ? (
-        <p className="text-xs text-ink-faint py-4 text-center">
-          Belum ada perubahan terdeteksi. Riwayat mulai terkumpul sejak capture pertama — perubahan akan tampil di sini begitu budget/bid/status diubah.
-        </p>
-      ) : (
-        <div className="space-y-1.5">
-          {changes.slice(0, 30).map((c, i) => (
-            <div key={i} className="flex items-start gap-2.5 text-sm border-b border-line/5 pb-1.5 last:border-0">
-              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 mt-0.5">auto</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-ink truncate">
-                  {c.label} <span className="text-ink-faint">{fmtVal(c.from, c.money)}</span>
-                  <span className="text-ink-faint"> → </span>
-                  <span className="font-semibold text-ink-strong">{fmtVal(c.to, c.money)}</span>
-                  <DeltaChange c={c} />
-                  <span className="text-ink-faint"> · {c.campaign_name}</span>
-                </p>
-                {/* Produk: diffSettings sudah menghitung `added`/`removed` sejak
-                    hari pertama, tapi kartunya cuma menampilkan jumlah ("2 produk
-                    → 3 produk") — sehingga "produk mana" harus ditebak sendiri. */}
-                {(c.added?.length || c.removed?.length) ? (
-                  <p className="text-[11px] mt-0.5 leading-relaxed">
-                    {c.added?.map(pid => (
-                      <span key={`a${pid}`} className="text-emerald-400 mr-2" title={String(pid)}>
-                        + {productNames[pid] || `…${String(pid).slice(-8)}`}
-                      </span>
-                    ))}
-                    {c.removed?.map(pid => (
-                      <span key={`r${pid}`} className="text-red-400 mr-2" title={String(pid)}>
-                        − {productNames[pid] || `…${String(pid).slice(-8)}`}
-                      </span>
-                    ))}
-                  </p>
-                ) : null}
-                <p className="text-[10px] text-ink-faint">{c.date}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

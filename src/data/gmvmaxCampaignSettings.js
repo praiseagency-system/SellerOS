@@ -3,12 +3,13 @@
 // Read-only dari webapp (worker yang menulis).
 import { supabase } from '../lib/supabase'
 import { getCurrentWorkspaceId } from '../utils/workspace'
+import { dropBackfilledSnapshots } from '../utils/gmvmaxCampaignDiff'
 
 const PAGE = 1000
 
 // Riwayat setting `days` hari terakhir, urut tanggal NAIK (siap di-diff).
 // Paginasi: PostgREST cap ~1000 baris — banyak campaign × banyak hari bisa lewat.
-export async function loadCampaignSettingsHistory({ days = 30, wsId = getCurrentWorkspaceId() } = {}) {
+export async function loadCampaignSettingsHistory({ days = 30, wsId = getCurrentWorkspaceId(), includeBackfilled = false } = {}) {
   if (!wsId) return []
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
   const all = []
@@ -25,7 +26,7 @@ export async function loadCampaignSettingsHistory({ days = 30, wsId = getCurrent
     all.push(...(data || []))
     if (!data || data.length < PAGE) break
   }
-  return all
+  return includeBackfilled ? all : dropBackfilledSnapshots(all)
 }
 
 // Setting TERBARU per campaign (baris tanggal paling akhir tiap campaign_id).
