@@ -45,8 +45,11 @@ export function experimentAlerts({ exp, session = null, latestSeen = null, now =
     // ke-7 SUDAH masuk. Umur 7×24 jam selalu tercapai 6–23 jam sebelum data itu
     // tiba; menutup di celah itu berarti menutup sebelum vonis akhirnya ada.
     const v2 = checkpointsFormat(exp.checkpoints) === 'v2'
-    const settled = !v2 || windowOf(exp.checkpoints, 'w7')?.complete === true
-    if (days >= WINDOW_DAYS && settled) out.push({ kind: 'WINDOW_PASSED', days })
+    const w7 = v2 ? windowOf(exp.checkpoints, 'w7') : null
+    const settled = !v2 || w7?.complete === true
+    // missing: hari di dalam jendela yang datanya belum masuk — layar
+    // menyebutnya supaya pemilik tahu vonisnya masih bisa berubah bila ditambal.
+    if (days >= WINDOW_DAYS && settled) out.push({ kind: 'WINDOW_PASSED', days, missing: w7?.missing || 0 })
   }
 
   return out

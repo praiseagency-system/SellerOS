@@ -186,7 +186,7 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       } catch (e) { safeLog({ event: 'EXP_OPEN_SESSIONS_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
       try {
         const m = await markContamination({ sb, workspaceId, now })
-        safeLog({ event: 'EXP_CONTAMINATION_MARKED', workspace_id: workspaceId, snapshot_date: date, marked: m.marked, absent: m.absent === true })
+        safeLog({ event: 'EXP_CONTAMINATION_MARKED', workspace_id: workspaceId, snapshot_date: date, marked: m.marked, cleared: m.cleared ?? 0, absent: m.absent === true })
       } catch (e) { safeLog({ event: 'EXP_CONTAMINATION_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error) }
     }
 
@@ -196,7 +196,10 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
     if (!dryRun && process.env.GMVMAX_EVAL_EXPERIMENTS === '1') {
       try {
         const r = await evaluateExperiments({ sb, workspaceId })
-        safeLog({ event: 'EXP_EVAL_OK', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, failed: r.failed?.length || 0, rule_version: r.rule_version, absent: r.absent === true })
+        const nFail = r.failed?.length || 0
+        // Gagal sebagian/seluruhnya tidak boleh tercatat "OK" tanpa jejak sebabnya.
+        if (nFail) safeLog({ event: r.updated || r.unchanged ? 'EXP_EVAL_PARTIAL' : 'EXP_EVAL_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, failed: nFail, ids: r.failed.slice(0, 5).map(f => f.id), message: r.failed[0].message }, console.error)
+        else safeLog({ event: 'EXP_EVAL_OK', workspace_id: workspaceId, snapshot_date: date, updated: r.updated, unchanged: r.unchanged ?? 0, failed: 0, rule_version: r.rule_version, absent: r.absent === true })
       } catch (e) {
         safeLog({ event: 'EXP_EVAL_FAILED', level: 'warn', workspace_id: workspaceId, snapshot_date: date, message: e.message }, console.error)
       }

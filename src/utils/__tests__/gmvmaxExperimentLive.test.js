@@ -83,3 +83,60 @@ describe('verdictReasonID', () => {
     }
   })
 })
+
+describe('perbaikan pasca-tinjauan', () => {
+  const CFG = { roiFloor: 4, spendFloor: 50000 }
+  const win = (rows) => JSON.parse(JSON.stringify(computeWindows({
+    experiment: exp(), ruleConfig: CFG,
+    series: rows.map(([n, spend, revenue, orders]) => ({ date: dayN(n), spend, revenue, orders })),
+  }).windows))
+  const text = (e, noun = 'boost') => verdictReasonID(liveConclusion(e, CFG), { noun })
+
+  it('lemah tanpa order: tidak lagi disebut "selisih tipis"', () => {
+    const t = text(exp({ checkpoints: win(Array.from({ length: 7 }, (_, i) => [i + 1, 12000, 0, 0])) }))
+    expect(t).toContain('belum ada order sama sekali')
+    expect(t).not.toContain('selisih tipis')
+  })
+  it('ROI yang dibulatkan menyentuh ambang ditulis dua desimal', () => {
+    const t = text(exp({ checkpoints: win(Array.from({ length: 7 }, (_, i) => [i + 1, 100000, 397000, 4])) }))
+    expect(t).toContain('3,97x')
+    expect(t).toContain('di bawah ambang 4x')
+    expect(t).not.toContain('4,0x')
+  })
+  it('video dikeluarkan: belanja hari aksi dipisah dari belanja sesudahnya', () => {
+    const cps = win([[1, 60000, 240000, 3], ...Array.from({ length: 6 }, (_, i) => [i + 2, 0, 0, 0])])
+    const t = text(exp({ experiment_type: 'CREATIVE_EXCLUSION', treatment: 'Video dikeluarkan dari rotasi', checkpoints: cps }), 'perubahan')
+    expect(t).toContain('Video berhenti dibelanjai: Rp0 dalam 6 hari sesudah dikeluarkan')
+    expect(t).toContain('hari dikeluarkan Rp60 rb')
+    expect(t).not.toContain('masih dibelanjai')
+  })
+  it('campaign dijeda: tidak divonis dari ROI sebelum jeda', () => {
+    const cps = win([[1, 500000, 1000000, 12], ...Array.from({ length: 6 }, (_, i) => [i + 2, 0, 0, 0])])
+    const v = liveConclusion(exp({ experiment_type: 'OTHER_APPROVED', treatment: 'Status campaign → DISABLE', checkpoints: cps }), CFG)
+    expect(v.conclusion).toBe('DATA_INSUFFICIENT')
+    expect(verdictReasonID(v, { noun: 'perubahan' })).toContain('Campaign berhenti dibelanjai')
+  })
+  it('boost lain: sebabnya selalu sampai ke kalimat, juga pada Lemah dan saat ada >2 pembatas', () => {
+    const weak = win(Array.from({ length: 7 }, (_, i) => [i + 1, 50000, 100000, 2]))
+    weak[1].overlap_day = 3
+    expect(text(exp({ checkpoints: weak }))).toContain('Keyakinan rendah: ada boost lain pada video/produk yang sama mulai hari ke-3')
+    // Pemenang dengan banyak pembatas: REBOOST tetap disebut pertama.
+    const capped = win([[1, 60000, 900000, 3], [2, 6000, 0, 0], [3, 6000, 0, 0], [4, 6000, 0, 0], [5, 6000, 0, 0], [6, 6000, 0, 0], [7, 6000, 0, 0]])
+    capped[1].overlap_day = 5
+    const t = text(exp({ checkpoints: capped }))
+    expect(t).toContain('ada boost lain pada video/produk yang sama mulai hari ke-5')
+    expect(t).toMatch(/\+\d sebab lain/)
+  })
+  it('tanda tercampur warisan (kejadian hari ke-8) tidak membatasi vonis', () => {
+    const lama = { contaminated: true, contamination: { kejadian: [{ jenis: 'setelan_campaign', tanggal: '2026-09-26' }] } } // hari ke-8
+    expect(liveConclusion(exp({ checkpoints: windows(6), ...lama }), CFG).conclusion).toBe('SUSTAINABLE_WINNER')
+    const dalam = { contaminated: true, contamination: { kejadian: [{ jenis: 'setelan_campaign', tanggal: '2026-09-25' }] } } // hari ke-7
+    expect(liveConclusion(exp({ checkpoints: windows(6), ...dalam }), CFG)).toMatchObject({ conclusion: 'WINNER_CANDIDATE', confidence: 'LOW' })
+  })
+  it('baris yang ditutup sebelum 7 hari: sementara, dengan tanggal vonis akhir', () => {
+    const v = liveConclusion(exp({ status: 'CONCLUDED', checkpoints: windows(6, 3) }), CFG)
+    expect(v.provisional).toBe(true)
+    expect(verdictReasonID(v)).toContain('Vonis akhir 26 Sep')
+    expect(liveConclusion(exp({ status: 'CONCLUDED', checkpoints: [] }), CFG).code).toBe('NOT_EVALUATED')
+  })
+})

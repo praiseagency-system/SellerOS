@@ -12,19 +12,20 @@ import { loadExperimentDaily, loadExperimentIdentity } from '../../data/gmvmaxIm
 import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
 import { loadVideoMeta } from '../../data/gmvmaxVideoMeta'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
-import { getThresholds } from '../../data/gmvmaxSettings'
 import {
   closeExperiment, deleteExperiment, EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
 import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
-import { dayOne, windowOf, windowStats, resolveRuleConfig } from '../../gmvmax/skills/experimentWindows.mjs'
+import {
+  dayOne, windowOf, windowStats, windowJudged, resolveRuleConfig, actionDirection, isContaminated, contaminationInWindow,
+} from '../../gmvmax/skills/experimentWindows.mjs'
 import { latestSeenOf } from '../../utils/gmvmaxExperimentAlerts'
 import {
   addDaysISO, aggregateDays, boostWindow, buildCalendar, checkpointKind, fmtDayID, fmtSpanID, fmtStartWib,
   latestWorkerSnapshot, pickBoostSession, spanDaysByDate,
 } from '../../utils/gmvmaxExperimentDaily'
 import {
-  fmtRpID, fmtRpRbID, fmtRpTinyID, fmtRoiID, fmtFloorID, fmtSignedX, reasonTextID, verdictReasonID, CONFIDENCE_LABEL, STATUS_LABEL,
+  fmtRpID, fmtRpRbID, fmtRpTinyID, fmtRoiID, fmtRoiVsFloorID, fmtFloorID, fmtSignedX, reasonTextID, verdictReasonID, CONFIDENCE_LABEL, STATUS_LABEL,
 } from '../../utils/gmvmaxExperimentFormat'
 import ExperimentDailyView from './ExperimentDailyView'
 
@@ -68,9 +69,10 @@ function CheckpointChip({ c, kind, roiFloor }) {
 // berbelanja yang di atas ambang. Warna hanya bila jendelanya memang dinilai
 // (lengkap dan belanjanya mencapai lantai) — ROI dari belanja receh tetap
 // ditulis, tetapi tidak diberi warna pemenang/lemah.
-function WindowChip({ w, cfg }) {
+function WindowChip({ w, cfg, direction }) {
   const st = windowStats(w, cfg)
-  const judged = w.complete && w.spend > 0 && w.spend >= cfg.spendFloor && cfg.roiFloor != null
+  // Satu syarat dengan aturan vonis (cukup hari berdata, lantai, arah aksi).
+  const judged = windowJudged(w, cfg, direction)
   const roi = w.spend > 0 ? w.revenue / w.spend : null
   const tone = !judged ? 'text-ink' : roi >= cfg.roiFloor ? 'text-emerald-400' : 'text-red-400'
   const note = w.counted === 0 ? (w.complete ? 'tidak ada data' : 'menunggu data')
@@ -86,7 +88,7 @@ function WindowChip({ w, cfg }) {
         <p className="truncate text-[13px] font-semibold tabular-nums text-ink">belanja {fmtRpTinyID(w.spend)}</p>
       ) : (
         <p className="truncate">
-          <b className={`text-[13px] font-semibold tabular-nums ${tone}`}>{fmtRoiID(roi)}</b>
+          <b className={`text-[13px] font-semibold tabular-nums ${tone}`}>{fmtRoiVsFloorID(roi, cfg.roiFloor)}</b>
           <span className="text-[11px] text-ink-faint"> belanja {fmtRpRbID(w.spend)}</span>
         </p>
       )}
@@ -96,11 +98,17 @@ function WindowChip({ w, cfg }) {
 }
 
 // Kejadian yang membuat eksperimen "tercampur", dari kolom contamination.
-function mixText(contamination) {
-  const list = Array.isArray(contamination?.kejadian) ? contamination.kejadian : []
-  return list.slice(0, 2).map(k => (k.jenis === 'setelan_campaign'
-    ? `${fmtDayID(k.tanggal)}: ${k.bidang || 'setelan campaign'} diubah${k.dari != null && k.jadi != null ? ` (${k.dari} → ${k.jadi})` : ''}`
-    : `${fmtDayID(k.tanggal)}: aksi lain di campaign/video yang sama`)).join(' · ') + (list.length > 2 ? ` · +${list.length - 2} lagi` : '')
+// Hanya kejadian di dalam hari ke-1..7. Tanggal aksi pada baris lama tersimpan
+// sebagai tanggal UTC, sehingga aksi pukul 00.00–06.59 WIB tampak sehari lebih
+// awal — bahkan sebelum hari ke-1. Aksi itu pasti terjadi SETELAH mulai, jadi
+// tanggalnya tidak pernah ditampilkan lebih awal dari hari ke-1.
+function mixText(exp) {
+  const k = contaminationInWindow(exp)
+  const list = k ? k.kept : []
+  const tgl = (x) => fmtDayID(x.jenis !== 'setelan_campaign' && k && x.tanggal < k.day1 ? k.day1 : x.tanggal)
+  return list.slice(0, 2).map(x => (x.jenis === 'setelan_campaign'
+    ? `${tgl(x)}: ${x.bidang || 'setelan campaign'} diubah${x.dari != null && x.jadi != null ? ` (${x.dari} → ${x.jadi})` : ''}`
+    : `${tgl(x)}: aksi lain di campaign/video yang sama`)).join(' · ') + (list.length > 2 ? ` · +${list.length - 2} lagi` : '')
 }
 
 // Cadangan saat deret harian kosong/gagal: titik ukur tersimpan tetap terbaca.
@@ -133,7 +141,10 @@ function SavedCheckpoints({ rows, kindOf, roiFloor }) {
   )
 }
 
-export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onChanged, onNavigate }) {
+// cfg: setelan vonis yang SAMA dengan daftar ({ roiFloor, spendFloor } hasil
+// resolveRuleConfig) — drawer tidak mengambil ulang sendiri, supaya vonisnya
+// tak pernah berbeda dari baris yang baru diklik.
+export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, onChanged, onNavigate }) {
   // null = memuat. Deret harian disimpan BERSAMA daftar tanggal data yang
   // berlaku saat ia dimuat, supaya keduanya tak pernah beda umur: daftar di
   // context menyegarkan diri (fokus tab, tiap 10 menit), dan tanggal yang ada di
@@ -149,7 +160,6 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   const [ident, setIdent] = useState() // undefined=memuat · null=tak ketemu · objek={videoTitle,…}
   const [metaAcct, setMetaAcct] = useState(null) // fallback akun dari cache oEmbed
   const { productNames, imports, freshness } = useGmvMax()
-  const [spendFloor, setSpendFloor] = useState(null)
   const [busy, setBusy] = useState(false)
   const [retry, setRetry] = useState(0)
   const liveLast = freshness?.date || null
@@ -194,7 +204,6 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
     loadExperimentIdentity({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id })
       .then(r => { if (on) setIdent(r) })
       .catch(() => { if (on) setIdent(null) })
-    getThresholds().then(t => { if (on) setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
     return () => { on = false }
     // Sesi dimuat ulang bersama daftar potret (importsSig mewakili `imports`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,9 +229,14 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   // Formulir manual hanya menyimpan tanggal — jangan menulis jam karangan.
   const startLabel = fmtStartWib(e.start_at, { dateOnly: !e.source_session_id && !e.source_approval_id })
 
-  const cfg = resolveRuleConfig({ roiFloor, spendFloor })
+  const cfg = resolveRuleConfig(cfgIn || {})
+  const { roiFloor, spendFloor } = cfg
   const oc = liveConclusion(e, cfg)
   const isV2 = oc.format === 'v2'
+  const direction = actionDirection(e)
+  // Dua pembatas vonis dari LUAR eksperimen.
+  const mixed = isContaminated(e)
+  const overlapDay = isV2 ? (windowOf(e.checkpoints, 'w7')?.overlap_day ?? null) : null
   const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
   const w3 = windowOf(checkpoints, 'w3'), w7 = windowOf(checkpoints, 'w7')
   // Tiga titik ukur selalu tampil: yang tersimpan, atau tanggal jatuh temponya
@@ -350,14 +364,19 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
         {/* Vonis + dasar vonis. Isinya TIDAK berubah saat rentang di bawah diganti. */}
         <div className="mt-4 rounded-xl border border-line/15 bg-fill/[0.03] p-3.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-sm font-semibold ${e.contaminated && !isV2 ? 'text-ink-muted' : (CONC[oc.conclusion] || 'text-ink-muted')}`}>{CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}</span>
+            <span className={`text-sm font-semibold ${mixed && !isV2 ? 'text-ink-muted' : (CONC[oc.conclusion] || 'text-ink-muted')}`}>{CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}</span>
             {conf && <span className="text-[11px] rounded-md border border-line/15 bg-fill/5 px-2 py-0.5 text-ink-muted">keyakinan <b className="text-ink">{conf}</b></span>}
             <span className="text-[11px] rounded-md border border-line/15 bg-fill/5 px-2 py-0.5 text-ink-muted">ambang ROI <b className="text-ink">{roiFloor != null ? fmtFloorID(roiFloor) : 'belum diisi'}</b></span>
           </div>
-          {e.contaminated && (
+          {mixed && (
             <p className="mt-2 text-xs text-amber-400">
-              <b>Tercampur</b> — ada perubahan lain di jendela ukur{mixText(e.contamination) ? `: ${mixText(e.contamination)}` : ''}.
+              <b>Tercampur</b> — ada perubahan lain di jendela ukur{mixText(e) ? `: ${mixText(e)}` : ''}.
               {isV2 ? ' Karena itu vonisnya dibatasi paling tinggi "Kandidat pemenang".' : ' Vonis ini jangan dipakai menyimpulkan.'}
+            </p>
+          )}
+          {overlapDay != null && (
+            <p className="mt-2 text-xs text-amber-400">
+              <b>Ada boost lain</b> pada video/produk yang sama mulai hari ke-{overlapDay} — hasil jendela ini bukan dari {noun} ini saja, jadi vonisnya dibatasi dan keyakinannya rendah.
             </p>
           )}
           {isV2 ? (
@@ -365,22 +384,24 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
               <p className="mt-2 text-xs text-ink">{verdictReasonID(oc, { noun })}</p>
               <p className="mt-2.5 text-[11px] text-ink-faint">Dasar vonis — total dua jendela, semua hari dijumlah</p>
               <div className="mt-1 grid grid-cols-2 gap-2">
-                {w3 && <WindowChip w={w3} cfg={cfg} />}
-                {w7 && <WindowChip w={w7} cfg={cfg} />}
+                {w3 && <WindowChip w={w3} cfg={cfg} direction={direction} />}
+                {w7 && <WindowChip w={w7} cfg={cfg} direction={direction} />}
               </div>
               {oc.provisional && (
                 <p className="mt-2 text-[11px] text-ink-muted">Vonis ini masih <b className="text-ink">sementara</b> — jendela 7 hari belum lengkap.</p>
               )}
             </>
+          ) : oc.code === 'NOT_EVALUATED' ? (
+            // Baru dicatat: evaluator akan menulis dua jendela (hari ke-1–3 dan
+            // ke-1–7) — jangan menjanjikan tiga titik ukur lama.
+            <p className="mt-2 text-xs text-ink-muted">{verdictReasonID(oc, { noun })} Vonis memakai total hari ke-1–3 dan hari ke-1–7{startDate ? ` (${fmtSpanID(startDate, addDaysISO(startDate, 6))})` : ''}.</p>
           ) : (
             <>
               <p className="mt-2.5 text-[11px] text-ink-faint">Dasar vonis — ROI satu hari di tiga titik ukur</p>
               <div className="mt-1 grid grid-cols-3 gap-2">
                 {ckRows.map(c => <CheckpointChip key={c.label} c={c} kind={kindOf(c)} roiFloor={roiFloor} />)}
               </div>
-              {oc.code === 'NOT_EVALUATED' ? (
-                <p className="mt-2 text-xs text-ink-muted">{verdictReasonID(oc, { noun })}</p>
-              ) : (oc.reasons || []).length > 0 && (
+              {(oc.reasons || []).length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {oc.reasons.map((r, i) => (
                     <li key={i} className="text-xs text-ink-muted flex gap-2"><span className="text-ink-faint">·</span><span>{reasonTextID(r, noun)}</span></li>
@@ -394,7 +415,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
               )}
               {preComparable === false ? (
                 <p className="mt-1 text-[11px] text-ink-faint">
-                  Selisih terhadap sebelum {noun}: tidak dibandingkan — belanja sebelum {noun}{preAgg.counted > 0 ? ` ${fmtRpID(preAgg.cost)}` : ''}{spendFloor != null ? ` di bawah lantai belanja ${fmtRpRbID(spendFloor)}` : ' terlalu kecil'}.
+                  Selisih terhadap sebelum {noun}: tidak dibandingkan — belanja sebelum {noun}{preAgg.counted > 0 ? ` ${fmtRpID(preAgg.cost)}` : ''}{` di bawah lantai belanja ${fmtRpRbID(spendFloor)}`}.
                 </p>
               ) : deltas.length > 0 && (
                 <p className="mt-1 text-[11px] text-ink-faint">

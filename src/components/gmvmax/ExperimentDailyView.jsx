@@ -11,7 +11,7 @@ import {
   aggregateDays, daysIn, presetRanges, matchPreset, rangeName, sideOf, hLabel, fmtDayID, fmtSpanID,
 } from '../../utils/gmvmaxExperimentDaily'
 import {
-  fmtNumID, fmtDec1ID, fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtPctID, fmtFloorID,
+  fmtNumID, fmtDec1ID, fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtRoiVsFloorID, fmtPctID, fmtFloorID,
 } from '../../utils/gmvmaxExperimentFormat'
 
 const HIDE_KEY = 'sq_exp_daily_table_hidden'
@@ -248,6 +248,9 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
   // Rentang yang belum lengkap: ROI tanpa warna ambang + cap "sementara".
   const provisional = !isPre && !empty && agg.pending > 0
   const small = isPre && preComparable === false
+  // Belanja di bawah lantai: ROI tidak diwarnai — sama dengan chip dasar vonis
+  // dan kotak di daftar ("80,9x" dari Rp1 ribu bukan pemenang).
+  const tiny = !empty && agg.cost > 0 && spendFloor != null && agg.cost < spendFloor
   const notes = empty ? [] : emptyNotes(agg)
   if (provisional) notes.push(`sementara — baru ${agg.counted} dari ${agg.calendarDays} hari`)
   if (p.approx) notes.push('tanggal dicabut = perkiraan')
@@ -267,7 +270,7 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
         <span className="text-[11px] text-ink-muted">{fmtSpanID(p.from, p.to)} · {p.plain}</span>
         {!empty && (small
           ? <span className="text-xs text-ink-muted whitespace-nowrap">ROI {fmtRoiID(agg.roi)}</span>
-          : <span className={`text-lg leading-6 font-semibold tabular-nums ${roiTone(agg.roi, roiFloor, isPre || provisional)}`}>{fmtRoiID(agg.roi)}</span>)}
+          : <span className={`text-lg leading-6 font-semibold tabular-nums ${roiTone(agg.roi, roiFloor, isPre || provisional || tiny)}`}>{fmtRoiVsFloorID(agg.roi, roiFloor)}</span>)}
       </div>
       {empty ? (
         <p className="text-[11px] text-ink-faint mt-1">
@@ -521,7 +524,7 @@ function DailyTable({
         </td>
         <td className={td}>{fmtRpID(agg.cost)}</td>
         <td className={td}>{fmtRpID(agg.revenue)}</td>
-        <td className={`${td} ${neutral ? 'text-ink-muted' : roiTone(agg.roi, roiFloor)}`}>{fmtRoiID(agg.roi)}</td>
+        <td className={`${td} ${neutral ? 'text-ink-muted' : roiTone(agg.roi, roiFloor, spendFloor != null && agg.cost < spendFloor)}`}>{fmtRoiID(agg.roi)}</td>
         <td className={td}>{fmtNumID(agg.orders)}</td>
         {isVideo && <><td className={td}>{fmtPctID(agg.ctr)}</td><td className={td}>{fmtPctID(agg.cvr)}</td><td /></>}
       </tr>
@@ -602,7 +605,7 @@ function DailyTable({
             <td className="py-1.5 px-1 text-left">Total {selLower}</td>
             <td className={td}>{fmtRpID(selAgg.cost)}</td>
             <td className={td}>{fmtRpID(selAgg.revenue)}</td>
-            <td className={`${td} ${roiTone(selAgg.roi, roiFloor, selSide === 'pre' || selAgg.pending > 0)}`}>{fmtRoiID(selAgg.roi)}</td>
+            <td className={`${td} ${roiTone(selAgg.roi, roiFloor, selSide === 'pre' || selAgg.pending > 0 || (spendFloor != null && selAgg.cost < spendFloor))}`}>{fmtRoiVsFloorID(selAgg.roi, roiFloor)}</td>
             <td className={td}>{fmtNumID(selAgg.orders)}</td>
             {isVideo && <><td className={td}>{fmtPctID(selAgg.ctr)}</td><td className={td}>{fmtPctID(selAgg.cvr)}</td><td /></>}
           </tr>

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   RULE_VERSION, DEFAULT_SPEND_FLOOR, wibDateOf, dayOne, resolveRuleConfig, actionDirection,
-  computeWindows, checkpointsFormat, windowOf, windowStats, classifyWindows, overlapDayOf,
+  computeWindows, checkpointsFormat, windowOf, windowStats, classifyWindows, overlapDayOf, windowJudged,
 } from './experimentWindows.mjs'
 
 const CFG = { roiFloor: 4, spendFloor: 50000 }
@@ -25,6 +25,8 @@ test('hari ke-1 = tanggal WIB mulai, bukan potongan UTC', () => {
   assert.equal(dayOne({ start_at: '2026-09-19T07:05:00Z' }), '2026-09-19') // 14.05 WIB
   assert.equal(dayOne({ start_at: '2026-09-19T00:00:00.000Z' }), '2026-09-19') // formulir manual
   assert.equal(dayOne({}), null)
+  assert.equal(dayOne({ start_at: 'bukan tanggal' }), null) // teks sampah tidak lolos jadi "tanggal"
+  assert.equal(dayOne({ start_at: '2026-09-19' }), '2026-09-19')
 })
 
 test('setelan: satu sumber, lantai tak pernah kosong', () => {
@@ -186,12 +188,63 @@ test('video dikeluarkan: belanja berhenti = berhasil, ROI tidak dinilai', () => 
   assert.equal(run(steady(0, 100, 3), { direction: 'remove' }).v.code, 'REMOVED_WAIT')
 })
 
-test('status: dihentikan dihormati; ditutup sebelum 7 hari tidak pernah "menunggu"', () => {
+test('status: dihentikan dihormati; ditutup sebelum 7 hari = dinilai seperti yang berjalan (sementara)', () => {
   assert.equal(run(steady(6), { exp: { status: 'STOPPED' } }).v.conclusion, 'STOPPED')
-  assert.deepEqual((({ conclusion, code }) => [conclusion, code])(run(steady(6, 50000, 3), { exp: { status: 'CONCLUDED' } }).v), ['WINNER_CANDIDATE', 'CLOSED_EARLY_WIN'])
-  assert.equal(run(steady(1, 50000, 3), { exp: { status: 'CONCLUDED' } }).v.code, 'CLOSED_EARLY_WEAK')
-  assert.equal(run(steady(6, 50000, 2), { exp: { status: 'CONCLUDED' } }).v.code, 'CLOSED_EARLY')
+  // Evaluator tetap menghitung baris yang ditutup sampai jendelanya lengkap,
+  // jadi vonis sebelum itu sementara dan memakai syarat yang sama.
+  for (const rows of [steady(6, 50000, 3), steady(3.9, 50000, 3), steady(1, 100000, 3), steady(6, 50000, 2)]) {
+    const a = run(rows, { exp: { status: 'RUNNING' } }).v, b = run(rows, { exp: { status: 'CONCLUDED' } }).v
+    assert.deepEqual([b.conclusion, b.confidence, b.code, b.provisional], [a.conclusion, a.confidence, a.code, a.provisional])
+    assert.equal(b.provisional, true)
+  }
+  assert.equal(run(steady(3.9, 50000, 3), { exp: { status: 'CONCLUDED' } }).v.conclusion, 'INCONCLUSIVE') // bukan "Lemah" dini
   assert.equal(run(steady(6), { exp: { status: 'CONCLUDED' } }).v.conclusion, 'SUSTAINABLE_WINNER') // jendela sudah lengkap → vonis biasa
+})
+
+test('lemah tanpa order: bukan "selisih tipis"; ditandai noOrders', () => {
+  const v = run(Array.from({ length: 7 }, (_, i) => [i + 1, 12000, 0, 0])).v
+  assert.deepEqual([v.conclusion, v.confidence, v.code, v.params.thin, v.params.noOrders], ['WEAK', 'LOW', 'W7_WEAK', false, true])
+  const big = run(Array.from({ length: 7 }, (_, i) => [i + 1, 30000, 0, 0])).v
+  assert.deepEqual([big.confidence, big.params.thin, big.params.noOrders], ['MEDIUM', false, true])
+})
+
+test('video dikeluarkan: belanja hari aksi tidak dihitung sebagai "masih dibelanjai"', () => {
+  // Rp60 ribu di hari aksi (sebelum jam aksi), lalu nol.
+  const v = run([[1, 60000, 240000, 3], ...Array.from({ length: 6 }, (_, i) => [i + 2, 0, 0, 0])], { direction: 'remove' }).v
+  assert.deepEqual([v.code, v.params.day1Spend, v.params.afterSpend, v.params.afterDays, v.params.scope], ['REMOVED_DONE', 60000, 0, 6, 'video'])
+  const still = run([[1, 0, 0, 0], ...Array.from({ length: 6 }, (_, i) => [i + 2, 10000, 0, 0])], { direction: 'remove' }).v
+  assert.deepEqual([still.code, still.params.afterSpend], ['REMOVED_STILL_SPENDING', 60000])
+})
+
+test('campaign dijeda: ROI tidak dinilai (belanja hari ke-1 terjadi sebelum jeda)', () => {
+  assert.equal(actionDirection({ experiment_type: 'OTHER_APPROVED', treatment: 'Status campaign → DISABLE' }), 'pause')
+  assert.equal(actionDirection({ experiment_type: 'OTHER_APPROVED', treatment: 'Status campaign → ENABLE' }), 'normal')
+  const v = run([[1, 500000, 1000000, 12], ...Array.from({ length: 6 }, (_, i) => [i + 2, 0, 0, 0])], { direction: 'pause' }).v
+  assert.deepEqual([v.conclusion, v.code, v.params.scope], ['DATA_INSUFFICIENT', 'REMOVED_DONE', 'campaign'])
+})
+
+test('lonjakan butuh ekor yang kokoh: satu hari / satu order di ekor tidak memutuskan', () => {
+  const head = [[1, 50000, 500000, 5], [2, 50000, 500000, 5], [3, 50000, 500000, 5]]
+  // Ekor satu hari, satu order (3x) → bukan lonjakan; total 7 hari 8,25x → kandidat dgn pembatas.
+  const oneDay = run([...head, [4, 50000, 150000, 1], [5, 0, 0, 0], [6, 0, 0, 0], [7, 0, 0, 0]]).v
+  assert.equal(oneDay.conclusion, 'WINNER_CANDIDATE')
+  assert.ok(oneDay.params.caps.includes('TAIL_DROP'))
+  // Ekor dua hari tetapi satu order rata-rata lagi sudah mengangkatnya ke ambang.
+  const flip = run([...head, [4, 30000, 110000, 1], [5, 30000, 110000, 1], [6, 0, 0, 0], [7, 0, 0, 0]]).v
+  assert.notEqual(flip.conclusion, 'TEMPORARY_SPIKE')
+  // Ekor kokoh → lonjakan; data hanya 4–5 hari → keyakinan rendah.
+  const firm = run([...head, [4, 50000, 100000, 1], [5, 50000, 100000, 1], [6, 50000, 100000, 1], [7, 50000, 100000, 1]]).v
+  assert.deepEqual([firm.conclusion, firm.confidence], ['TEMPORARY_SPIKE', 'MEDIUM'])
+})
+
+test('windowJudged: warna kotak hanya bila aturan memang menilai jendela itu', () => {
+  const full = run(steady(6)).windows, few = run(steady(6, 60000, 3), { last: day(8) }).windows
+  assert.equal(windowJudged(windowOf(full, 'w7'), CFG), true)
+  assert.equal(windowJudged(windowOf(few, 'w7'), CFG), false) // 3 dari 7 hari berdata
+  assert.equal(windowJudged(windowOf(full, 'w7'), CFG, 'remove'), false)
+  assert.equal(windowJudged(windowOf(full, 'w7'), { roiFloor: null, spendFloor: 50000 }), false)
+  assert.equal(windowJudged(windowOf(run(steady(6, 100)).windows, 'w7'), CFG), false) // di bawah lantai
+  assert.equal(windowJudged(null, CFG), false)
 })
 
 test('paritas server–peramban: vonis dari objek tersimpan (lewat JSON) sama dengan dari deret', () => {
@@ -214,4 +267,14 @@ test('boost lain pada video yang sama di dalam jendela 7 hari', () => {
   assert.equal(overlapDayOf(e, [o('e2', '2026-09-23T03:00:00Z', { creative_video_id: 'v2' })]), null)
   assert.equal(overlapDayOf(e, [o('e2', '2026-09-23T03:00:00Z', { experiment_type: 'NEW_CREATIVE_TEST' })]), null)
   assert.equal(overlapDayOf(e, [o('e3', '2026-09-24T03:00:00Z'), o('e2', '2026-09-21T03:00:00Z')]), 3)
+})
+
+test('boost level-produk (Max Delivery, tanpa video) menumpang boost video pada produk yang sama', () => {
+  const video = exp({ product_id: 'p1' })
+  const md = { id: 'md', experiment_type: 'ACCELERATE_TESTING', creative_video_id: null, product_id: 'p1', start_at: '2026-09-21T03:00:00Z' }
+  assert.equal(overlapDayOf(video, [video, md]), 3)
+  assert.equal(overlapDayOf({ ...md, start_at: '2026-09-19T03:00:00Z' }, [{ ...video, start_at: '2026-09-22T03:00:00Z' }]), 4)
+  // Video LAIN pada produk yang sama bukan tumpang-tindih.
+  assert.equal(overlapDayOf(video, [{ ...video, id: 'x', creative_video_id: 'v2', start_at: '2026-09-21T03:00:00Z' }]), null)
+  assert.equal(overlapDayOf(video, [{ ...md, product_id: 'p2' }]), null)
 })

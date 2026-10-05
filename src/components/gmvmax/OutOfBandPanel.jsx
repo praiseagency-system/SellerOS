@@ -17,6 +17,8 @@ import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
 import { loadCampaignSettingsHistory } from '../../data/gmvmaxCampaignSettings'
 import { listExperiments, CONCLUSION_LABEL } from '../../data/gmvmaxExperiments'
 import { diffSettings } from '../../gmvmax/campaignSettings.mjs'
+import { getThresholds } from '../../data/gmvmaxSettings'
+import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
 
 const NEAR_MS = 6 * 3600 * 1000
 const JENIS = { CREATIVE_NO_BID: 'Creative Boost', NO_BID: 'Max Delivery' }
@@ -69,7 +71,8 @@ export default function OutOfBandPanel() {
       // aplikasi jauh sebelum potret sesi boost ada (baru mulai 28 Agu 2026).
       loadCampaignSettingsHistory({ days: 90 }).catch(() => []),
       listExperiments().then(r => r.rows).catch(() => []),
-    ]).then(([sessions, settings, exps]) => {
+      getThresholds().catch(() => ({})),
+    ]).then(([sessions, settings, exps, th]) => {
       if (!alive) return
       // Perubahan setelan = selisih antara dua potret berurutan. Tanggalnya =
       // tanggal potret KEDUA, jadi "terlihat berubah pada hari itu" — bukan klaim
@@ -88,7 +91,10 @@ export default function OutOfBandPanel() {
       }
       changes.sort((a, b) => b.date.localeCompare(a.date))
       setState({
-        loading: false, sessions, changes, exps,
+        loading: false, sessions, changes,
+        // Vonis yang SAMA dengan daftar eksperimen di atasnya (liveConclusion,
+        // setelan terkini) — bukan kolom tersimpan yang bisa tertinggal sehari.
+        exps: exps.map(e => ({ ...e, conclusion: liveConclusion(e, { roiFloor: th.experimentRoiFloor, spendFloor: th.spendFloor }).conclusion })),
         lastSnapshot: sessions.reduce((m, s) => (!m || s.last_seen > m ? s.last_seen : m), null),
       })
     }).catch(e => { if (alive) setState({ loading: false, error: e.message, sessions: [], changes: [], exps: [] }) })

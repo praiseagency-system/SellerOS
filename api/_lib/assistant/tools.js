@@ -6,7 +6,10 @@
 // Jawaban dijaga ringkas (limit, top-N, agregasi) karena tiap byte hasil tool
 // dikirim balik ke model sebagai token.
 import { restGet, restGetAll } from './rest.js'
-import { checkpointsFormat, windowOf } from '../../../src/gmvmax/skills/experimentWindows.mjs'
+import {
+  checkpointsFormat, windowOf, classifyWindows, actionDirection, isContaminated,
+} from '../../../src/gmvmax/skills/experimentWindows.mjs'
+import { verdictReasonID } from '../../../src/utils/gmvmaxExperimentFormat.js'
 import {
   summarizeQuadrant, pickProducts, compactRow, summarizeStore, summarizeGmvMax, monthKeyWib,
 } from './aggregate.js'
@@ -195,7 +198,7 @@ async function gmvmaxDecision(ctx) {
 }
 
 async function gmvmaxExperiments(ctx, input) {
-  let q = `gmvmax_experiments?workspace_id=eq.${ctx.workspaceId}&select=experiment_type,creative_video_id,product_id,campaign_id,treatment,start_at,status,conclusion,confidence,notes,checkpoints,contaminated&order=start_at.desc&limit=${clampInt(input.limit, 1, 30, 15)}`
+  let q = `gmvmax_experiments?workspace_id=eq.${ctx.workspaceId}&select=experiment_type,creative_video_id,product_id,campaign_id,treatment,start_at,status,conclusion,confidence,notes,checkpoints,contaminated,contamination&order=start_at.desc&limit=${clampInt(input.limit, 1, 30, 15)}`
   if (input.status) q += `&status=eq.${enc(String(input.status).toUpperCase())}`
   const rows = await restGet(ctx.token, q)
   // Aturan v2: vonis dari DUA jendela kumulatif. Yang dikirim ke model ringkasan
@@ -210,12 +213,19 @@ async function gmvmaxExperiments(ctx, input) {
   return (rows || []).map(e => {
     const v2 = checkpointsFormat(e.checkpoints) === 'v2'
     const w7 = v2 ? windowOf(e.checkpoints, 'w7') : null
+    // Alasan + penanda sementara dihitung dari jendela dan ambang yang
+    // TERSIMPAN, supaya selaras dengan kolom kesimpulan yang ikut dikirim.
+    const oc = v2 ? classifyWindows({
+      windows: e.checkpoints, ruleConfig: { roiFloor: w7?.cfg?.roi_floor, spendFloor: w7?.cfg?.spend_floor },
+      status: e.status, contaminated: isContaminated(e), direction: actionDirection(e), overlapDay: w7?.overlap_day ?? null,
+    }) : null
+    const noun = e.experiment_type === 'MANUAL_BOOST' || e.experiment_type === 'ACCELERATE_TESTING' ? 'boost' : 'perubahan'
     return {
       tipe: e.experiment_type, video_id: e.creative_video_id, produk_id: e.product_id, campaign_id: e.campaign_id,
       perlakuan: e.treatment ? String(e.treatment).slice(0, 160) : null, mulai: e.start_at, status: e.status,
-      kesimpulan: e.conclusion, keyakinan: e.confidence, terkontaminasi: !!e.contaminated,
+      kesimpulan: e.conclusion, keyakinan: e.confidence, terkontaminasi: isContaminated(e),
       ...(v2
-        ? { aturan: 'jendela_kumulatif', jendela_3_hari: jendela(windowOf(e.checkpoints, 'w3')), jendela_7_hari: jendela(w7), ambang_saat_dihitung: w7?.cfg ?? null, boost_lain_mulai_hari_ke: w7?.overlap_day ?? null }
+        ? { aturan: 'jendela_kumulatif', vonis_sementara: !!oc.provisional, alasan: verdictReasonID(oc, { noun }) || null, jendela_3_hari: jendela(windowOf(e.checkpoints, 'w3')), jendela_7_hari: jendela(w7), ambang_saat_dihitung: w7?.cfg ?? null, boost_lain_mulai_hari_ke: w7?.overlap_day ?? null }
         : { aturan: 'titik_ukur_satu_hari', checkpoint_terakhir: Array.isArray(e.checkpoints) && e.checkpoints.length ? e.checkpoints[e.checkpoints.length - 1] : null }),
       catatan: e.notes ? String(e.notes).slice(0, 160) : null,
     }

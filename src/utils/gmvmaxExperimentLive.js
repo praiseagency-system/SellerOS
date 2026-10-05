@@ -14,7 +14,7 @@
 // dari pemanggil lama. Lantai belanja SELALU ada (bawaan Rp50.000).
 import { classifyOutcome } from '../gmvmax/skills/experimentClassify.mjs'
 import {
-  classifyWindows, checkpointsFormat, resolveRuleConfig, actionDirection, windowOf,
+  classifyWindows, checkpointsFormat, resolveRuleConfig, actionDirection, windowOf, isContaminated,
 } from '../gmvmax/skills/experimentWindows.mjs'
 
 export { checkpointsFormat }
@@ -27,7 +27,7 @@ export function liveConclusion(exp, cfg) {
   if (format === 'v2') {
     return {
       format, ...classifyWindows({
-        windows: checkpoints, ruleConfig, status: exp.status, contaminated: !!exp.contaminated,
+        windows: checkpoints, ruleConfig, status: exp.status, contaminated: isContaminated(exp),
         direction: actionDirection(exp), overlapDay: windowOf(checkpoints, 'w7')?.overlap_day ?? null,
       }),
     }
@@ -35,7 +35,8 @@ export function liveConclusion(exp, cfg) {
   if (format === 'unknown') {
     return { format, conclusion: exp.conclusion || 'INCONCLUSIVE', confidence: exp.confidence || 'LOW', code: 'UNKNOWN_FORMAT', params: {}, provisional: false }
   }
-  if (format === 'empty' && exp.status === 'RUNNING') {
+  // Baris yang ditutup pun masih dihitung evaluator sampai jendelanya lengkap.
+  if (format === 'empty' && exp.status !== 'STOPPED') {
     return { format, conclusion: 'INCONCLUSIVE', confidence: 'LOW', code: 'NOT_EVALUATED', params: {}, provisional: true }
   }
   // Aturan lama, tak diubah. baseline_disclosed dibaca dari penanda

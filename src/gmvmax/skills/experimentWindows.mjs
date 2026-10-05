@@ -39,8 +39,32 @@ export function wibDateOf(iso) {
 }
 
 // Hari ke-1 eksperimen. Data harian = hari WIB, jadi hari pertama pun hari WIB.
+// null bila start_at bukan tanggal — pemanggil tak boleh menerima teks sampah
+// yang lalu meledak di aritmetika tanggal.
 export function dayOne(experiment) {
-  return wibDateOf(experiment?.start_at) || String(experiment?.start_at || '').slice(0, 10) || null
+  const raw = experiment?.start_at
+  const d = wibDateOf(raw) || String(raw || '').slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(toMs(d)) ? d : null
+}
+
+// Kejadian "tercampur" tersimpan yang berada di dalam hari ke-1..7. Tanda lama
+// dibuat dengan jendela start_at + 7×24 jam (tanggal UTC), sehingga kejadian
+// hari ke-8 ikut menandai. Tanggal aksi lama tersimpan sebagai tanggal UTC
+// (≤ tanggal WIB-nya), jadi yang tepat di batas dipertahankan — lebih baik
+// tetap tertanda daripada salah mencabut. null = tak ada bukti tersimpan.
+export function contaminationInWindow(exp) {
+  const list = Array.isArray(exp?.contamination?.kejadian) ? exp.contamination.kejadian : null
+  const day1 = dayOne(exp)
+  if (!list || !day1) return null
+  const day7 = addDays(day1, 6)
+  return { day1, day7, kept: list.filter(k => !k?.tanggal || k.tanggal <= day7), total: list.length }
+}
+// Tercampur yang BERLAKU untuk vonis — dipakai server dan semua layar, supaya
+// tanda warisan hari ke-8 tidak membatasi vonis selagi DB belum dibersihkan.
+export function isContaminated(exp) {
+  if (!exp?.contaminated) return false
+  const k = contaminationInWindow(exp)
+  return k ? k.kept.length > 0 : true
 }
 
 // SATU sumber setelan untuk server dan peramban. Menerima baris gmvmax_settings
@@ -61,10 +85,14 @@ export function resolveRuleConfig(row) {
 // belanja yang berhenti adalah tanda BERHASIL, bukan "data kurang" — ROI-nya
 // tidak dinilai. Arah dibaca dari kalimat perlakuan yang ditulis pembuka
 // eksperimen (experimentOpener.mjs); "dipulihkan" dinilai seperti biasa.
+// 'pause' = campaign dijeda (Status campaign → DISABLE): sama-sama tidak dinilai
+// ROI-nya — belanja hari ke-1 terjadi SEBELUM jeda, jadi "ROI 7 hari" hanya
+// mengukur keadaan sebelum aksi.
 export function actionDirection(exp) {
   const t = String(exp?.treatment || '')
   if (/dilepas/i.test(t) && /spark/i.test(t)) return 'remove'
   if (exp?.experiment_type === 'CREATIVE_EXCLUSION') return /dipulihkan/i.test(t) ? 'normal' : 'remove'
+  if (/status campaign/i.test(t) && /DISABLE/i.test(t)) return 'pause'
   return 'normal'
 }
 
@@ -153,12 +181,20 @@ export function windowStats(w, { roiFloor = null, spendFloor = DEFAULT_SPEND_FLO
 // dan belanjanya mencapai lantai.
 const enoughDays = (w) => w.counted >= (w.days <= 3 ? 2 : 4)
 const judgeable = (w, sf) => !!w && w.complete && enoughDays(w) && w.spend > 0 && w.spend >= sf
+// Dipakai layar untuk MEWARNAI kotak jendela: hijau/merah hanya bila aturan
+// memang menilai ROI jendela itu (satu syarat, bukan salinan di tiap komponen).
+export function windowJudged(w, ruleConfig, direction = 'normal') {
+  const { roiFloor, spendFloor } = resolveRuleConfig(ruleConfig)
+  return direction === 'normal' && roiFloor != null && judgeable(w, spendFloor)
+}
 
 // Tipis = ROI pindah sisi ambang bila SATU order (senilai rata-rata order jendela
 // itu) hilang / bertambah. Lolos lantai belum berarti cukup sampel: Rp50 ribu
 // pada ambang 4x hanya ±2 order.
 const thinAbove = (w, floor) => !(w.orders > 0) || (w.revenue - w.revenue / w.orders) / w.spend < floor
-const thinBelow = (w, floor, sf) => (w.orders > 0 ? (w.revenue + w.revenue / w.orders) / w.spend >= floor : w.spend < 2 * sf)
+// Hanya bermakna bila ADA order: tanpa order tidak ada "satu order lagi" yang
+// bisa dihitung (dulu jendela nol order ikut disebut "selisih tipis").
+const thinBelow = (w, floor) => w.orders > 0 && (w.revenue + w.revenue / w.orders) / w.spend >= floor
 
 // Kokoh = masih di atas ambang walau hari terbaiknya dibuang.
 function restWithoutBest(w) {
@@ -190,24 +226,32 @@ export function classifyWindows({
     complete7: !!w7?.complete,
     // Data hari ke-7 baru masuk pagi berikutnya.
     finalOn: w7 ? addDays(w7.to, 1) : null, interimOn: w3 ? addDays(w3.to, 1) : null,
+    // Sebab keyakinan diturunkan — ikut dikirim supaya kalimat alasan bisa
+    // menyebutnya pada SEMUA vonis, bukan hanya pada "Kandidat pemenang".
+    contaminated: !!contaminated, overlapDay: overlapDay ?? null,
   }
-  const open = status === 'RUNNING'
-
+  // RUNNING dan CONCLUDED dinilai SAMA: evaluator tetap menghitung baris yang
+  // ditutup sampai jendelanya lengkap, jadi vonis sebelum itu memang sementara
+  // (dulu "ditutup lebih awal" diberi vonis final yang lalu berubah sendiri).
   if (status === 'STOPPED') return R('STOPPED', 'MEDIUM', 'STOPPED')
   if (!w7) return R('INCONCLUSIVE', 'LOW', 'NOT_EVALUATED', base, true)
   if (w7.counted === 0 && (w3?.counted ?? 0) === 0) {
-    return w7.complete || !open
+    return w7.complete
       ? R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', 'W7_NO_DATA', base)
       : R('INCONCLUSIVE', 'LOW', 'NO_DATA_YET', base, true)
   }
 
-  if (direction === 'remove') {
-    const p = { ...base, before: w7.baseline?.spend ?? null }
-    if (!w7.complete && open) return R('INCONCLUSIVE', 'LOW', 'REMOVED_WAIT', p, true)
-    return R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', w7.spend >= spendFloor ? 'REMOVED_STILL_SPENDING' : 'REMOVED_DONE', p)
+  if (direction === 'remove' || direction === 'pause') {
+    // Belanja hari ke-1 sebagian terjadi SEBELUM jam aksi, jadi "masih
+    // dibelanjai" dinilai dari hari ke-2 dst. saja; hari ke-1 dilaporkan terpisah.
+    const after = (w7.daily || []).filter(d => d.d > w7.from)
+    const afterSpend = after.reduce((a, d) => a + d.s, 0)
+    const p = { ...base, scope: direction === 'pause' ? 'campaign' : 'video', before: w7.baseline?.spend ?? null, day1Spend: w7.spend - afterSpend, afterSpend, afterDays: after.length }
+    if (!w7.complete) return R('INCONCLUSIVE', 'LOW', 'REMOVED_WAIT', p, true)
+    return R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', afterSpend >= spendFloor ? 'REMOVED_STILL_SPENDING' : 'REMOVED_DONE', p)
   }
 
-  if (roiFloor == null) return R('INCONCLUSIVE', 'LOW', 'NO_ROI_FLOOR', base)
+  if (roiFloor == null) return R('INCONCLUSIVE', 'LOW', 'NO_ROI_FLOOR', base, !w7.complete)
 
   const ok3 = judgeable(w3, spendFloor), ok7 = judgeable(w7, spendFloor)
   const limited = contaminated || overlapDay != null
@@ -220,9 +264,16 @@ export function classifyWindows({
     const tail = (w7.daily || []).filter(d => w3 && d.d > w3.to)
     const tailSpend = tail.reduce((a, d) => a + d.s, 0), tailRev = tail.reduce((a, d) => a + d.r, 0)
     const tailRoi = tailSpend > 0 ? tailRev / tailSpend : null
-    if (ok3 && roi3 >= roiFloor && !thinAbove(w3, roiFloor) && tailSpend >= spendFloor
-      && tailRoi < roiFloor && tailRoi <= (1 - SPIKE_DROP) * roi3) {
-      return R('TEMPORARY_SPIKE', limited ? 'LOW' : 'MEDIUM', 'W7_SPIKE', { ...base, tailRoi, tailSpend })
+    const dropped = ok3 && roi3 >= roiFloor && !thinAbove(w3, roiFloor) && tailSpend >= spendFloor
+      && tailRoi < roiFloor && tailRoi <= (1 - SPIKE_DROP) * roi3
+    // Ekor diuji setara cabang lain: minimal 2 hari berbelanja, dan tetap di
+    // bawah ambang walau ditambah SATU order rata-rata. Tanpa ini satu hari /
+    // satu order di ekor memutuskan "Lonjakan sementara".
+    const tailDays = tail.filter(d => d.s > 0 && d.s >= spendFloor * 0.1).length
+    const avgOrder = w7.orders > 0 ? w7.revenue / w7.orders : null
+    const tailFirm = tailDays >= 2 && !(avgOrder != null && (tailRev + avgOrder) / tailSpend >= roiFloor)
+    if (dropped && tailFirm) {
+      return R('TEMPORARY_SPIKE', limited || w7.counted < 5 ? 'LOW' : 'MEDIUM', 'W7_SPIKE', { ...base, tailRoi, tailSpend })
     }
     if (roi7 >= roiFloor) {
       const rest = restWithoutBest(w7)
@@ -232,28 +283,25 @@ export function classifyWindows({
       else if (st.above * 2 < st.spendDays) caps.push('INCONSISTENT')
       if (!(rest.roi != null && rest.roi >= roiFloor)) caps.push('ONE_DAY')
       if (thinAbove(w7, roiFloor)) caps.push('THIN')
+      if (dropped) caps.push('TAIL_DROP') // turun di ekor, tetapi ekornya belum kokoh
       if (contaminated) caps.push('CONTAMINATED')
       if (overlapDay != null) caps.push('REBOOST')
-      const p = { ...base, above: st.above, spendDays: st.spendDays, restRoi: rest.roi, overlapDay, caps }
+      const p = { ...base, above: st.above, spendDays: st.spendDays, restRoi: rest.roi, tailRoi, tailSpend, caps }
       return caps.length === 0
         ? R('SUSTAINABLE_WINNER', 'MEDIUM', 'W7_WIN', p)
         : R('WINNER_CANDIDATE', 'LOW', 'W7_WIN_CAPPED', p)
     }
-    const thin = thinBelow(w7, roiFloor, spendFloor)
-    return R('WEAK', thin || limited || w7.counted < 5 ? 'LOW' : 'MEDIUM', 'W7_WEAK',
-      { ...base, above: st.above, spendDays: st.spendDays, thin })
+    const thin = thinBelow(w7, roiFloor)
+    // Nol order dari belanja yang baru sedikit di atas lantai: sampelnya kecil.
+    const smallSample = !(w7.orders > 0) && w7.spend < 2 * spendFloor
+    return R('WEAK', thin || smallSample || limited || w7.counted < 5 ? 'LOW' : 'MEDIUM', 'W7_WEAK',
+      { ...base, above: st.above, spendDays: st.spendDays, thin, noOrders: !(w7.orders > 0) })
   }
 
   // Jendela 7 hari sudah lengkap tetapi tak layak → FINAL, tak ada yang ditunggu.
   if (w7.complete) {
     const code = !(w7.spend > 0) ? 'W7_NO_SPEND' : !enoughDays(w7) ? 'W7_FEW_DAYS' : 'W7_LOW_SPEND'
     return R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', code, base)
-  }
-
-  // Ditutup sebelum 7 hari lengkap: tak ada lagi yang ditunggu.
-  if (!open) {
-    if (ok3) return roi3 >= roiFloor ? R('WINNER_CANDIDATE', 'LOW', 'CLOSED_EARLY_WIN', base) : R('WEAK', 'LOW', 'CLOSED_EARLY_WEAK', base)
-    return R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', 'CLOSED_EARLY', base)
   }
 
   // Belum 7 hari → sementara dari 3 hari pertama. "Lemah" dini hanya untuk yang
@@ -268,17 +316,22 @@ export function classifyWindows({
   return R('INCONCLUSIVE', 'LOW', 'W3_WAIT', base, true)
 }
 
-// Boost LAIN pada video yang sama yang mulai di dalam jendela 7 hari eksperimen
+// Boost LAIN pada video/produk yang sama yang mulai di dalam jendela 7 hari eksperimen
 // ini → hari ke berapa (2–7), atau null. Penanda `contaminated` tidak
 // menangkapnya (ia hanya melihat setelan campaign dan persetujuan lain),
 // padahal sesi boost kedua jelas ikut mengisi jendela.
+// Cocok bila videonya sama, ATAU salah satunya boost level-produk (Max Delivery,
+// tanpa video) pada produk yang sama — boost produk ikut mengangkat videonya.
 export function overlapDayOf(exp, others = []) {
   const day1 = dayOne(exp)
-  if (!day1 || !exp?.creative_video_id) return null
+  if (!day1 || (!exp?.creative_video_id && !exp?.product_id)) return null
   const end = addDays(day1, 6)
+  const sameTarget = (o) => (exp.creative_video_id && o.creative_video_id
+    ? o.creative_video_id === exp.creative_video_id
+    : !!exp.product_id && o.product_id === exp.product_id)
   let hit = null
   for (const o of others) {
-    if (!o || o.id === exp.id || o.creative_video_id !== exp.creative_video_id) continue
+    if (!o || o.id === exp.id || !sameTarget(o)) continue
     if (o.experiment_type !== 'MANUAL_BOOST' && o.experiment_type !== 'ACCELERATE_TESTING') continue
     const d = dayOne(o)
     if (!d || d <= day1 || d > end) continue

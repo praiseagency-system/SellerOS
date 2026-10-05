@@ -69,30 +69,52 @@ const CAP_TEXT = {
   ONE_DAY: (p) => `bertumpu pada satu hari (tanpa hari terbaiknya ${p.restRoi != null ? `tinggal ${fmtRoiID(p.restRoi)}` : 'tak ada belanja lain'})`,
   THIN: () => 'selisihnya tipis: satu order lebih sedikit sudah di bawah ambang',
   CONTAMINATED: (p, noun) => `tercampur perubahan lain, jadi belum tentu karena ${noun} ini`,
-  REBOOST: (p) => `ada boost lain pada video yang sama mulai hari ke-${p.overlapDay}`,
+  TAIL_DROP: (p) => `hari ke-4–7 turun ke ${fmtRoiID(p.tailRoi)} (dari belanja ${fmtRpRbID(p.tailSpend)})`,
+  REBOOST: (p) => `ada boost lain pada video/produk yang sama mulai hari ke-${p.overlapDay}`,
+}
+// ROI di sisi "salah" ambang yang pembulatan satu desimalnya menyentuh ambang
+// ("4,0x … di bawah ambang 4x") ditulis dua desimal supaya tak bertentangan.
+export const fmtRoiVsFloorID = (roi, floor) => {
+  if (!ok(roi) || !ok(floor)) return fmtRoiID(roi)
+  const r1 = Math.round(roi * 10) / 10
+  if ((roi < floor && r1 >= floor) || (roi >= floor && r1 < floor)) {
+    const r2 = roi < floor ? Math.floor(roi * 100) / 100 : Math.ceil(roi * 100) / 100
+    return `${r2.toFixed(2).replace('.', ',')}x`
+  }
+  return fmtRoiID(roi)
 }
 export function verdictReasonID(verdict, { noun = 'boost' } = {}) {
   const p = verdict?.params || {}
   const amb = fmtFloorID(p.floor)
-  const w3 = `${fmtRoiID(p.roi3)} dari belanja ${fmtRpRbID(p.spend3)}`
-  const w7 = `${fmtRoiID(p.roi7)} dari belanja ${fmtRpRbID(p.spend7)}`
+  const w3 = `${fmtRoiVsFloorID(p.roi3, p.floor)} dari belanja ${fmtRpRbID(p.spend3)}`
+  const w7 = `${fmtRoiVsFloorID(p.roi7, p.floor)} dari belanja ${fmtRpRbID(p.spend7)}`
+  // Aksi berhenti: video dikeluarkan / kode spark dilepas, atau campaign dijeda.
+  const subj = p.scope === 'campaign' ? 'Campaign' : 'Video'
+  const aksi = p.scope === 'campaign' ? 'dijeda' : 'dikeluarkan'
   const akhir = p.finalOn ? ` Vonis akhir ${tgl(p.finalOn)}.` : ''
+  // Sebab keyakinan diturunkan pada vonis yang kalimatnya tak memuat pembatas.
+  const batas = [p.contaminated && `tercampur perubahan lain`, p.overlapDay != null && `ada boost lain pada video/produk yang sama mulai hari ke-${p.overlapDay}`].filter(Boolean)
+  const karena = batas.length ? ` Keyakinan rendah: ${batas.join(' dan ')}.` : ''
   switch (verdict?.code) {
     case 'STOPPED': return 'Eksperimen dihentikan sebelum ada vonis.'
     case 'NOT_EVALUATED': return 'Baru dicatat — dihitung otomatis besok pagi.'
     case 'NO_DATA_YET': return 'Belum ada hari berdata sejak mulai.'
     case 'W7_NO_DATA': return 'Tidak ada data dalam 7 hari pertama — tidak ada yang bisa dinilai.'
     case 'NO_ROI_FLOOR': return `Ambang ROI belum diisi — isi "Ambang ROI vonis" di daftar eksperimen supaya ada vonis.${p.spend7 > 0 ? ` ${p.complete7 ? '7 hari pertama' : `Sejauh ini (${p.counted7} hari)`}: ${w7}.` : ''}`
-    case 'REMOVED_WAIT': return `Belanja video ini sejak dikeluarkan ${fmtRpRbID(p.spend7)}; dinilai setelah 7 hari${p.finalOn ? `, ${tgl(p.finalOn)}` : ''}.`
-    case 'REMOVED_DONE': return `Video berhenti dibelanjai sejak dikeluarkan: ${fmtRpRbID(p.spend7)} dalam 7 hari${p.before > 0 ? ` (sebelumnya ${fmtRpRbID(p.before)})` : ''} — tidak ada ROI yang dinilai.`
-    case 'REMOVED_STILL_SPENDING': return `Video masih dibelanjai ${fmtRpRbID(p.spend7)} dalam 7 hari setelah dikeluarkan — periksa campaign lain.`
+    case 'REMOVED_WAIT': return `Belanja hari ${aksi} ${fmtRpRbID(p.day1Spend)} (sebagian sebelum aksi)${p.afterDays > 0 ? `, ${p.afterDays} hari sesudahnya ${fmtRpRbID(p.afterSpend)}` : ''}; dinilai setelah 7 hari${p.finalOn ? `, ${tgl(p.finalOn)}` : ''}.`
+    case 'REMOVED_DONE': return `${subj} berhenti dibelanjai: ${fmtRpRbID(p.afterSpend)} dalam ${p.afterDays} hari sesudah ${aksi}${p.day1Spend > 0 ? ` (hari ${aksi} ${fmtRpRbID(p.day1Spend)}, sebagian sebelum aksi)` : ''}${p.before > 0 ? `; 7 hari sebelumnya ${fmtRpRbID(p.before)}` : ''} — tidak ada ROI yang dinilai.`
+    case 'REMOVED_STILL_SPENDING': return `${subj} masih dibelanjai ${fmtRpRbID(p.afterSpend)} dalam ${p.afterDays} hari sesudah ${aksi}${p.scope === 'campaign' ? ' — periksa status campaign.' : ' — periksa campaign lain.'}`
     case 'W7_WIN': return `ROI gabungan 7 hari pertama ${w7}, di atas ambang ${amb}; ${p.above} dari ${p.spendDays} hari berbelanja di atas ambang.`
     case 'W7_WIN_CAPPED': {
-      const caps = (p.caps || []).map(c => CAP_TEXT[c]?.(p, noun)).filter(Boolean)
-      return `ROI gabungan 7 hari pertama ${w7}, di atas ambang ${amb} — tetapi ${caps.slice(0, 2).join('; dan ')}.`
+      // Sebab dari LUAR (tercampur, boost lain) didahulukan: itu yang paling
+      // perlu diketahui pemilik dan tidak boleh terpotong oleh batas dua sebab.
+      const order = ['CONTAMINATED', 'REBOOST']
+      const sorted = [...(p.caps || [])].sort((a, b) => (order.includes(b) ? 1 : 0) - (order.includes(a) ? 1 : 0))
+      const caps = sorted.map(c => CAP_TEXT[c]?.(p, noun)).filter(Boolean)
+      return `ROI gabungan 7 hari pertama ${w7}, di atas ambang ${amb} — tetapi ${caps.slice(0, 2).join('; dan ')}${caps.length > 2 ? `; +${caps.length - 2} sebab lain` : ''}.`
     }
-    case 'W7_SPIKE': return `Kuat di 3 hari pertama (${fmtRoiID(p.roi3)}), lalu turun: hari ke-4–7 hanya ${fmtRoiID(p.tailRoi)} dari belanja ${fmtRpRbID(p.tailSpend)}.`
-    case 'W7_WEAK': return `ROI gabungan 7 hari pertama ${w7}, di bawah ambang ${amb}${p.thin ? ' — selisih tipis, satu order lagi sudah di atasnya' : ''}.`
+    case 'W7_SPIKE': return `Kuat di 3 hari pertama (${fmtRoiID(p.roi3)}), lalu turun: hari ke-4–7 hanya ${fmtRoiVsFloorID(p.tailRoi, p.floor)} dari belanja ${fmtRpRbID(p.tailSpend)}.${karena}`
+    case 'W7_WEAK': return `ROI gabungan 7 hari pertama ${w7}, di bawah ambang ${amb}${p.noOrders ? ' — belum ada order sama sekali' : p.thin ? ' — selisih tipis, satu order lagi sudah di atasnya' : ''}.${karena}`
     case 'W7_LOW_SPEND': return `Belanja 7 hari pertama hanya ${fmtRpRbID(p.spend7)}, di bawah lantai belanja ${fmtRpRbID(p.spendFloor)} — terlalu kecil untuk dinilai.`
     case 'W7_NO_SPEND': return 'Tidak ada belanja dalam 7 hari pertama — tidak ada yang bisa dinilai.'
     case 'W7_FEW_DAYS': return `Data hanya masuk ${p.counted7} dari 7 hari — tidak cukup untuk dinilai.`
@@ -102,8 +124,6 @@ export function verdictReasonID(verdict, { noun = 'boost' } = {}) {
     case 'W3_LOW_SPEND_WAIT': return `${p.spend3 > 0 ? `Belanja 3 hari pertama baru ${fmtRpRbID(p.spend3)} (lantai belanja ${fmtRpRbID(p.spendFloor)})` : 'Belum ada belanja dalam 3 hari pertama'}.${akhir}`
     case 'W3_FEW_DAYS_WAIT': return `Data 3 hari pertama baru masuk ${p.counted3} hari.${akhir}`
     case 'W3_WAIT': return `Baru ${p.counted3} dari 3 hari${p.interimOn ? ` — vonis sementara ${tgl(p.interimOn)}` : ''}.`
-    case 'CLOSED_EARLY_WIN': case 'CLOSED_EARLY_WEAK': return `Ditutup sebelum 7 hari lengkap. 3 hari pertama: ${w3}.`
-    case 'CLOSED_EARLY': return 'Ditutup sebelum datanya cukup untuk dinilai.'
     default: return ''
   }
 }
