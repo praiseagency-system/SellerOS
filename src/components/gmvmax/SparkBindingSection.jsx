@@ -57,6 +57,7 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
   const [loadedAt, setLoadedAt] = useState(0) // timestamp muat daftar (utk hitung sisa hari otorisasi)
   const [bindTimes, setBindTimes] = useState(null) // kapan diikat (lihat loadBindTimes)
   const [urut, setUrut] = useState('baru')         // baru = terbaru diikat · habis = segera habis
+  const [fStatus, setFStatus] = useState('semua')  // semua · aktif · soon · expired · lain
 
   const loadList = useCallback(async () => {
     setLoadingList(true); setListErr(null)
@@ -154,7 +155,6 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
     }
     return waktuIkat(idOf(b), bindTimes).ms - waktuIkat(idOf(a), bindTimes).ms
   })
-  const pg = usePaged(rows)
 
   // ── Panel strategi supply (E2) — dihitung dari data yang sudah dimuat ──────
   const boundIds = new Set(rows.map(it => String(it.item_info?.item_id ?? it.item_id ?? '')))
@@ -174,6 +174,28 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
     return days >= 0 && days <= 7
   })
   const expiredCount = rows.filter(it => it.auth_info?.ad_auth_status === 'EXPIRED').length
+
+  // Saringan status tabel. "Segera habis" = himpunan `soon` yang sama dengan
+  // panel merah di atas (irisan dari Aktif, bukan status tersendiri).
+  const statusOf = (it) => it.auth_info?.ad_auth_status
+  const soonSet = new Set(soon)
+  const SARING = {
+    semua: () => true,
+    aktif: (it) => statusOf(it) === 'AUTHORIZED',
+    soon: (it) => soonSet.has(it),
+    expired: (it) => statusOf(it) === 'EXPIRED',
+    lain: (it) => statusOf(it) !== 'AUTHORIZED' && statusOf(it) !== 'EXPIRED',
+  }
+  const hitung = Object.fromEntries(Object.entries(SARING).map(([k, fn]) => [k, rows.filter(fn).length]))
+  const CHIP = [
+    { id: 'semua', label: 'Semua', angka: 'text-ink-muted' },
+    { id: 'aktif', label: 'Aktif', angka: 'text-emerald-400' },
+    { id: 'soon', label: 'Segera habis ≤7 hr', angka: 'text-amber-400' },
+    { id: 'expired', label: 'Expired', angka: 'text-red-400' },
+    { id: 'lain', label: 'Lainnya', angka: 'text-ink-faint', sembunyiJikaNol: true },
+  ].filter(c => !(c.sembunyiJikaNol && hitung[c.id] === 0))
+  const shown = rows.filter(SARING[fStatus] || SARING.semua)
+  const pg = usePaged(shown)
 
   async function copyOutreach(items, mode) {
     const lines = mode === 'soon'
@@ -309,11 +331,26 @@ export default function SparkBindingSection({ tab = 'kode', onTab = () => {}, ex
             </button>
             </div>
           </div>
+          {rows.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              {CHIP.map(c => (
+                <button key={c.id} onClick={() => setFStatus(c.id)} aria-pressed={fStatus === c.id}
+                  className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${fStatus === c.id
+                    ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
+                    : 'border-line/15 text-ink-muted hover:text-ink hover:border-line/30'}`}>
+                  {c.label} <span className={`font-mono font-semibold ${c.angka}`}>{hitung[c.id]}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {listErr && <p className="text-[11px] text-red-300">{listErr}</p>}
+          {!listErr && rows.length > 0 && shown.length === 0 && (
+            <p className="text-[11px] text-ink-faint">Tidak ada video dengan status ini.</p>
+          )}
           {!listErr && rows.length === 0 && !loadingList && (
             <p className="text-[11px] text-ink-faint">Belum ada Spark post ter-otorisasi (atau daftar belum dimuat).</p>
           )}
-          {rows.length > 0 && (
+          {shown.length > 0 && (
             <div className="">
               <TableScroll stickyFirst>
               <table className="w-full text-[11.5px]">
