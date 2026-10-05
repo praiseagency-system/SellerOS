@@ -10,11 +10,12 @@ let log = [] // satu entri per permintaan ke gmvmax_creatives
 let failWith = null
 
 function query(table) {
-  const q = { table, eqs: {}, ins: {}, ordered: [], range: null, lim: null }
+  const q = { table, eqs: {}, ins: {}, ors: [], ordered: [], range: null, lim: null }
   const api = {
     select: () => api,
     eq: (c, v) => { q.eqs[c] = v; return api },
     in: (c, v) => { q.ins[c] = v; return api },
+    or: (expr) => { q.ors.push(expr); return api },
     order: (c) => { q.ordered.push(c); return api },
     range: (a, b) => { q.range = [a, b]; return api },
     limit: (n) => { q.lim = n; return api },
@@ -22,13 +23,26 @@ function query(table) {
   }
   return api
 }
+// Subset sintaks `or` PostgREST yang dipakai kode: "kol.ilike.pola,kol.ilike.pola"
+// (% = wildcard, tak peka huruf besar; NULL tak pernah cocok). Operator lain
+// MELEMPAR — lebih baik tes gagal daripada lulus dengan saringan yang tak ditiru.
+const likeRe = (p) => new RegExp(
+  '^' + p.split('%').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i')
+function matchOr(r, expr) {
+  return expr.split(',').some(term => {
+    const [col, op, ...rest] = term.split('.')
+    if (op !== 'ilike') throw new Error(`klien tiruan: operator or "${op}" belum ditiru`)
+    return r[col] != null && likeRe(rest.join('.')).test(String(r[col]))
+  })
+}
 function run(q) {
   if (q.table === 'gmvmax_imports') return { data: imports, error: null }
   log.push(q)
   if (failWith) return { data: null, error: failWith }
   let rows = creatives.filter(r =>
     Object.entries(q.eqs).every(([c, v]) => r[c] === v) &&
-    Object.entries(q.ins).every(([c, v]) => v.includes(r[c])))
+    Object.entries(q.ins).every(([c, v]) => v.includes(r[c])) &&
+    q.ors.every(expr => matchOr(r, expr)))
   if (q.ordered.includes('id')) rows = [...rows].sort((a, b) => a.id - b.id)
   if (q.range) rows = rows.slice(q.range[0], q.range[1] + 1)
   if (q.lim != null) rows = rows.slice(0, q.lim)
@@ -37,7 +51,9 @@ function run(q) {
 vi.mock('../lib/supabase', () => ({ supabase: { from: (t) => query(t) } }))
 vi.mock('../utils/workspace', () => ({ getCurrentWorkspaceId: () => 'ws-1' }))
 
-const { loadExperimentDaily, loadVideosDaily } = await import('./gmvmaxImports')
+const {
+  loadExperimentDaily, loadVideosDaily, loadExcludedHistory, loadCodeVideos, loadProductVideoIds,
+} = await import('./gmvmaxImports')
 
 // n import harian berurutan mulai 1 Sep 2026; listImports mengembalikan terbaru dulu.
 const day = (i) => new Date(Date.UTC(2026, 8, 1 + i)).toISOString().slice(0, 10)
@@ -234,5 +250,147 @@ describe('loadVideosDaily', () => {
     imports = makeImports(3)
     expect((await loadVideosDaily([])).size).toBe(0)
     expect(log).toHaveLength(0)
+  })
+})
+
+// Tiga pembaca per PRODUK di ProductDetailModal — lintas SEMUA snapshot. Modal
+// menelan galat jadi daftar kosong, jadi pemotongan diam-diam di sini tak
+// pernah terlihat: videonya sekadar tak muncul.
+describe('loadProductVideoIds', () => {
+  it('produk >1000 baris per 25 import → semua video hadir', async () => {
+    imports = makeImports(30)
+    for (const imp of imports) {
+      for (let k = 0; k < 60; k++) add(imp.id, { product_id: 'P1', video_id: `${imp.id}-v${k}` })
+      add(imp.id, { product_id: 'P1', video_id: null }) // baris tanpa video dilewati
+      add(imp.id, { product_id: 'LAIN', video_id: 'V-LAIN' }, 20)
+    }
+    const set = await loadProductVideoIds('P1') // 1525 baris di chunk pertama
+    expect(set.size).toBe(30 * 60)
+    for (const imp of imports) expect(set.has(`${imp.id}-v59`)).toBe(true) // tiap hari hadir
+    expect(set.has('V-LAIN')).toBe(false)
+    expect(set.has(null)).toBe(false)
+    expect(forbidden()).toEqual([])
+    expect(chunked()).toHaveLength(2)
+    expect(perImport().filter(q => q.range[0] === 0)).toHaveLength(25) // chunk kedua (305 baris) lolos
+  })
+
+  it('satu import >1000 baris → halaman berikutnya ikut diambil', async () => {
+    imports = makeImports(1)
+    for (let k = 0; k < 2300; k++) add('imp-0', { product_id: 'P1', video_id: `v${k}` })
+    const set = await loadProductVideoIds('P1')
+    expect(set.size).toBe(2300)
+    expect(perImport().map(q => q.range)).toEqual([[0, 999], [1000, 1999], [2000, 2999]])
+    expect(perImport().every(q => q.ordered.includes('id'))).toBe(true)
+  })
+
+  it('produk kecil: tetap satu permintaan per 25 import', async () => {
+    imports = makeImports(50)
+    for (const imp of imports) add(imp.id, { product_id: 'P1', video_id: 'V1' }, 3)
+    const set = await loadProductVideoIds('P1')
+    expect([...set]).toEqual(['V1'])
+    expect(log).toHaveLength(2)
+    expect(perImport()).toHaveLength(0)
+  })
+})
+
+describe('loadCodeVideos', () => {
+  it('video AUTH_CODE >1000 baris per 25 import → tak ada yang hilang', async () => {
+    imports = makeImports(30)
+    for (const imp of imports) {
+      for (let k = 0; k < 44; k++) {
+        add(imp.id, { product_id: 'P1', auth_type: 'AUTH_CODE', video_id: `${imp.id}-k${k}`, video_title: `judul ${k}`, tiktok_account: 'akun', campaign_name: 'Camp A' })
+      }
+      add(imp.id, { product_id: 'P1', auth_type: 'AUTH_CODE', video_id: 'K-TETAP', campaign_name: 'Camp A' })
+      add(imp.id, { product_id: 'P1', auth_type: 'TT_USER', video_id: 'V-BIASA' }, 10)
+      add(imp.id, { product_id: 'P1', auth_type: null, video_id: 'V-TANPA-AUTH' })
+      add(imp.id, { product_id: 'LAIN', auth_type: 'AUTH_CODE', video_id: 'K-LAIN' })
+    }
+    const m = await loadCodeVideos('P1') // 1125 baris AUTH_CODE di chunk pertama
+    expect(m.size).toBe(30 * 44 + 1)
+    const perDay = new Map()
+    for (const v of m.values()) if (v.videoId !== 'K-TETAP') perDay.set(v.first, (perDay.get(v.first) || 0) + 1)
+    expect([...perDay.keys()].sort()).toEqual(Array.from({ length: 30 }, (_, i) => day(i)))
+    expect([...perDay.values()].every(n => n === 44)).toBe(true)
+    expect(m.get('K-TETAP')).toMatchObject({ first: day(0), last: day(29), campaign: 'Camp A' })
+    expect(m.get('imp-7-k3')).toEqual({
+      videoId: 'imp-7-k3', title: 'judul 3', account: 'akun', campaign: 'Camp A', first: day(7), last: day(7),
+    })
+    for (const bukan of ['V-BIASA', 'V-TANPA-AUTH', 'K-LAIN']) expect(m.has(bukan)).toBe(false)
+    expect(log.every(q => q.eqs.product_id === 'P1' && q.eqs.auth_type === 'AUTH_CODE')).toBe(true)
+    expect(forbidden()).toEqual([])
+  })
+
+  it('daftar pendek: satu permintaan per 25 import', async () => {
+    imports = makeImports(50)
+    for (const imp of imports) add(imp.id, { product_id: 'P1', auth_type: 'AUTH_CODE', video_id: 'K1' })
+    const m = await loadCodeVideos('P1')
+    expect(m.get('K1')).toMatchObject({ first: day(0), last: day(49) })
+    expect(log).toHaveLength(2)
+    expect(perImport()).toHaveLength(0)
+  })
+})
+
+describe('loadExcludedHistory', () => {
+  it('riwayat excluded >1000 baris per 25 import → tiap hari terhitung', async () => {
+    imports = makeImports(30)
+    for (const imp of imports) {
+      for (let k = 0; k < 45; k++) {
+        add(imp.id, { product_id: 'P1', video_id: `X${k}`, status: k % 2 ? 'Excluded' : 'Dikecualikan', video_title: `judul ${k}`, tiktok_account: 'akun', campaign_name: 'Camp A' })
+      }
+      add(imp.id, { product_id: 'P1', video_id: 'AKTIF', status: 'Delivering' }, 20)
+      add(imp.id, { product_id: 'LAIN', video_id: 'X-LAIN', status: 'Excluded' })
+    }
+    const out = await loadExcludedHistory('P1') // 1125 baris excluded di chunk pertama
+    expect(out).toHaveLength(45)
+    expect(out.every(e => e.dayCount === 30 && e.first === day(0) && e.last === day(29))).toBe(true)
+    expect(out.find(e => e.videoId === 'X3')).toEqual({
+      videoId: 'X3', title: 'judul 3', account: 'akun', campaign: 'Camp A', first: day(0), last: day(29), dayCount: 30,
+    })
+    expect(out.some(e => e.videoId === 'AKTIF' || e.videoId === 'X-LAIN')).toBe(false)
+    expect(forbidden()).toEqual([])
+    expect(chunked()).toHaveLength(2)
+    expect(perImport()).toHaveLength(25)
+    // Saringan status ikut di KEDUA jalur (chunk maupun ambil-ulang per import).
+    expect(log.every(q => q.eqs.product_id === 'P1' &&
+      q.ors.length === 1 && q.ors[0] === 'status.ilike.%exclud%,status.ilike.%dikecualikan%')).toBe(true)
+  })
+
+  it('saringan status: exclud/dikecualikan tak peka huruf besar, selain itu dibuang', async () => {
+    imports = makeImports(3)
+    add('imp-0', { product_id: 'P1', video_id: 'A', status: 'EXCLUDED' })
+    add('imp-1', { product_id: 'P1', video_id: 'A', status: 'Delivering' }) // hari ini tak dihitung
+    add('imp-2', { product_id: 'P1', video_id: 'A', status: 'Video dikecualikan' })
+    add('imp-1', { product_id: 'P1', video_id: 'B', status: 'excluded by advertiser' })
+    add('imp-2', { product_id: 'P1', video_id: 'C', status: 'Learning' })
+    add('imp-2', { product_id: 'P1', video_id: 'D', status: null })
+    add('imp-2', { product_id: 'P1', video_id: null, status: 'Excluded' })
+    const out = await loadExcludedHistory('P1')
+    expect(out.map(e => [e.videoId, e.first, e.last, e.dayCount])).toEqual([
+      ['A', day(0), day(2), 2], // exclude terakhir terbaru dulu
+      ['B', day(1), day(1), 1],
+    ])
+    expect(log).toHaveLength(1)
+  })
+})
+
+describe('pembaca per produk — tepi', () => {
+  it('tanpa productId / tanpa import → kosong tanpa menyentuh creatives', async () => {
+    imports = makeImports(3)
+    expect(await loadExcludedHistory('')).toEqual([])
+    expect((await loadCodeVideos(null)).size).toBe(0)
+    expect((await loadProductVideoIds(undefined)).size).toBe(0)
+    imports = []
+    expect(await loadExcludedHistory('P1')).toEqual([])
+    expect((await loadCodeVideos('P1')).size).toBe(0)
+    expect((await loadProductVideoIds('P1')).size).toBe(0)
+    expect(log).toHaveLength(0)
+  })
+
+  it('galat server dilempar, bukan ditelan jadi hasil kosong', async () => {
+    imports = makeImports(2)
+    failWith = { message: 'boom' }
+    await expect(loadExcludedHistory('P1')).rejects.toMatchObject({ message: 'boom' })
+    await expect(loadCodeVideos('P1')).rejects.toMatchObject({ message: 'boom' })
+    await expect(loadProductVideoIds('P1')).rejects.toMatchObject({ message: 'boom' })
   })
 })
