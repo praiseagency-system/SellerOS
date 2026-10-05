@@ -69,7 +69,7 @@ psql_q -c "grant all on all tables in schema public to service_role;" >/dev/null
 
 echo "▶ bukti perilaku:"
 out=""
-for p in proof_0049_0050 proof_0051 proof_0052 proof_0053 proof_0056 proof_isolation; do
+for p in proof_0049_0050 proof_0051 proof_0052 proof_0053 proof_0056 proof_0068 proof_isolation; do
   [ -f "$HERE/$p.sql" ] || continue
   docker cp "$HERE/$p.sql" "$CONTAINER:/tmp/p.sql" >/dev/null
   # `|| true`: psql keluar non-zero pada uji penolakan yang MEMANG diharapkan gagal.
@@ -78,6 +78,14 @@ $(docker exec "$CONTAINER" psql -U postgres -X -q -f /tmp/p.sql 2>&1 || true)"
 done
 echo "$out" | grep -E "✅|❌|-> |utuh|berhasil|tetap bisa"
 
+# Proof yang mati di galat pertama (ON_ERROR_STOP) tak sempat mencetak ❌ dan
+# galatnya tersaring grep di atas — jadi tanpa penanda akhir ia terhitung
+# "terpenuhi" (kejadian nyata saat proof_0068 pertama ditulis, 5 Okt 2026).
+if [ -f "$HERE/proof_0068.sql" ] && ! echo "$out" | grep -q "0068-5"; then
+  echo; echo "GAGAL: proof_0068 berhenti sebelum selesai." >&2
+  echo "$out" | grep -E "ERROR|FATAL" | head -5 >&2
+  exit 1
+fi
 if echo "$out" | grep -q "❌"; then
   echo; echo "GAGAL: ada bukti yang tidak terpenuhi." >&2
   exit 1
