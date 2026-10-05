@@ -102,6 +102,10 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   const [dailyErr, setDailyErr] = useState(false)
   const [allSessions, setAllSessions] = useState([])
   const [sessionsReady, setSessionsReady] = useState(false)
+  // Potret worker terbaru SAAT sesi dimuat. Saksi "boost sudah tak terlihat"
+  // harus seumur dengan daftar sesinya: saksi yang lebih baru + sesi yang basi
+  // = boost yang masih jalan tertulis sudah dicabut.
+  const [workerSnap, setWorkerSnap] = useState(null)
   const [ident, setIdent] = useState() // undefined=memuat · null=tak ketemu · objek={videoTitle,…}
   const [metaAcct, setMetaAcct] = useState(null) // fallback akun dari cache oEmbed
   const { productNames, imports, freshness } = useGmvMax()
@@ -114,9 +118,11 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   const liveSnaps = useMemo(
     () => new Set((imports || []).map(i => i.snapshot_date).filter(Boolean)), [imports])
   const liveSpans = useMemo(() => spanDaysByDate(imports || []), [imports])
-  // Muat ulang hanya bila ISI daftar potret berubah (jumlah atau tanggal
-  // terakhir), bukan tiap kali context membuat larik baru.
-  const importsSig = `${(imports || []).length}:${liveLast || ''}`
+  // Muat ulang hanya bila ISI daftar potret berubah, bukan tiap kali context
+  // membuat larik baru. Dari id (tanda tangan yang sama dengan context): unggah
+  // ulang/koreksi tanggal lama mengganti id tanpa mengubah jumlah maupun
+  // tanggal terakhir.
+  const importsSig = (imports || []).map(i => i.id).join('|')
 
   useEffect(() => {
     let on = true
@@ -135,8 +141,9 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
     if (e.creative_video_id) {
       // Semua sesi disimpan (bukan hanya milik video ini): potret terakhir dari
       // sesi mana pun menentukan apakah sebuah sesi "tak terlihat lagi".
+      const snapAt = latestWorkerSnapshot(imports || [])
       loadBoostSessions({ days: 60 })
-        .then(all => { if (on) setAllSessions(all) })
+        .then(all => { if (on) { setAllSessions(all); setWorkerSnap(snapAt) } })
         .catch(() => {})
         .finally(() => { if (on) setSessionsReady(true) })
       // Kolom AKUN export sering kosong — cache oEmbed jadi cadangan nama kreator.
@@ -149,7 +156,9 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
       .catch(() => { if (on) setIdent(null) })
     getThresholds().then(t => { if (on) setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
     return () => { on = false }
-  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id])
+    // Sesi dimuat ulang bersama daftar potret (importsSig mewakili `imports`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, importsSig])
 
   useEffect(() => {
     const onKey = (ev) => { if (ev.key === 'Escape') onClose() }
@@ -178,7 +187,18 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
     return { label, date: startDate ? addDaysISO(startDate, +label.slice(2)) : null, roi: null }
   })
   const stateByDate = new Map(calendar.map(d => [d.date, d.state]))
-  const kindOf = (c) => checkpointKind(c, { status: e.status, lastDataDate, dayState: stateByDate.get(c.date) || null })
+  // Kalender kosong (deret harian kosong/gagal, eksperimen tanpa sasaran): saksinya
+  // daftar tanggal potret — server menulis satu entri per tanggal potret, jadi
+  // potret ada + titik ukur belum terisi = belum dihitung, bukan "data tidak masuk".
+  const snapsNow = daily ? daily.snapshotDates : liveSnaps
+  const kindOf = (c) => checkpointKind(c, {
+    status: e.status, lastDataDate,
+    dayState: stateByDate.get(c.date) || (snapsNow.has(c.date) ? 'idle' : null),
+  })
+  // Batas pengaman kalender membuang hari TERBARU — jangan diam-diam.
+  const calEnd = calendar.length ? calendar[calendar.length - 1].date : null
+  const lastRow = daily?.rows.length ? daily.rows[daily.rows.length - 1].date : null
+  const calCut = !!calEnd && [lastDataDate, lastRow].some(d => d && d > calEnd)
 
   const sessions = allSessions.filter(s => s.item_id === e.creative_video_id)
   const latestSeen = latestSeenOf(allSessions)
@@ -187,7 +207,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   const session = noun === 'boost' && e.creative_video_id ? pickBoostSession(sessions, e, startDate) : null
   // "Tak terlihat lagi" butuh potret yang LEBIH BARU daripada penampakan terakhir
   // sesi: stempel sesi mana pun, atau potret harian worker (ditulis di run yang sama).
-  const witness = [latestSeen && String(latestSeen).slice(0, 10), latestWorkerSnapshot(imports || [])]
+  const witness = [latestSeen && String(latestSeen).slice(0, 10), workerSnap]
     .filter(Boolean).sort().pop() || null
   const boost = session ? boostWindow(session, witness) : null
 
@@ -302,14 +322,14 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
               ))}
             </ul>
           )}
-          {calendar.length > 0 && (
+          {calendar.length > 0 && oc.conclusion !== 'STOPPED' && (
             <p className="mt-2 text-[11px] text-ink-muted">
               Vonis hanya melihat tiga hari itu. Gabungan semua hari ada di kartu H+1–7 di bawah dan belum dipakai vonis.
             </p>
           )}
           {preComparable === false ? (
             <p className="mt-1 text-[11px] text-ink-faint">
-              Selisih terhadap sebelum {noun}: tidak dibandingkan — belanja sebelum {noun} {fmtRpID(preAgg.cost)}{spendFloor != null ? ` di bawah lantai belanja ${fmtRpRbID(spendFloor)}` : ' terlalu kecil'}.
+              Selisih terhadap sebelum {noun}: tidak dibandingkan — belanja sebelum {noun}{preAgg.counted > 0 ? ` ${fmtRpID(preAgg.cost)}` : ''}{spendFloor != null ? ` di bawah lantai belanja ${fmtRpRbID(spendFloor)}` : ' terlalu kecil'}.
             </p>
           ) : deltas.length > 0 && (
             <p className="mt-1 text-[11px] text-ink-faint">
@@ -333,6 +353,11 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
             </p>
             <SavedCheckpoints rows={ckRows} kindOf={kindOf} roiFloor={roiFloor} />
           </div>
+        )}
+        {calCut && viewReady && (
+          <p className="mt-4 text-[11px] text-amber-400">
+            Hanya {calendar.length} hari pertama yang ditampilkan (sampai {fmtDayID(calEnd)} {calEnd.slice(0, 4)}); hari sesudahnya tidak ikut dihitung di bawah.
+          </p>
         )}
         {calendar.length > 0 && viewReady && (
           <ExperimentDailyView key={e.id} calendar={calendar} roiFloor={roiFloor} spendFloor={spendFloor}

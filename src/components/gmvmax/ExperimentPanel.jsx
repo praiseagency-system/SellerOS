@@ -19,7 +19,7 @@ import {
   ALL, CLOSE, buildTiles, applyFilter, resolveFilter, verdictBucket,
 } from '../../utils/gmvmaxExperimentGroups'
 import { fmtRoiID, fmtSignedX, CONFIDENCE_LABEL } from '../../utils/gmvmaxExperimentFormat'
-import { addDaysISO, fmtDayID } from '../../utils/gmvmaxExperimentDaily'
+import { addDaysISO, fmtDayID, latestWorkerSnapshot } from '../../utils/gmvmaxExperimentDaily'
 import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
@@ -55,7 +55,7 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   // Potret sesi boost — dipakai HANYA untuk peringatan "boost tak terlihat lagi".
   // Gagal memuat sengaja didiamkan: peringatan itu tambahan, bukan syarat panel.
   const [sessions, setSessions] = useState([])
-  const { productNames } = useGmvMax()
+  const { productNames, imports } = useGmvMax()
 
   const reload = useCallback(() => {
     setState(s => ({ ...s, loading: true }))
@@ -72,7 +72,10 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
 
   const rows = state.rows || []
   const bySession = indexSessions(sessions)
-  const latestSeen = latestSeenOf(sessions)
+  // Saksi yang sama dengan drawer: stempel sesi mana pun ATAU potret harian
+  // worker — tanpa itu, toko yang boost-nya satu per satu tak pernah diperingatkan.
+  const latestSeen = [latestSeenOf(sessions), latestWorkerSnapshot(imports || [])]
+    .filter(Boolean).map(d => String(d).slice(0, 10)).sort().pop() || null
   // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
   const items = rows.map(e => {
     const oc = liveConclusion(e, roiFloor)

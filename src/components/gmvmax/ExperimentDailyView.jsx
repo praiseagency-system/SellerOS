@@ -221,6 +221,7 @@ export default function ExperimentDailyView({
             {cap(`sebelum ${noun}`)}: {pre ? `${fmtSpanID(pre.from, pre.to)}, ${preAgg.counted} hari` : 'jendela tidak diisi'}. {cap(cmpLower)}: {fmtSpanID(cmpRange.from, cmpRange.to)}, {cmpAgg.counted > 0 ? `${cmpAgg.counted} hari` : 'belum ada data'}
             {cmpAgg.missing > 0 && ` — ${cmpAgg.missing} hari data tidak masuk, tidak dihitung`}.
             {' '}Rata-rata per hari = jumlah ÷ hari yang datanya masuk. Ini angka iklan GMV Max, bukan tayangan organik.
+            {(baseAgg.merged > 0 || cmpAgg.merged > 0) && ' Ada hari berisi angka gabungan beberapa hari (unggahan berkas), jadi rata-rata per hari di rentang itu terlalu besar.'}
             {selSide === 'pre' && ` Rentang terpilih = sebelum ${noun}, jadi pembandingnya H+1–7.`}
           </p>
           <CompareTable base={baseAgg} post={cmpAgg} baseLabel={cap(`sebelum ${noun}`)} postLabel={cap(cmpLower)} comparable={pre ? preComparable : null} />
@@ -352,8 +353,10 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
           const cx = x(i) + STEP / 2
           const dim = d.date >= sel.from && d.date <= sel.to ? 1 : 0.4
           const dayNum = +d.date.slice(8, 10)
-          const ck = ckByDate.has(d.date)
-          const sub = ck ? hLabel(d) : (i === 0 || dayNum === 1) ? fmtDayID(d.date).split(' ')[1] : ''
+          // Label sumbu hanya penanda posisi H+1/H+3/H+7; cincin ◎ tetap hanya
+          // untuk titik yang terukur.
+          const ckDay = d.phase === 'post' && (d.offset === 1 || d.offset === 3 || d.offset === 7)
+          const sub = ckDay ? hLabel(d) : (i === 0 || dayNum === 1) ? fmtDayID(d.date).split(' ')[1] : ''
           const hc = d.cost > 0 ? Math.max(2, B - y(d.cost)) : 0
           return (
             <g key={d.date}>
@@ -569,7 +572,7 @@ function DailyTable({
             <tr className="border-t border-line/10">
               <td colSpan={cols} className={note}>
                 {fmtSpanID(presets.pre.from, presets.pre.to)} · {[`${preAgg.counted} hari`, ...emptyNotes(preAgg)].join(', ')}
-                {preComparable === false && ` · ROI tidak dibandingkan — belanja di bawah lantai belanja ${fmtRpRbID(spendFloor)}`}
+                {preComparable === false && ` · ROI tidak dibandingkan — belanja ${spendFloor != null ? `di bawah lantai belanja ${fmtRpRbID(spendFloor)}` : 'terlalu kecil'}`}
               </td>
             </tr>
           )}
