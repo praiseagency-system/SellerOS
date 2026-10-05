@@ -279,27 +279,36 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
 
   const byDate = new Map()
   for (let i = 0; i < impIds.length; i += 25) {
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('import_id, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
-      .in('import_id', impIds.slice(i, i + 25))
-      .eq(target[0], target[1])
-    if (error) throw error
-    for (const r of data || []) {
-      const d = dateById[r.import_id]
-      if (!d) continue
-      const a = byDate.get(d) || {
-        date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
-        vrW: [0, 0, 0, 0, 0, 0],
+    const chunk = impIds.slice(i, i + 25)
+    // Dipaginasi: PostgREST memotong di ~1000 baris/permintaan TANPA galat.
+    // Sasaran produk/campaign mudah melewatinya (25 potret × ratusan materi),
+    // dan hari yang barisnya terbuang akan terbaca sebagai "tak tayang".
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('gmvmax_creatives')
+        .select('import_id, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
+        .in('import_id', chunk)
+        .eq(target[0], target[1])
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      for (const r of data || []) {
+        const d = dateById[r.import_id]
+        if (!d) continue
+        const a = byDate.get(d) || {
+          date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
+          vrW: [0, 0, 0, 0, 0, 0],
+        }
+        const imp = num(r.impressions) || 0
+        a.cost += num(r.cost) || 0
+        a.revenue += num(r.gross_revenue) || 0
+        a.orders += num(r.sku_orders) || 0
+        a.impressions += imp
+        a.clicks += num(r.clicks) || 0
+        if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
+        byDate.set(d, a)
       }
-      const imp = num(r.impressions) || 0
-      a.cost += num(r.cost) || 0
-      a.revenue += num(r.gross_revenue) || 0
-      a.orders += num(r.sku_orders) || 0
-      a.impressions += imp
-      a.clicks += num(r.clicks) || 0
-      if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
-      byDate.set(d, a)
+      if (!data || data.length < PAGE) break
     }
   }
   return [...byDate.values()]

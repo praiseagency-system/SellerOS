@@ -19,10 +19,11 @@ import {
 import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
 import { latestSeenOf } from '../../utils/gmvmaxExperimentAlerts'
 import {
-  addDaysISO, aggregateDays, buildCalendar, checkpointKind, fmtDayID, fmtSpanID, fmtStartWib, pickBoostSession,
+  addDaysISO, aggregateDays, boostWindow, buildCalendar, checkpointKind, fmtDayID, fmtSpanID, fmtStartWib,
+  latestWorkerSnapshot, pickBoostSession, spanDaysByDate,
 } from '../../utils/gmvmaxExperimentDaily'
 import {
-  fmtRpID, fmtRpRbID, fmtRoiID, CONFIDENCE_LABEL, STATUS_LABEL,
+  fmtRpID, fmtRpRbID, fmtRoiID, fmtFloorID, fmtSignedX, reasonTextID, CONFIDENCE_LABEL, STATUS_LABEL,
 } from '../../utils/gmvmaxExperimentFormat'
 import ExperimentDailyView from './ExperimentDailyView'
 
@@ -32,9 +33,14 @@ const CONC = {
   TEMPORARY_SPIKE: 'text-amber-400', WEAK: 'text-red-400',
   INCONCLUSIVE: 'text-ink-muted', STOPPED: 'text-ink-muted', DATA_INSUFFICIENT: 'text-ink-faint',
 }
-const CK_TEXT = { nospend: 'tanpa belanja', closed: 'tidak diukur', missing: 'data tidak masuk', pending: 'menunggu data' }
+const CK_TEXT = {
+  nospend: 'tanpa belanja', closed: 'tidak diukur', uncomputed: 'belum dihitung',
+  missing: 'data tidak masuk', pending: 'menunggu data',
+}
+// Hanya dua jenis ini yang benar-benar "boost"; sisanya (kecualikan kreatif,
+// ubah budget/ROAS, pasang kode spark, …) disebut "perubahan".
+const BOOST_TYPES = new Set(['MANUAL_BOOST', 'ACCELERATE_TESTING'])
 const bidLabel = (b) => (b === 'CREATIVE_NO_BID' ? 'Creative Boost' : b === 'NO_BID' ? 'Max Delivery' : (b || 'Sesi boost'))
-const signed = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1).replace('.', ',')}`
 
 const SubHead = ({ children }) => (
   <p className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-faint mb-2">{children}</p>
@@ -76,7 +82,7 @@ function SavedCheckpoints({ rows, kindOf, roiFloor }) {
               <td className={`py-1.5 pr-2 ${kind !== 'measured' ? 'text-ink-faint' : roiFloor == null ? 'text-ink' : Number(c.roi) >= roiFloor ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}`}>
                 {kind === 'measured' ? fmtRoiID(Number(c.roi)) : CK_TEXT[kind]}
               </td>
-              <td className="py-1.5 pr-2 text-ink-muted">{c.roi_delta_vs_baseline != null ? signed(Number(c.roi_delta_vs_baseline)) : '—'}</td>
+              <td className="py-1.5 pr-2 text-ink-muted">{c.roi_delta_vs_baseline != null ? fmtSignedX(Number(c.roi_delta_vs_baseline)) : '—'}</td>
               <td className="py-1.5 pr-2 text-ink-muted">{c.revenue != null ? fmtRpID(Number(c.revenue)) : '—'}</td>
               <td className="py-1.5 text-ink-muted">{c.spend != null ? fmtRpID(Number(c.spend)) : '—'}</td>
             </tr>
@@ -96,12 +102,23 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   const { productNames, imports, freshness } = useGmvMax()
   const [spendFloor, setSpendFloor] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [retry, setRetry] = useState(0)
+  const lastDataDate = freshness?.date || null
 
+  // Deret harian dimuat ulang bila tanggal data terakhir berubah: daftar tanggal
+  // data di context menyegarkan diri (fokus tab, tiap 10 menit). Tanpa ini, hari
+  // yang baru masuk ada di daftar tanggal tapi tidak di deret harian — dan
+  // terbaca sebagai "tak tayang".
   useEffect(() => {
     let on = true
     loadExperimentDaily({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id })
       .then(r => { if (on) { setDaily(r); setDailyErr(false) } })
       .catch(() => { if (on) { setDaily([]); setDailyErr(true) } })
+    return () => { on = false }
+  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, lastDataDate, retry])
+
+  useEffect(() => {
+    let on = true
     if (e.creative_video_id) {
       // Semua sesi disimpan (bukan hanya milik video ini): potret terakhir dari
       // sesi mana pun menentukan apakah sebuah sesi "tak terlihat lagi".
@@ -127,15 +144,18 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
   }, [onClose])
 
   const startDate = String(e.start_at || '').slice(0, 10) || null
-  const lastDataDate = freshness?.date || null
   // Tanggal yang datanya masuk (semua potret current) — pembeda "tak tayang"
   // dari "data tidak masuk" tanpa query tambahan.
   const snapshotDates = useMemo(
     () => new Set((imports || []).map(i => i.snapshot_date).filter(Boolean)), [imports])
+  const spanByDate = useMemo(() => spanDaysByDate(imports || []), [imports])
   const calendar = useMemo(() => (daily && daily.length && startDate ? buildCalendar({
-    daily, startDate, baselineStart: e.baseline_start || null, baselineEnd: e.baseline_end || null,
-    snapshotDates, lastDataDate,
-  }) : []), [daily, startDate, e.baseline_start, e.baseline_end, snapshotDates, lastDataDate])
+    daily, startDate, startAt: e.start_at, baselineStart: e.baseline_start || null, baselineEnd: e.baseline_end || null,
+    snapshotDates, lastDataDate, spanByDate,
+  }) : []), [daily, startDate, e.start_at, e.baseline_start, e.baseline_end, snapshotDates, lastDataDate, spanByDate])
+  const noun = BOOST_TYPES.has(e.experiment_type) ? 'boost' : 'perubahan'
+  // Formulir manual hanya menyimpan tanggal — jangan menulis jam karangan.
+  const startLabel = fmtStartWib(e.start_at, { dateOnly: !e.source_session_id && !e.source_approval_id })
 
   const oc = liveConclusion(e, roiFloor)
   const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
@@ -146,22 +166,27 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
     if (saved) return saved
     return { label, date: startDate ? addDaysISO(startDate, +label.slice(2)) : null, roi: null }
   })
-  const kindOf = (c) => checkpointKind(c, { status: e.status, lastDataDate })
+  const stateByDate = new Map(calendar.map(d => [d.date, d.state]))
+  const kindOf = (c) => checkpointKind(c, { status: e.status, lastDataDate, dayState: stateByDate.get(c.date) || null })
 
   const sessions = allSessions.filter(s => s.item_id === e.creative_video_id)
   const latestSeen = latestSeenOf(allSessions)
-  const session = e.creative_video_id ? pickBoostSession(sessions, e, startDate) : null
-  const boostFirst = session?.first_seen ? String(session.first_seen).slice(0, 10) : null
-  const boostLast = session?.last_seen ? String(session.last_seen).slice(0, 10) : null
-  // "Tak terlihat lagi" = konvensi yang sama dengan peringatan di daftar: butuh
-  // potret yang LEBIH BARU daripada penampakan terakhir sesi ini.
-  const boostEnded = !!(boostLast && latestSeen && boostLast < String(latestSeen).slice(0, 10))
-  const boost = useMemo(
-    () => (boostFirst && boostLast ? { firstSeen: boostFirst, lastSeen: boostLast, ended: boostEnded } : null),
-    [boostFirst, boostLast, boostEnded])
+  // Hanya eksperimen boost yang punya "sesi boost-nya"; untuk jenis lain, sesi
+  // boost di video yang sama adalah kejadian LAIN (tetap dicatat di Riwayat).
+  const session = noun === 'boost' && e.creative_video_id ? pickBoostSession(sessions, e, startDate) : null
+  // "Tak terlihat lagi" butuh potret yang LEBIH BARU daripada penampakan terakhir
+  // sesi: stempel sesi mana pun, atau potret harian worker (ditulis di run yang sama).
+  const witness = [latestSeen && String(latestSeen).slice(0, 10), latestWorkerSnapshot(imports || [])]
+    .filter(Boolean).sort().pop() || null
+  const boost = session ? boostWindow(session, witness) : null
 
   const preAgg = aggregateDays(calendar.filter(d => d.phase === 'pre'))
-  const preComparable = preAgg.counted > 0 && spendFloor != null ? preAgg.cost >= spendFloor : null
+  // Sebanding atau tidak: keputusan SERVER dulu (penanda di titik ukur
+  // tersimpan), baru hitungan peramban. null = belum bisa dinilai → selisih
+  // ROI dan biaya/order disembunyikan, bukan ditebak.
+  const srvBase = checkpoints.find(c => c.baseline_state)?.baseline_state
+  const preComparable = srvBase === 'DISCLOSED_NOT_COMPARABLE' ? false : srvBase === 'DISCLOSED' ? true
+    : (preAgg.counted > 0 && spendFloor != null ? preAgg.cost >= spendFloor : null)
   const deltas = ckRows.filter(c => c.roi_delta_vs_baseline != null)
 
   async function act(fn) {
@@ -181,9 +206,10 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
     || (metaAcct?.username ? `@${metaAcct.username}${metaAcct.authorName ? ` (${metaAcct.authorName})` : ''}` : metaAcct?.authorName)
     || null
   const targetNote = e.creative_video_id
-    ? 'Angka di bawah = seluruh penayangan video ini di GMV Max, semua campaign — bukan khusus sesi boost.'
+    ? `Angka di bawah = seluruh penayangan video ini di GMV Max, semua campaign${noun === 'boost' ? ' — bukan khusus sesi boost' : ''}.`
     : e.product_id ? 'Angka di bawah = jumlah semua materi iklan produk ini di GMV Max, semua campaign.'
-      : 'Angka di bawah = jumlah semua materi iklan di campaign ini.'
+      : e.campaign_id ? 'Angka di bawah = jumlah semua materi iklan di campaign ini.'
+        : 'Eksperimen ini tidak punya sasaran (video, produk, atau campaign): titik ukur dihitung untuk seluruh toko dan data harian tidak tersedia.'
   const conf = CONFIDENCE_LABEL[oc.confidence]
 
   return createPortal(
@@ -199,7 +225,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${e.status === 'RUNNING'
             ? 'text-blue-400 border-blue-500/30 bg-blue-500/10' : 'text-ink-muted border-line/30 bg-fill/5'}`}>{STATUS_LABEL[e.status] || e.status}</span>
           <span className="text-[11px] text-ink-faint">{typeLabel(e.experiment_type)}</span>
-          <span className="text-[11px] text-ink-faint">· mulai {fmtStartWib(e.start_at)}{lastDataDate ? ` · data sampai ${fmtDayID(lastDataDate)}` : ''}</span>
+          <span className="text-[11px] text-ink-faint">· mulai {startLabel}{lastDataDate ? ` · data sampai ${fmtDayID(lastDataDate)}` : ''}</span>
         </div>
         <p className="text-[15px] font-semibold text-ink-strong mt-2">{e.treatment || '—'}</p>
 
@@ -222,7 +248,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           {e.creative_video_id && (
             <div className="flex items-start gap-2">
               <span className="text-ink-faint shrink-0 w-16">Kreator</span>
-              <span className="text-ink">{creatorLabel || <span className="text-ink-faint">tak dikenal — kolom akun kosong di export</span>}</span>
+              <span className="text-ink">{creatorLabel || <span className="text-ink-faint">tak dikenal — nama akun tidak ada di data TikTok</span>}</span>
             </div>
           )}
           {(ident?.campaignNames?.length || e.campaign_id) && (
@@ -248,7 +274,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-sm font-semibold ${e.contaminated ? 'text-ink-muted' : (CONC[oc.conclusion] || 'text-ink-muted')}`}>{CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}</span>
             {conf && <span className="text-[11px] rounded-md border border-line/15 bg-fill/5 px-2 py-0.5 text-ink-muted">keyakinan <b className="text-ink">{conf}</b></span>}
-            <span className="text-[11px] rounded-md border border-line/15 bg-fill/5 px-2 py-0.5 text-ink-muted">ambang ROI <b className="text-ink">{roiFloor != null ? fmtRoiID(roiFloor) : 'belum diisi'}</b></span>
+            <span className="text-[11px] rounded-md border border-line/15 bg-fill/5 px-2 py-0.5 text-ink-muted">ambang ROI <b className="text-ink">{roiFloor != null ? fmtFloorID(roiFloor) : 'belum diisi'}</b></span>
           </div>
           {e.contaminated && (
             <p className="mt-2 text-xs text-amber-400"><b>Tercampur</b> — ada perubahan lain di jendela ukur; vonis ini jangan dipakai menyimpulkan.</p>
@@ -260,20 +286,22 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           {(oc.reasons || []).length > 0 && (
             <ul className="mt-2 space-y-1">
               {oc.reasons.map((r, i) => (
-                <li key={i} className="text-xs text-ink-muted flex gap-2"><span className="text-ink-faint">·</span><span>{r}</span></li>
+                <li key={i} className="text-xs text-ink-muted flex gap-2"><span className="text-ink-faint">·</span><span>{reasonTextID(r, noun)}</span></li>
               ))}
             </ul>
           )}
-          <p className="mt-2 text-[11px] text-ink-muted">
-            Vonis hanya melihat tiga hari itu. Gabungan semua hari ada di kartu H+1–7 di bawah dan belum dipakai vonis.
-          </p>
+          {calendar.length > 0 && (
+            <p className="mt-2 text-[11px] text-ink-muted">
+              Vonis hanya melihat tiga hari itu. Gabungan semua hari ada di kartu H+1–7 di bawah dan belum dipakai vonis.
+            </p>
+          )}
           {preComparable === false ? (
             <p className="mt-1 text-[11px] text-ink-faint">
-              Selisih terhadap sebelum boost: tidak dibandingkan — belanja sebelum boost {fmtRpRbID(preAgg.cost)} di bawah lantai belanja {fmtRpRbID(spendFloor)}.
+              Selisih terhadap sebelum {noun}: tidak dibandingkan — belanja sebelum {noun} {fmtRpID(preAgg.cost)}{spendFloor != null ? ` di bawah lantai belanja ${fmtRpRbID(spendFloor)}` : ' terlalu kecil'}.
             </p>
           ) : deltas.length > 0 && (
             <p className="mt-1 text-[11px] text-ink-faint">
-              Selisih ROI terhadap sebelum boost{preAgg.roi != null ? ` (${fmtRoiID(preAgg.roi)})` : ''}: {deltas.map(c => `${c.label} ${signed(Number(c.roi_delta_vs_baseline))}`).join(' · ')}
+              Selisih ROI terhadap sebelum {noun}{preAgg.roi != null ? ` (${fmtRoiID(preAgg.roi)})` : ''}: {deltas.map(c => `${c.label} ${fmtSignedX(Number(c.roi_delta_vs_baseline))}`).join(' · ')}
             </p>
           )}
         </div>
@@ -284,15 +312,18 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           <div className="mt-5">
             <SubHead>Titik ukur tersimpan</SubHead>
             <p className="text-xs text-ink-faint mb-2">
-              {dailyErr ? 'Gagal memuat data harian — tutup lalu buka lagi drawer ini untuk mencoba ulang.'
-                : 'Belum ada data harian untuk sasaran ini.'}
+              {dailyErr ? 'Gagal memuat data harian.' : 'Belum ada data harian untuk sasaran ini.'}
+              {dailyErr && (
+                <button onClick={() => { setDaily(null); setRetry(n => n + 1) }} className="ml-2 text-accent hover:underline">Coba lagi</button>
+              )}
             </p>
             <SavedCheckpoints rows={ckRows} kindOf={kindOf} roiFloor={roiFloor} />
           </div>
         )}
         {calendar.length > 0 && (
           <ExperimentDailyView key={e.id} calendar={calendar} roiFloor={roiFloor} spendFloor={spendFloor}
-            checkpoints={checkpoints} boost={boost} isVideo={!!e.creative_video_id} startLabel={fmtStartWib(e.start_at)} />
+            preComparable={preComparable} checkpoints={checkpoints} boost={boost} isVideo={!!e.creative_video_id}
+            startLabel={startLabel} noun={noun} />
         )}
 
         {/* Riwayat — catatan kejadian saja; angkanya sudah ada di atas */}
@@ -305,20 +336,24 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
                 <span><span className="font-mono text-ink-faint mr-1.5">{fmtDayID(addDaysISO(boost.lastSeen, 1))}</span>Boost <b className="text-ink">tak terlihat lagi</b> di Seller Centre (perkiraan)</span>
               </li>
             )}
-            {sessions.map(s => (
-              <li key={s.session_id} className="text-xs text-ink-muted flex gap-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                <span><span className="font-mono text-ink-faint mr-1.5">{fmtDayID(String(s.first_seen).slice(0, 10))}</span>Sesi <b className="text-ink">{bidLabel(s.bid_type)}</b>{s.budget != null ? ` · ${fmtRpID(Number(s.budget))}` : ''} · terlihat s/d {fmtDayID(String(s.last_seen).slice(0, 10))}</span>
-              </li>
-            ))}
+            {sessions.map(s => {
+              const w = boostWindow(s, witness)
+              if (!w) return null
+              return (
+                <li key={s.session_id} className="text-xs text-ink-muted flex gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                  <span><span className="font-mono text-ink-faint mr-1.5">{fmtDayID(w.firstSeen)}</span>Sesi <b className="text-ink">{bidLabel(s.bid_type)}</b>{s.budget != null ? ` · ${fmtRpID(Number(s.budget))}` : ''} · terlihat s/d {fmtDayID(w.lastSeen)} (perkiraan)</span>
+                </li>
+              )
+            })}
             <li className="text-xs text-ink-muted flex gap-2.5">
               <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-              <span><span className="font-mono text-ink-faint mr-1.5">{fmtStartWib(e.start_at).split(',')[0]}</span><b className="text-ink">Dicatat sebagai eksperimen</b> — {typeLabel(e.experiment_type)}</span>
+              <span><span className="font-mono text-ink-faint mr-1.5">{startLabel.split(',')[0]}</span><b className="text-ink">Dicatat sebagai eksperimen</b> — {typeLabel(e.experiment_type)}</span>
             </li>
             {e.baseline_start && e.baseline_end && (
               <li className="text-xs text-ink-muted flex gap-2.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-ink-faint mt-1.5 shrink-0" />
-                <span><span className="font-mono text-ink-faint mr-1.5">{fmtSpanID(e.baseline_start, e.baseline_end)}</span>Jendela sebelum boost</span>
+                <span><span className="font-mono text-ink-faint mr-1.5">{fmtSpanID(e.baseline_start, e.baseline_end)}</span>Jendela sebelum {noun}</span>
               </li>
             )}
           </ul>
@@ -341,7 +376,7 @@ export default function ExperimentDetailDrawer({ exp: e, roiFloor, onClose, onCh
           )}
         </div>
         <p className="mt-2 text-[11px] text-ink-faint">
-          Tutup/Hapus hanya mengubah catatan eksperimen — TIDAK menghentikan boost/campaign di TikTok. Menghentikan iklan tetap lewat Seller Centre atau tombol eksekusi ber-approval.
+          Tutup/Hapus hanya mengubah catatan eksperimen — TIDAK menghentikan boost/campaign di TikTok. Menghentikan iklan tetap lewat Seller Centre atau tombol eksekusi yang perlu persetujuan.
         </p>
       </aside>
     </div>,

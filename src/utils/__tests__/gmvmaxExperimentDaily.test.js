@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   addDaysISO, diffDaysISO, fmtDayID, fmtSpanID, fmtStartWib, buildCalendar, startDateOf, hLabel, sideOf, daysIn,
   aggregateDays, presetRanges, matchPreset, rangeName, checkpointKind, pickBoostSession,
+  boostWindow, spanDaysByDate, latestWorkerSnapshot, wibDateOf,
 } from '../gmvmaxExperimentDaily'
 import {
-  fmtNumID, fmtDec1ID, fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtPctID,
+  fmtNumID, fmtDec1ID, fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtPctID, fmtFloorID, fmtSignedX, reasonTextID,
 } from '../gmvmaxExperimentFormat'
 
 // Eksperimen contoh: mulai 19 Sep (siang), sebelum boost 12–18 Sep, data sampai
@@ -53,8 +54,16 @@ describe('fmtStartWib', () => {
     expect(fmtStartWib('2026-09-19T18:30:00.000Z')).toBe('20 Sep, 01.30 WIB')
     expect(fmtStartWib('2026-09-19T07:05:00Z')).toBe('19 Sep, 14.05 WIB')
   })
-  it('tanggal saja dari formulir manual → tanpa jam karangan', () => {
-    expect(fmtStartWib('2026-09-19T00:00:00.000Z')).toBe('19 Sep')
+  it('formulir manual (tanggal saja) → tanpa jam karangan', () => {
+    expect(fmtStartWib('2026-09-19T00:00:00.000Z', { dateOnly: true })).toBe('19 Sep')
+  })
+  it('jadwal nyata tepat 07.00 WIB tetap ditulis jamnya', () => {
+    expect(fmtStartWib('2026-09-19T00:00:00.000Z')).toBe('19 Sep, 07.00 WIB')
+  })
+  it('wibDateOf: hari WIB dari sebuah instant', () => {
+    expect(wibDateOf('2026-09-19T18:30:00Z')).toBe('2026-09-20')
+    expect(wibDateOf('2026-09-19T16:59:59Z')).toBe('2026-09-19')
+    expect(wibDateOf(null)).toBeNull()
   })
   it('kosong/rusak → tanda pisah', () => {
     expect(fmtStartWib(null)).toBe('—'); expect(fmtStartWib('bukan tanggal')).toBe('—')
@@ -107,6 +116,25 @@ describe('buildCalendar', () => {
     const all = presetRanges(c).find(p => p.key === 'all')
     expect(all.from).toBe('2026-09-20')
   })
+  it('mulai dini hari lewat jalur persetujuan (jendela UTC): hari UTC-nya bukan hari mulai', () => {
+    // Disetujui 20 Sep 01.30 WIB = 19 Sep 18.30Z; jendela berakhir 18 Sep (UTC−1).
+    const c = buildCalendar({ ...BASE, startAt: '2026-09-19T18:30:00Z' })
+    expect(day(c, '2026-09-19')).toMatchObject({ phase: 'gap', offset: 0 })
+    expect(c.some(d => d.phase === 'h0')).toBe(false)
+    expect(hLabel(day(c, '2026-09-20'))).toBe('H+1')
+    expect(presetRanges(c).find(p => p.key === 'all').from).toBe('2026-09-20')
+    expect(presetRanges(c).find(p => p.key === 'pre').to).toBe('2026-09-18')
+  })
+  it('mulai siang: hari mulai tetap H0', () => {
+    const c = buildCalendar({ ...BASE, startAt: '2026-09-19T07:05:00Z' })
+    expect(day(c, '2026-09-19').phase).toBe('h0')
+  })
+  it('unggahan berkas multi-hari ditandai di hari potretnya', () => {
+    const c = buildCalendar({ ...BASE, spanByDate: new Map([['2026-09-26', 7], ['2026-09-27', 3]]) })
+    expect(day(c, '2026-09-26').spanDays).toBe(7)
+    expect(day(c, '2026-09-25').spanDays).toBe(1)
+    expect(day(c, '2026-09-27').spanDays).toBe(1) // tak ada baris → tak ada yang digabung
+  })
   it('tanpa jendela sebelum boost: mulai dari hari mulai', () => {
     const c = buildCalendar({ ...BASE, baselineStart: null, baselineEnd: null })
     expect(c[0]).toMatchObject({ date: '2026-09-19', phase: 'h0' })
@@ -120,6 +148,11 @@ describe('buildCalendar', () => {
   it('enam retensi nol dianggap tanpa data retensi', () => {
     const c = buildCalendar({ ...BASE, daily: [row('2026-09-20', 100, 0, 0, 50, 5, [0, 0, 0, 0, 0, 0])] })
     expect(day(c, '2026-09-20').vr).toBeNull()
+  })
+  it('jendela sebelum mulai yang salah ketik tahun tidak menghabiskan kalender', () => {
+    const c = buildCalendar({ ...BASE, baselineStart: '2024-09-12' })
+    expect(c[0].date).toBe('2026-07-21') // 60 hari sebelum mulai
+    expect(c[c.length - 1].date).toBe('2026-10-04')
   })
   it('tanpa tanggal mulai → kosong', () => expect(buildCalendar({ daily: DAILY })).toEqual([]))
 })
@@ -161,6 +194,18 @@ describe('aggregateDays', () => {
   it('tanpa ambang: tidak menghitung di atas/di bawah, tapi tetap menghitung hari beromzet', () => {
     const a = agg('2026-09-20', '2026-09-26', null)
     expect(a).toMatchObject({ above: 0, below: 0, withRevenue: 6, zeroRevenue: 1 })
+  })
+  it('tiap hari yang dihitung masuk tepat satu keranjang', () => {
+    const c = buildCalendar({
+      ...BASE, snapshotDates: new Set([...SNAPS, '2026-09-27']),
+      daily: [...DAILY, row('2026-10-03', 0, 90000, 1, 40, 3)],
+      spanByDate: new Map([['2026-10-04', 3]]),
+    })
+    const a = aggregateDays(daysIn(c, '2026-09-27', '2026-10-04'), 4)
+    expect(a).toMatchObject({ counted: 8, idle: 1, noSpend: 1, merged: 1, above: 3, below: 2 })
+    expect(a.idle + a.noSpend + a.merged + a.above + a.below).toBe(a.counted)
+    // hari gabungan & hari tanpa belanja tetap ikut total
+    expect(a.revenue).toBe(1417500 + 90000)
   })
   it('rentang tanpa data: semua rasio null, tak ada NaN', () => {
     const a = agg('2026-09-27', '2026-09-27')
@@ -204,6 +249,22 @@ describe('presetRanges', () => {
     const p = presetRanges(cal, { boostLastSeen: '2026-09-10', boostEnded: true })
     expect(p.find(x => x.key === 'after').from).toBe('2026-09-20')
   })
+  it('eksperimen muda: rentang terbuka berhenti di hari data terakhir, bukan di H+7', () => {
+    const young = buildCalendar({
+      ...BASE, daily: DAILY.filter(r => r.date <= '2026-09-21'),
+      snapshotDates: new Set(DAILY.filter(r => r.date <= '2026-09-21').map(r => r.date)), lastDataDate: '2026-09-21',
+    })
+    const all = presetRanges(young).find(p => p.key === 'all')
+    expect(all).toMatchObject({ from: '2026-09-19', to: '2026-09-21', plain: '3 hari' })
+    expect(aggregateDays(daysIn(young, all.from, all.to)).pending).toBe(0)
+    // rentang tetap (H+1–7) tetap sampai H+7 dan menandai sisanya menunggu data
+    const h7 = presetRanges(young).find(p => p.key === 'h7')
+    expect(aggregateDays(daysIn(young, h7.from, h7.to))).toMatchObject({ counted: 2, pending: 5 })
+  })
+  it('eksperimen yang bukan boost memakai kata bendanya sendiri', () => {
+    const pre = presetRanges(cal, { noun: 'perubahan' }).find(x => x.key === 'pre')
+    expect(pre).toMatchObject({ label: 'Sebelum perubahan', short: 'Sebelum perubahan' })
+  })
   it('matchPreset mengenali rentang sendiri yang sama dengan bawaan', () => {
     const p = presetRanges(cal)
     expect(matchPreset(p, '2026-09-20', '2026-09-26')).toBe('h7')
@@ -225,7 +286,13 @@ describe('rangeName', () => {
 
 describe('checkpointKind', () => {
   const o = { status: 'RUNNING', lastDataDate: '2026-09-24' }
-  it('lima keadaan dibedakan', () => {
+  it('data harinya ada tapi server belum menghitung → belum dihitung, bukan data tidak masuk', () => {
+    expect(checkpointKind({ roi: null, date: '2026-09-22' }, { ...o, dayState: 'data' })).toBe('uncomputed')
+    expect(checkpointKind({ roi: null, date: '2026-09-22' }, { ...o, dayState: 'missing' })).toBe('missing')
+    expect(checkpointKind({ roi: null, date: '2026-09-22' }, { ...o, status: 'STOPPED', dayState: 'data' })).toBe('closed')
+  })
+  it('keadaan lain dibedakan', () => {
+    expect(checkpointKind({ roi: 0 }, o)).toBe('measured')
     expect(checkpointKind({ roi: 10.6 }, o)).toBe('measured')
     expect(checkpointKind({ roi: null, measurement_label: 'MEASURED', revenue: 5000 }, o)).toBe('nospend')
     expect(checkpointKind({ roi: null, date: '2026-09-22' }, { ...o, status: 'CONCLUDED' })).toBe('closed')
@@ -242,12 +309,71 @@ describe('pickBoostSession', () => {
   it('sesi yang ditautkan menang', () => {
     expect(pickBoostSession(sessions, { source_session_id: 'a' }, '2026-09-19').session_id).toBe('a')
   })
+  it('ditautkan tapi sesinya tak termuat → null, bukan sesi lain', () => {
+    expect(pickBoostSession(sessions, { source_session_id: 'hilang' }, '2026-09-19')).toBeNull()
+  })
   it('tanpa tautan: sesi yang mulai terlihat paling dekat dengan tanggal mulai', () => {
     expect(pickBoostSession(sessions, {}, '2026-09-19').session_id).toBe('b')
   })
-  it('lebih dari dua hari → tidak menebak', () => {
+  it('lebih dari sehari → tidak menebak', () => {
+    expect(pickBoostSession(sessions, {}, '2026-09-21')).toBeNull()
     expect(pickBoostSession(sessions, {}, '2026-09-10')).toBeNull()
     expect(pickBoostSession([], { source_session_id: 'x' }, '2026-09-19')).toBeNull()
+  })
+  it('jalur persetujuan: sesi yang jam mulainya dalam 6 jam, bukan sesi lain di hari berdekatan', () => {
+    const ss = [
+      { session_id: 'lama', first_seen: '2026-09-18', last_seen: '2026-09-18', schedule_start_time: '2026-09-18T02:00:00Z' },
+      { session_id: 'benar', first_seen: '2026-09-19', last_seen: '2026-09-21', schedule_start_time: '2026-09-19T18:40:00Z' },
+    ]
+    const exp = { source_approval_id: 'ap1', start_at: '2026-09-19T18:30:00Z' }
+    expect(pickBoostSession(ss, exp, '2026-09-19').session_id).toBe('benar')
+    expect(pickBoostSession([ss[0]], exp, '2026-09-19')).toBeNull()
+  })
+})
+
+describe('boostWindow', () => {
+  it('stempel potret = tanggal data kemarin → digeser ke pagi potretnya', () => {
+    const w = boostWindow({ first_seen: '2026-09-18', last_seen: '2026-09-25' }, '2026-10-03')
+    expect(w).toEqual({ firstSeen: '2026-09-19', lastSeen: '2026-09-26', ended: true })
+  })
+  it('jam mulai sesi menang atas stempel pertama (run susulan menstempel mundur)', () => {
+    const w = boostWindow({ first_seen: '2026-08-09', last_seen: '2026-09-25', schedule_start_time: '2026-09-18T18:30:00Z' }, '2026-10-03')
+    expect(w.firstSeen).toBe('2026-09-19')
+  })
+  it('belum ada potret yang lebih baru → belum dianggap dicabut', () => {
+    expect(boostWindow({ first_seen: '2026-09-18', last_seen: '2026-10-03' }, '2026-10-03').ended).toBe(false)
+    expect(boostWindow({ first_seen: '2026-09-18', last_seen: '2026-10-03' }, null).ended).toBe(false)
+  })
+  it('jadwal selesai tepat sesudah penampakan terakhir dipakai sebagai hari terakhir', () => {
+    const base = { first_seen: '2026-09-18', last_seen: '2026-09-25' }
+    expect(boostWindow({ ...base, schedule_end_time: '2026-09-26T19:00:00Z' }, '2026-10-03').lastSeen).toBe('2026-09-27')
+    // jadwal jauh di depan tapi sesinya sudah hilang = dicabut lebih awal
+    expect(boostWindow({ ...base, schedule_end_time: '2026-10-20T00:00:00Z' }, '2026-10-03').lastSeen).toBe('2026-09-26')
+  })
+  it('sesi tanpa stempel → null', () => expect(boostWindow({ session_id: 'x' })).toBeNull())
+  it('rentang setelah boost mulai sehari sesudah hari terakhir terlihat', () => {
+    const w = boostWindow({ first_seen: '2026-09-18', last_seen: '2026-09-25' }, '2026-10-03')
+    const after = presetRanges(cal, { boostLastSeen: w.lastSeen, boostEnded: w.ended }).find(p => p.key === 'after')
+    expect(after.from).toBe('2026-09-27')
+  })
+})
+
+describe('potret', () => {
+  it('unggahan multi-hari: tanggal potret → jumlah hari; harian diabaikan', () => {
+    const m = spanDaysByDate([
+      { snapshot_date: '2026-09-26', start_date: '2026-09-20', end_date: '2026-09-26' },
+      { snapshot_date: '2026-09-26', start_date: '2026-09-26', end_date: '2026-09-26' },
+      { snapshot_date: '2026-09-27', start_date: null, end_date: null },
+    ])
+    expect([...m]).toEqual([['2026-09-26', 7]])
+  })
+  it('potret worker terbaru dikenali dari namanya', () => {
+    expect(latestWorkerSnapshot([
+      { snapshot_date: '2026-10-03', name: '3 Okt 2026 (API)' },
+      { snapshot_date: '2026-10-04', name: '4 Okt 2026 (API)' },
+      { snapshot_date: '2026-10-09', name: 'Product-video 2026-10-03 ~ 2026-10-09' },
+    ])).toBe('2026-10-04')
+    expect(latestWorkerSnapshot([])).toBeNull()
   })
 })
 
@@ -272,6 +398,31 @@ describe('pemformat', () => {
     expect(fmtRoiID(1234.5)).toBe('1.235x')
     expect(fmtPctID(0.0987)).toBe('9,9%')
     expect(fmtPctID(0.1)).toBe('10,0%')
+  })
+  it('tepi pembulatan tidak menghasilkan "Rp1000 rb" atau "100,0x"', () => {
+    expect(fmtRpRbID(999960)).toBe('Rp1,00 jt')
+    expect(fmtRpShortID(999999.6)).toBe('Rp1,00 jt')
+    expect(fmtRpShortID(1500000000)).toBe('Rp1,50 M')
+    expect(fmtRoiID(99.96)).toBe('100x')
+    expect(fmtRoiID(99.94)).toBe('99,9x')
+  })
+  it('ambang & selisih ROI satu gaya', () => {
+    expect(fmtFloorID(4)).toBe('4x'); expect(fmtFloorID(4.5)).toBe('4,5x'); expect(fmtFloorID(null)).toBe('—')
+    expect(fmtSignedX(2.44)).toBe('+2,4x'); expect(fmtSignedX(-7.5)).toBe('−7,5x'); expect(fmtSignedX(undefined)).toBe('—')
+  })
+  it('alasan vonis diterjemahkan dari teks mesin', () => {
+    expect(reasonTextID('ROI ≥ 4 bertahan pada 3 checkpoint')).toBe('ROI di H+3 dan H+7 bertahan di atas ambang 4x (3 titik ukur di atas ambang).')
+    expect(reasonTextID('ROI ≥ 4.5 pada 1 checkpoint, persistensi belum cukup')).toBe('ROI di atas ambang 4,5x pada 1 titik ukur, tetapi belum bertahan di H+3 dan H+7.')
+    expect(reasonTextID('semua checkpoint ROI < 4')).toBe('ROI di semua titik ukur di bawah ambang 4x.')
+    expect(reasonTextID('ROI kuat H+1 lalu turun ≥ 50%')).toBe('ROI kuat di H+1, lalu turun 50% atau lebih di titik ukur berikutnya.')
+    expect(reasonTextID('baseline tak dinyatakan / tak ada data baseline', 'perubahan')).toContain('sebelum perubahan')
+    expect(reasonTextID('delta terukur, tetapi ambang winner/weak (roiFloor/persistence/spike) = TBD_BUSINESS_DECISION')).not.toMatch(/TBD|roiFloor|winner/)
+    expect(reasonTextID('tak ada checkpoint ROI terukur')).toBe('Belum ada titik ukur yang terisi.')
+    expect(reasonTextID('eksperimen dihentikan')).toBe('Eksperimen dihentikan sebelum ada vonis.')
+  })
+  it('alasan yang tak dikenal tampil apa adanya', () => {
+    expect(reasonTextID('alasan baru dari server')).toBe('alasan baru dari server')
+    expect(reasonTextID(null)).toBe('')
   })
   it('kosong → tanda pisah, bukan NaN', () => {
     for (const f of [fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtPctID, fmtNumID, fmtDec1ID]) {
