@@ -50,7 +50,9 @@ export function diffSettings(prev = [], cur = []) {
 
 // Riwayat datar (semua tanggal) → daftar perubahan ber-tanggal, terbaru dulu.
 // rows = seluruh baris gmvmax_campaign_settings (urut tanggal naik).
-// → [{ date, modify_time, campaign_id, campaign_name, field, label, from, to, money }]
+// → [{ date, prev_date, modify_time, campaign_id, campaign_name, field, label, from, to, money }]
+// prev_date = label potret pembanding; perubahannya terjadi SETELAH potret itu
+// (dipakai gmvmaxChangeImpact untuk menetapkan hari perubahan).
 export function buildChangeLog(rows = []) {
   const byDate = new Map()
   for (const r of rows) {
@@ -64,8 +66,32 @@ export function buildChangeLog(rows = []) {
     const cur = byDate.get(dates[i])
     for (const ch of diffSettings(prev, cur)) {
       const src = cur.find(x => x.campaign_id === ch.campaign_id)
-      out.push({ ...ch, date: dates[i], modify_time: src?.modify_time || null })
+      out.push({ ...ch, date: dates[i], prev_date: dates[i - 1], modify_time: src?.modify_time || null })
     }
   }
   return out.reverse() // terbaru dulu
+}
+
+const HARI = 86400000
+
+// Potret HASIL BACKFILL bukan riwayat. Potret berlabel D normalnya diambil D+1
+// ±07.30 WIB. Backfill (`gmvmax-run --date D` berhari-hari kemudian) memanggil
+// info_get yang hanya mengenal keadaan SEKARANG, lalu menstempelnya ke tanggal D
+// — sehingga perubahan 29 Sep tampak terjadi 27 Sep, berbalik 28 Sep, lalu
+// terjadi lagi (kejadian nyata 5 Okt 2026). Dua tanda, salah satu cukup:
+//   • barisnya DIBUAT lebih dari sehari setelah labelnya (potret baru), atau
+//   • modify_time TikTok lebih baru dari saat potret itu semestinya diambil
+//     (potret lama yang ditimpa: upsert tak mengubah created_at).
+// Seluruh potret tanggal itu dibuang; diff lalu membandingkan potret asli di
+// kiri-kanannya, dan hari itu terbaca sebagai hari tak terpotret (apa adanya).
+export function dropBackfilledSnapshots(rows = []) {
+  const bad = new Set()
+  for (const r of rows) {
+    if (!r.snapshot_date || bad.has(r.snapshot_date)) continue
+    const batas = Date.parse(`${r.snapshot_date}T00:00:00Z`) + 2 * HARI // D+2 00.00 UTC
+    const dibuat = r.created_at ? Date.parse(r.created_at) : NaN
+    const diubah = r.modify_time ? Date.parse(r.modify_time) : NaN
+    if (dibuat >= batas || diubah >= batas) bad.add(r.snapshot_date)
+  }
+  return bad.size ? rows.filter(r => !bad.has(r.snapshot_date)) : rows
 }
