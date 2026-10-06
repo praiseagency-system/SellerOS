@@ -127,6 +127,68 @@ export async function loadCreatives(importIds = null) {
   return all
 }
 
+// Baris creatives lintas banyak import DENGAN saringan tambahan (`filter`
+// menerima builder query dan mengembalikannya), UTUH melewati batas PostgREST
+// ~1000 baris/permintaan. Dua jalur, dipilih pemanggil menurut lebar sasaran:
+//
+// fetchCreativesPerImport — SATU import per query, dipaginasi, konkuren
+// terbatas (pola loadCreatives). Untuk sasaran lebar (campaign, produk): satu
+// campaign bisa ribuan baris per 25 import. JANGAN diganti
+// `.in('import_id', banyak).order('id').range()` — Postgres lalu menyusuri
+// indeks id seisi tabel sambil menyaring: terukur lambat lalu HTTP 500 di
+// produksi (5 Okt 2026).
+async function fetchCreativesPerImport(importIds, cols, filter) {
+  async function fetchOne(importId) {
+    const out = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await filter(
+        supabase.from('gmvmax_creatives').select(cols).eq('import_id', importId)
+      ).order('id', { ascending: true }).range(from, from + PAGE - 1)
+      if (error) throw error
+      if (data) out.push(...data)
+      if (!data || data.length < PAGE) break
+    }
+    return out
+  }
+
+  const all = []
+  for (let i = 0; i < importIds.length; i += CONCURRENCY) {
+    const batch = await Promise.all(importIds.slice(i, i + CONCURRENCY).map(fetchOne))
+    for (const rows of batch) for (const r of rows) all.push(r)
+  }
+  return all
+}
+
+// fetchCreativesChunked — untuk sasaran yang BIASANYA sempit (video; satu
+// produk di modal produk): 25 import per permintaan, tanpa order/range (jadi
+// tak kena jebakan di atas), hemat ~25× jumlah permintaan. Jawaban yang penuh
+// satu halaman berarti MUNGKIN terpotong → chunk itu diambil ulang per import,
+// sehingga daftar video yang panjang / produk yang ramai pun tetap utuh.
+const IMPORT_CHUNK = 25
+async function fetchCreativesChunked(importIds, cols, filter) {
+  const all = []
+  for (let i = 0; i < importIds.length; i += IMPORT_CHUNK) {
+    const chunk = importIds.slice(i, i + IMPORT_CHUNK)
+    const { data, error } = await filter(
+      supabase.from('gmvmax_creatives').select(cols).in('import_id', chunk)
+    ).limit(PAGE)
+    if (error) throw error
+    const rows = data && data.length >= PAGE
+      ? await fetchCreativesPerImport(chunk, cols, filter)
+      : data || []
+    // Bukan push(...rows): hasil jalur per-import bisa puluhan ribu baris.
+    for (const r of rows) all.push(r)
+  }
+  return all
+}
+
+// Tiga pembaca per PRODUK di bawah (riwayat excluded, video kode, set video)
+// menyapu SEMUA snapshot untuk produk yang sedang dibuka di modal produk. Semua
+// lewat fetchCreativesChunked: kebanyakan produk sepi → tetap satu permintaan
+// per 25 import; produk ramai (>1000 baris per 25 import, ±40 baris/hari)
+// otomatis diambil ulang per import alih-alih terpotong DIAM-DIAM — modal
+// menelan galat jadi daftar kosong, jadi video/hari yang hilang tak terlihat.
+
 // Riwayat LENGKAP video yang PERNAH di-exclude untuk satu produk, LINTAS SEMUA
 // snapshot (bukan hanya window aktif). Read-only, di-scope product_id → ringan.
 // Balik: [{ videoId, title, account, campaign, first, last, dayCount }] urut
@@ -137,32 +199,26 @@ export async function loadExcludedHistory(productId) {
   const imports = await listImports()
   if (imports.length === 0) return []
   const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
-  const ids = imports.map(i => i.id)
 
+  const rows = await fetchCreativesChunked(
+    imports.map(i => i.id),
+    'video_id, video_title, tiktok_account, campaign_name, status, import_id',
+    q => q.eq('product_id', productId).or('status.ilike.%exclud%,status.ilike.%dikecualikan%'),
+  )
   const byVid = new Map()
-  for (let i = 0; i < ids.length; i += 25) {
-    const chunk = ids.slice(i, i + 25)
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('video_id, video_title, tiktok_account, campaign_name, status, import_id')
-      .in('import_id', chunk)
-      .eq('product_id', productId)
-      .or('status.ilike.%exclud%,status.ilike.%dikecualikan%')
-    if (error) throw error
-    for (const r of data || []) {
-      if (!r.video_id) continue
-      const d = dateById[r.import_id] || null
-      let e = byVid.get(r.video_id)
-      if (!e) {
-        e = { videoId: r.video_id, title: r.video_title || '', account: r.tiktok_account || null,
-              campaign: r.campaign_name || '', first: d, last: d, days: new Set() }
-        byVid.set(r.video_id, e)
-      }
-      if (d) { if (!e.first || d < e.first) e.first = d; if (!e.last || d > e.last) e.last = d; e.days.add(d) }
-      if (!e.campaign && r.campaign_name) e.campaign = r.campaign_name
-      if (!e.title && r.video_title) e.title = r.video_title
-      if (!e.account && r.tiktok_account) e.account = r.tiktok_account
+  for (const r of rows) {
+    if (!r.video_id) continue
+    const d = dateById[r.import_id] || null
+    let e = byVid.get(r.video_id)
+    if (!e) {
+      e = { videoId: r.video_id, title: r.video_title || '', account: r.tiktok_account || null,
+            campaign: r.campaign_name || '', first: d, last: d, days: new Set() }
+      byVid.set(r.video_id, e)
     }
+    if (d) { if (!e.first || d < e.first) e.first = d; if (!e.last || d > e.last) e.last = d; e.days.add(d) }
+    if (!e.campaign && r.campaign_name) e.campaign = r.campaign_name
+    if (!e.title && r.video_title) e.title = r.video_title
+    if (!e.account && r.tiktok_account) e.account = r.tiktok_account
   }
   return [...byVid.values()]
     .map(({ days, ...e }) => ({ ...e, dayCount: days.size }))
@@ -178,29 +234,24 @@ export async function loadCodeVideos(productId) {
   const imports = await listImports()
   if (imports.length === 0) return new Map()
   const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
-  const impIds = imports.map(i => i.id)
+
+  const rows = await fetchCreativesChunked(
+    imports.map(i => i.id),
+    'video_id, video_title, tiktok_account, campaign_name, import_id',
+    q => q.eq('product_id', productId).eq('auth_type', 'AUTH_CODE'),
+  )
   const byVid = new Map()
-  for (let i = 0; i < impIds.length; i += 25) {
-    const chunk = impIds.slice(i, i + 25)
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('video_id, video_title, tiktok_account, campaign_name, import_id')
-      .in('import_id', chunk)
-      .eq('product_id', productId)
-      .eq('auth_type', 'AUTH_CODE')
-    if (error) throw error
-    for (const r of data || []) {
-      if (!r.video_id) continue
-      const d = dateById[r.import_id] || null
-      let e = byVid.get(r.video_id)
-      if (!e) {
-        e = { videoId: r.video_id, title: r.video_title || '', account: r.tiktok_account || null,
-              campaign: r.campaign_name || '', first: d, last: d }
-        byVid.set(r.video_id, e)
-      }
-      if (d) { if (!e.first || d < e.first) e.first = d; if (!e.last || d > e.last) e.last = d }
-      if (!e.campaign && r.campaign_name) e.campaign = r.campaign_name
+  for (const r of rows) {
+    if (!r.video_id) continue
+    const d = dateById[r.import_id] || null
+    let e = byVid.get(r.video_id)
+    if (!e) {
+      e = { videoId: r.video_id, title: r.video_title || '', account: r.tiktok_account || null,
+            campaign: r.campaign_name || '', first: d, last: d }
+      byVid.set(r.video_id, e)
     }
+    if (d) { if (!e.first || d < e.first) e.first = d; if (!e.last || d > e.last) e.last = d }
+    if (!e.campaign && r.campaign_name) e.campaign = r.campaign_name
   }
   return byVid
 }
@@ -212,49 +263,38 @@ export async function loadProductVideoIds(productId) {
   if (!productId) return new Set()
   const imports = await listImports()
   if (imports.length === 0) return new Set()
-  const impIds = imports.map(i => i.id)
+
+  const rows = await fetchCreativesChunked(
+    imports.map(i => i.id), 'video_id', q => q.eq('product_id', productId))
   const set = new Set()
-  for (let i = 0; i < impIds.length; i += 25) {
-    const chunk = impIds.slice(i, i + 25)
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('video_id')
-      .in('import_id', chunk)
-      .eq('product_id', productId)
-    if (error) throw error
-    for (const r of data || []) if (r.video_id) set.add(r.video_id)
-  }
+  for (const r of rows) if (r.video_id) set.add(r.video_id)
   return set
 }
 
 // Metrik HARIAN per video (cost/revenue/orders per snapshot_date) untuk
 // sekumpulan videoId, lintas semua snapshot. Read-only, di-scope video_id →
-// ringan. Dipakai menghitung "performa sejak di-boost". Balik:
+// ringan; daftar video yang panjang (>1000 baris per 25 import) otomatis jatuh
+// ke jalur per-import. Dipakai menghitung "performa sejak di-boost". Balik:
 // Map<videoId, [{ date, cost, revenue, orders }]> (belum terurut).
 export async function loadVideosDaily(videoIds) {
   const ids = [...new Set((videoIds || []).filter(Boolean))]
   if (ids.length === 0) return new Map()
-  const imports = await listImports()
+  const imports = (await listImports()).filter(i => i.snapshot_date)
   if (imports.length === 0) return new Map()
-  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
-  const impIds = imports.map(i => i.id)
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date]))
 
+  const rows = await fetchCreativesChunked(
+    imports.map(i => i.id),
+    'video_id, cost, gross_revenue, sku_orders, import_id',
+    q => q.in('video_id', ids),
+  )
   const out = new Map(ids.map(v => [v, []]))
-  for (let i = 0; i < impIds.length; i += 25) {
-    const chunk = impIds.slice(i, i + 25)
-    const { data, error } = await supabase
-      .from('gmvmax_creatives')
-      .select('video_id, cost, gross_revenue, sku_orders, import_id')
-      .in('import_id', chunk)
-      .in('video_id', ids)
-    if (error) throw error
-    for (const r of data || []) {
-      const d = dateById[r.import_id]
-      if (!d || !out.has(r.video_id)) continue
-      out.get(r.video_id).push({
-        date: d, cost: num(r.cost) || 0, revenue: num(r.gross_revenue) || 0, orders: num(r.sku_orders) || 0,
-      })
-    }
+  for (const r of rows) {
+    const d = dateById[r.import_id]
+    if (!d || !out.has(r.video_id)) continue
+    out.get(r.video_id).push({
+      date: d, cost: num(r.cost) || 0, revenue: num(r.gross_revenue) || 0, orders: num(r.sku_orders) || 0,
+    })
   }
   return out
 }
@@ -301,53 +341,49 @@ export async function loadVideoStatusDaily(videoIds, { from = null, to = null } 
 // impresi/klik dijumlah; ROI = Σomzet/Σbiaya, CTR = Σklik/Σimpresi, CVR =
 // Σorder/Σklik (BUKAN rata-rata rasio harian); retensi vr_* = rata-rata
 // tertimbang impresi. Semua rasio dalam fraksi 0–1 (apa adanya dari export).
+//
+// Sasaran campaign/produk bisa ribuan baris per 25 import → diambil per import
+// (lihat fetchCreativesPerImport); tanpa itu deret terpotong DIAM-DIAM di 1000
+// baris dan sebagian besar hari hilang. `from` (YYYY-MM-DD, opsional) melewati
+// snapshot yang lebih tua — pemanggil yang hanya butuh deret sejak baseline
+// sebaiknya mengisinya agar tak menarik seluruh riwayat.
 const VR_KEYS = ['vr_2s', 'vr_6s', 'vr_25', 'vr_50', 'vr_75', 'vr_100']
-export async function loadExperimentDaily({ videoId, productId, campaignId }) {
+const EXPERIMENT_DAILY_COLS =
+  'import_id, campaign_id, status, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100'
+export async function loadExperimentDaily({ videoId, productId, campaignId, from = null }) {
   const target = videoId ? ['video_id', videoId]
     : productId ? ['product_id', productId]
       : campaignId ? ['campaign_id', campaignId] : null
   if (!target) return []
-  const imports = await listImports()
+  const imports = (await listImports()).filter(i => i.snapshot_date && (!from || i.snapshot_date >= from))
   if (imports.length === 0) return []
-  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date || null]))
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date]))
   const impIds = imports.map(i => i.id)
 
+  const filter = q => q.eq(target[0], target[1])
+  const rows = target[0] === 'video_id'
+    ? await fetchCreativesChunked(impIds, EXPERIMENT_DAILY_COLS, filter)
+    : await fetchCreativesPerImport(impIds, EXPERIMENT_DAILY_COLS, filter)
+
   const byDate = new Map()
-  for (let i = 0; i < impIds.length; i += 25) {
-    const chunk = impIds.slice(i, i + 25)
-    // Dipaginasi: PostgREST memotong di ~1000 baris/permintaan TANPA galat.
-    // Sasaran produk/campaign mudah melewatinya (25 potret × ratusan materi),
-    // dan hari yang barisnya terbuang akan terbaca sebagai "tak tayang".
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
-        .from('gmvmax_creatives')
-        .select('import_id, campaign_id, status, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
-        .in('import_id', chunk)
-        .eq(target[0], target[1])
-        .order('id', { ascending: true })
-        .range(from, from + PAGE - 1)
-      if (error) throw error
-      for (const r of data || []) {
-        const d = dateById[r.import_id]
-        if (!d) continue
-        const a = byDate.get(d) || {
-          date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
-          vrW: [0, 0, 0, 0, 0, 0], statuses: [],
-        }
-        // Status tayang hanya bermakna untuk sasaran VIDEO (satu baris = satu
-        // video di satu campaign); produk/campaign memuat banyak video.
-        if (videoId && r.status) a.statuses.push({ campaignId: r.campaign_id ?? null, status: normalizeStatus(r.status) })
-        const imp = num(r.impressions) || 0
-        a.cost += num(r.cost) || 0
-        a.revenue += num(r.gross_revenue) || 0
-        a.orders += num(r.sku_orders) || 0
-        a.impressions += imp
-        a.clicks += num(r.clicks) || 0
-        if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
-        byDate.set(d, a)
-      }
-      if (!data || data.length < PAGE) break
+  for (const r of rows) {
+    const d = dateById[r.import_id]
+    if (!d) continue
+    const a = byDate.get(d) || {
+      date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
+      vrW: [0, 0, 0, 0, 0, 0], statuses: [],
     }
+    // Status tayang hanya bermakna untuk sasaran VIDEO (satu baris = satu
+    // video di satu campaign); produk/campaign memuat banyak video.
+    if (videoId && r.status) a.statuses.push({ campaignId: r.campaign_id ?? null, status: normalizeStatus(r.status) })
+    const imp = num(r.impressions) || 0
+    a.cost += num(r.cost) || 0
+    a.revenue += num(r.gross_revenue) || 0
+    a.orders += num(r.sku_orders) || 0
+    a.impressions += imp
+    a.clicks += num(r.clicks) || 0
+    if (imp > 0) VR_KEYS.forEach((k, j) => { const v = num(r[k]); if (v != null) a.vrW[j] += v * imp })
+    byDate.set(d, a)
   }
   return [...byDate.values()]
     .sort((x, y) => (x.date < y.date ? -1 : 1))

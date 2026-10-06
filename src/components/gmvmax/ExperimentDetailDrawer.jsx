@@ -179,14 +179,21 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
   useEffect(() => {
     let on = true
     const at = { snapshotDates: liveSnaps, lastDataDate: liveLast, spanByDate: liveSpans }
-    loadExperimentDaily({ videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id })
+    const target = { videoId: e.creative_video_id, productId: e.product_id, campaignId: e.campaign_id }
+    // Kalender paling awal mulai di awal jendela sebelum-mulai (atau tanggal
+    // mulai) — potret yang lebih tua tak perlu ditarik. Bila sejak itu kosong,
+    // ambil ulang tanpa batas: sasaran yang pernah tayang tetap mendapat
+    // kalender (hari Rp0); hanya yang tanpa baris sama sekali jatuh ke cadangan.
+    const from = [e.baseline_start, String(e.start_at || '').slice(0, 10)].filter(Boolean).sort()[0] || null
+    loadExperimentDaily({ ...target, from })
+      .then(rows => (rows.length || !from ? rows : loadExperimentDaily(target)))
       .then(rows => { if (on) { setDaily({ rows, ...at }); setDailyErr(false) } })
       .catch(() => { if (on) { setDaily({ rows: [], ...at }); setDailyErr(true) } })
     return () => { on = false }
     // liveSnaps/liveSpans sengaja tak masuk dependensi: keduanya berganti
     // identitas tiap context memuat ulang; importsSig mewakili isinya.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, importsSig, retry])
+  }, [e.id, e.creative_video_id, e.product_id, e.campaign_id, e.baseline_start, e.start_at, importsSig, retry])
 
   useEffect(() => {
     let on = true
