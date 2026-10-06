@@ -45,7 +45,9 @@ const rankOf = (s) => STATUS_META[s]?.rank ?? 99
 // others = status video itu di campaign LAIN (bukan baris kembaran campaign ini).
 const best = (list) => list.reduce((a, e) => (rankOf(e.s) < rankOf(a) ? e.s : a), list[0].s)
 export function pickStatus(entries, campaignId = null) {
-  const list = (entries || []).map(e => ({ c: e.campaignId != null ? String(e.campaignId) : null, s: normStatus(e.status) })).filter(e => e.s)
+  // Menerima larik entri ATAU objek hari ber-`statuses` (loadVideoDailyProfile).
+  const arr = Array.isArray(entries) ? entries : entries?.statuses
+  const list = (arr || []).map(e => ({ c: e.campaignId != null ? String(e.campaignId) : null, s: normStatus(e.status) })).filter(e => e.s)
   if (!list.length) return null
   const own = campaignId != null ? list.filter(e => e.c === String(campaignId)) : []
   const status = best(own.length ? own : list)
@@ -136,7 +138,7 @@ export function journeySentence(j, { noun = 'boost' } = {}) {
 }
 
 // ── Label ringkas untuk baris DAFTAR ("Antre → Tayang") ─────────────────────
-// byDate: Map<tanggal, [{ campaignId, status }]> satu video.
+// byDate: Map<tanggal, [{ campaignId, status }] | { statuses }> satu video.
 // Dibandingkan: status terakhir dalam 3 hari sebelum mulai → status yang paling
 // sering selama hari ke-1..7 (→ status hari berdata terakhir bila berbeda).
 // null bila tak ada perubahan atau datanya tak cukup.

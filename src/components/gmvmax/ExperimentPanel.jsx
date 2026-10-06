@@ -11,7 +11,9 @@ import {
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
 import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
-import { loadVideoStatusDaily } from '../../data/gmvmaxImports'
+import { loadVideoDailyProfile } from '../../data/gmvmaxImports'
+import { boostProfile, groupPatterns, BOOST_TYPES } from '../../utils/gmvmaxBoostPatterns'
+import BoostPatternPanel from './BoostPatternPanel'
 import { statusShift } from '../../utils/gmvmaxExperimentStatus'
 import { getThresholds, saveExperimentRoiFloor } from '../../data/gmvmaxSettings'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
@@ -71,10 +73,14 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRule
     getThresholds().then(t => { setRoiFloor(t.experimentRoiFloor ?? null); setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
   }, [])
   useEffect(() => { loadBoostSessions({ days: 60 }).then(setSessions).catch(() => {}) }, [])
-  // Status tayang video di sekitar tanggal mulai → label "Antre → Tayang" di
-  // baris. Satu bacaan untuk semua eksperimen video; gagal memuat didiamkan
-  // (label itu tambahan, bukan syarat daftar).
-  const [statusByVideo, setStatusByVideo] = useState(null)
+  // Angka + status tayang harian tiap video di sekitar tanggal mulainya →
+  // label "Antre → Tayang" di baris DAN pola boost (7 hari sebelum → 7 hari
+  // pertama). Satu bacaan untuk semua eksperimen video; gagal memuat
+  // didiamkan (keduanya tambahan, bukan syarat daftar).
+  const [videoDaily, setVideoDaily] = useState(null)
+  // Kelompok yang dibuka & "sembunyikan" di panel pola — disimpan di sini
+  // supaya bertahan saat daftar dimuat ulang (panelnya ikut lepas-pasang).
+  const [patView, setPatView] = useState({ open: null, hidden: false })
   const statusSig = (state.rows || []).filter(e => e.creative_video_id && dayOne(e))
     .map(e => `${e.creative_video_id}@${dayOne(e)}`).sort().join('|')
   useEffect(() => {
@@ -82,8 +88,9 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRule
     const pairs = statusSig.split('|').map(x => x.split('@'))
     const days = pairs.map(p => p[1]).sort()
     let on = true
-    loadVideoStatusDaily(pairs.map(p => p[0]), { from: addDaysISO(days[0], -3), to: addDaysISO(days[days.length - 1], 6) })
-      .then(m => { if (on) setStatusByVideo(m) }).catch(() => {})
+    loadVideoDailyProfile(pairs.map(p => p[0]), { from: addDaysISO(days[0], -7), to: addDaysISO(days[days.length - 1], 6) })
+      .then(m => { if (on) setVideoDaily({ sig: statusSig, ...m }) })
+      .catch(() => { if (on) setVideoDaily({ sig: statusSig, failed: true }) })
     return () => { on = false }
   }, [statusSig])
 
@@ -121,6 +128,17 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRule
   const nRunning = rows.filter(r => r.status === 'RUNNING').length
   // Selama bundel server lama masih terpasang, barisnya tetap berformat lama.
   const nLegacy = items.filter(it => it.oc.format === 'legacy').length
+  // Data harian video hanya dipakai bila memang milik daftar yang sedang
+  // tampil (tanda tangannya sama) — data basi membuat boost baru terbaca
+  // "belanja Rp0, keadaan tak terekam".
+  const vd = videoDaily && videoDaily.sig === statusSig && !videoDaily.failed ? videoDaily : null
+  const statusByVideo = vd?.byVideo || null
+  // Pola boost: keadaan video sebelum di-boost → hasil 7 hari pertamanya.
+  const patterns = vd ? groupPatterns(
+    rows.map(e => boostProfile(e, vd.byVideo.get(String(e.creative_video_id)), vd.dates, cfg, rows)), cfg) : null
+  const hasBoostVideo = rows.some(e => e.creative_video_id && BOOST_TYPES.has(e.experiment_type) && dayOne(e))
+  const patState = vd ? 'ready' : videoDaily?.sig === statusSig && videoDaily.failed ? 'failed' : 'loading'
+  const ocById = new Map(items.map(it => [it.exp.id, it.oc]))
   const row = (it) => (
     <ExperimentRow key={it.exp.id} it={it} cfg={cfg} productNames={productNames}
       shift={it.exp.creative_video_id ? statusShift(it.exp, statusByVideo?.get(String(it.exp.creative_video_id))) : null}
@@ -143,6 +161,9 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRule
       {rows.length === 0 && !showForm && (
         <EmptyState title="Belum ada eksperimen" desc="Catat aksi (mis. boost, uji kreatif) sebagai eksperimen untuk melacak hasilnya dibanding sebelum mulai." />
       )}
+
+      {hasBoostVideo && <BoostPatternPanel state={patState} patterns={patterns} cfg={cfg} productNames={productNames} ocById={ocById}
+        onOpen={setDetail} view={patView} onView={setPatView} />}
 
       {rows.length > 0 && <>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
