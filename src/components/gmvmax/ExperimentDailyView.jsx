@@ -7,6 +7,8 @@
 // dihitung server.
 import { useMemo, useState } from 'react'
 import { ChevronRight, ChevronDown, X } from 'lucide-react'
+import StatusChip, { statusFill } from './StatusChip'
+import { statusLabel } from '../../utils/gmvmaxExperimentStatus'
 import {
   aggregateDays, daysIn, presetRanges, matchPreset, rangeName, sideOf, hLabel, fmtDayID, fmtSpanID,
 } from '../../utils/gmvmaxExperimentDaily'
@@ -47,13 +49,15 @@ function emptyNotes(a, verbose = false) {
 
 export default function ExperimentDailyView({
   calendar, roiFloor = null, spendFloor = null, preComparable = null, checkpoints = [], boost = null,
-  isVideo = false, startLabel = '', noun = 'boost',
+  isVideo = false, startLabel = '', noun = 'boost', statusByDate = null,
 }) {
   const presets = useMemo(
     () => presetRanges(calendar, { boostLastSeen: boost?.lastSeen, boostEnded: !!boost?.ended, noun }),
     [calendar, boost?.lastSeen, boost?.ended, noun],
   )
   const byKey = useMemo(() => Object.fromEntries(presets.map(p => [p.key, p])), [presets])
+  const statusKeys = useMemo(
+    () => (statusByDate ? [...new Set([...statusByDate.values()].map(x => x.status))] : []), [statusByDate])
   // Bawaan SELALU hari ke-1–7, supaya angka pembuka punya arti yang sama di semua
   // eksperimen. Pengecualian: belum ada satu hari pun sesudah mulai.
   const [picked, setSel] = useState(() => {
@@ -176,8 +180,13 @@ export default function ExperimentDailyView({
           {ckByDate.size > 0 && <span><span className="text-amber-400">◎</span> titik ukur lama</span>}
           {pre && <span>arsiran = sebelum {noun}</span>}<span>pita = rentang terpilih</span><span>kotak putus = data tidak masuk</span>
           {boost && <span><i className="inline-block w-3 h-0.5 bg-accent mr-1 align-middle" />boost terlihat (perkiraan)</span>}
+          {statusKeys.length > 0 && (
+            <span>strip di bawah batang = status video: {statusKeys.map((k, i) => (
+              <span key={k}>{i > 0 && ' · '}<i className="inline-block w-2 h-2 rounded-sm mr-1 align-middle" style={{ background: statusFill(k) }} />{statusLabel(k)}</span>
+            ))}</span>
+          )}
         </p>
-        <CalendarChart days={chartDays} sel={sel} ckByDate={ckByDate} boost={boost} noun={noun} onRead={setRead} />
+        <CalendarChart days={chartDays} sel={sel} ckByDate={ckByDate} boost={boost} noun={noun} onRead={setRead} statusByDate={statusByDate} />
         <p className="text-[11px] text-ink-faint mt-1">
           {readDay ? <DayReadout day={readDay} /> : 'Ketuk batang untuk angka hari itu.'}
           {many && !selBeyond && (
@@ -205,7 +214,7 @@ export default function ExperimentDailyView({
         <DailyTable calendar={calendar} sel={sel} selAgg={selAgg} selSide={selSide} selLower={selLower}
           presets={byKey} preAgg={preAgg} preComparable={preComparable}
           roiFloor={roiFloor} spendFloor={spendFloor} ckByDate={ckByDate} boost={boost} isVideo={isVideo}
-          startLabel={startLabel} noun={noun} hidden={hidden} openPre={openPre} openLate={openLate}
+          statusByDate={statusByDate} startLabel={startLabel} noun={noun} hidden={hidden} openPre={openPre} openLate={openLate}
           onTogglePre={() => setOpenPre(v => !v)} onToggleLate={() => setOpenLate(v => !v)}
           detail={detail} onDetail={(date) => setDetail(m => ({ ...m, [date]: !m[date] }))} onDay={clickDay} />
         </div>
@@ -306,7 +315,7 @@ function DayReadout({ day }) {
 
 // Batang omzet/belanja + titik ROI per HARI KALENDER. Hari tanpa data tetap
 // punya kolom (dulu dirapatkan, jadi hari kosong tak kelihatan).
-function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
+function CalendarChart({ days, sel, ckByDate, boost, noun, onRead, statusByDate }) {
   const n = days.length
   const STEP = Math.max(20, Math.min(34, Math.floor(552 / n)))
   const BW = Math.min(8, Math.floor(STEP / 2) - 3)
@@ -375,6 +384,12 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
                 <rect x={cx - BW} y={T} width={BW * 2} height={B - T} fill="none" stroke="currentColor" className="text-line/25" strokeDasharray="2 3" />
               )}
               {d.state === 'pending' && <circle cx={cx} cy={B - 5} r="1.5" fill="currentColor" className="text-ink-faint" />}
+              {/* Pita status tayang video hari itu, tepat di bawah garis dasar. */}
+              {statusByDate?.get(d.date) && (
+                <rect x={x(i) + 1} y={B + 1} width={STEP - 2} height={3} fill={statusFill(statusByDate.get(d.date).status)}>
+                  <title>{`${fmtDayID(d.date)} — ${statusLabel(statusByDate.get(d.date).status)}`}</title>
+                </rect>
+              )}
               <text x={cx} y={B + 13} textAnchor="middle" fontSize="10" fill="currentColor" className="text-ink-faint">{dayNum}</text>
               {sub && <text x={cx} y={B + 26} textAnchor="middle" fontSize="10" fill="currentColor" className="text-ink-faint">{sub}</text>}
             </g>
@@ -421,10 +436,12 @@ const EMPTY_TEXT = {
 }
 
 function DailyTable({
-  calendar, sel, selAgg, selSide, selLower, presets, preAgg, preComparable, roiFloor, spendFloor,
+  calendar, sel, selAgg, selSide, selLower, presets, preAgg, preComparable, roiFloor, spendFloor, statusByDate,
   ckByDate, boost, isVideo, startLabel, noun, hidden, openPre, openLate, onTogglePre, onToggleLate, detail, onDetail, onDay,
 }) {
-  const cols = isVideo ? 8 : 5
+  // Kolom status hanya untuk sasaran video yang status hariannya terekam.
+  const st = isVideo && !!statusByDate && statusByDate.size > 0
+  const cols = (isVideo ? 8 : 5) + (st ? 1 : 0)
   const maxCost = Math.max(1, ...calendar.map(d => d.cost))
   const inSel = (d) => d.date >= sel.from && d.date <= sel.to
   const preDays = calendar.filter(d => d.phase === 'pre')
@@ -464,6 +481,7 @@ function DailyTable({
     const sub = idle ? 'tak tayang' : merged ? `angka gabungan ${d.spanDays} hari (unggahan berkas)`
       : d.day === 1 ? `hari mulai — ${startLabel}` : d.cost === 0 ? 'tanpa belanja' : ''
     const open = !!detail[d.date]
+    const dst = st ? statusByDate.get(d.date) || null : null
     const seen = boost && d.date >= boost.firstSeen && d.date <= boost.lastSeen
     return [
       <tr key={d.date} onClick={idle ? undefined : () => onDay(d)}
@@ -476,6 +494,11 @@ function DailyTable({
         <td className="py-1.5 px-1 text-left align-top">
           {label}{sub && <div className="text-[10.5px] text-ink-faint">{sub}</div>}
         </td>
+        {st && (
+          <td className="py-1.5 px-1 text-left align-top">
+            {dst ? <StatusChip status={dst.status} title={dst.others.length ? `Di campaign lain: ${dst.others.map(statusLabel).join(', ')}` : undefined} /> : <span className="text-ink-faint">—</span>}
+          </td>
+        )}
         <td className={td}>
           {fmtRpID(d.cost)}
           <div className="h-0.5 bg-line/10 mt-0.5"><div className="h-0.5 bg-fill/40" style={{ width: `${Math.round((d.cost / maxCost) * 100)}%` }} /></div>
@@ -522,6 +545,7 @@ function DailyTable({
         <td className="py-1.5 px-1 text-left font-medium">
           {open ? <ChevronDown className="inline w-3.5 h-3.5 -mt-0.5" /> : <ChevronRight className="inline w-3.5 h-3.5 -mt-0.5" />} {label}
         </td>
+        {st && <td />}
         <td className={td}>{fmtRpID(agg.cost)}</td>
         <td className={td}>{fmtRpID(agg.revenue)}</td>
         <td className={`${td} ${neutral ? 'text-ink-muted' : roiTone(agg.roi, roiFloor, spendFloor != null && agg.cost < spendFloor)}`}>{fmtRoiID(agg.roi)}</td>
@@ -555,12 +579,13 @@ function DailyTable({
     <table className={`w-full text-xs table-fixed ${isVideo ? 'min-w-[540px]' : 'min-w-[420px]'}`}>
       <colgroup>
         {isVideo
-          ? <><col style={{ width: 124 }} /><col style={{ width: 86 }} /><col style={{ width: 92 }} /><col style={{ width: 54 }} /><col style={{ width: 44 }} /><col style={{ width: 52 }} /><col style={{ width: 52 }} /><col /></>
+          ? <><col style={{ width: st ? 112 : 124 }} />{st && <col style={{ width: 76 }} />}<col style={{ width: st ? 78 : 86 }} /><col style={{ width: st ? 84 : 92 }} /><col style={{ width: st ? 46 : 54 }} /><col style={{ width: st ? 40 : 44 }} /><col style={{ width: st ? 46 : 52 }} /><col style={{ width: st ? 46 : 52 }} /><col /></>
           : <><col /><col style={{ width: 104 }} /><col style={{ width: 112 }} /><col style={{ width: 70 }} /><col style={{ width: 60 }} /></>}
       </colgroup>
       <thead>
         <tr className="text-[10px] uppercase tracking-wider text-ink-faint">
           <th className="font-semibold py-1.5 px-1 text-left">Hari</th>
+          {st && <th className="font-semibold py-1.5 px-1 text-left">Status</th>}
           <th className={th}>Belanja</th><th className={th}>Omzet</th><th className={th}>ROI</th><th className={th}>Order</th>
           {isVideo && <><th className={th}>CTR</th><th className={th}>CVR</th><th /></>}
         </tr>
@@ -603,6 +628,7 @@ function DailyTable({
         {selAgg.counted > 0 && (
           <tr className="border-t border-line/20 bg-fill/[0.04] text-ink font-semibold">
             <td className="py-1.5 px-1 text-left">Total {selLower}</td>
+            {st && <td />}
             <td className={td}>{fmtRpID(selAgg.cost)}</td>
             <td className={td}>{fmtRpID(selAgg.revenue)}</td>
             <td className={`${td} ${roiTone(selAgg.roi, roiFloor, selSide === 'pre' || selAgg.pending > 0 || (spendFloor != null && selAgg.cost < spendFloor))}`}>{fmtRoiVsFloorID(selAgg.roi, roiFloor)}</td>

@@ -102,6 +102,9 @@ export function buildCalendar({
       orders: r ? num(r.orders) : 0, impressions: r ? num(r.impressions) : 0, clicks: r ? num(r.clicks) : 0,
       roi: cost > 0 ? revenue / cost : null, vr,
       spanDays: (r && spanByDate?.get(d)) || 1,
+      // Status tayang video hari itu per campaign ([{ campaignId, status }]) —
+      // diteruskan apa adanya; pemilihannya di gmvmaxExperimentStatus.js.
+      statuses: r && Array.isArray(r.statuses) && r.statuses.length ? r.statuses : null,
     })
   }
   return out
