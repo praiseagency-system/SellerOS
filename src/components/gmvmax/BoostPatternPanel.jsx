@@ -15,9 +15,23 @@ import { fmtFloorID, fmtRoiID, fmtRoiVsFloorID, fmtRpRbID } from '../../utils/gm
 
 const OUT_TONE = { above: 'text-emerald-400', below: 'text-red-400', wait: 'text-ink-muted' }
 
-export default function BoostPatternPanel({ patterns, cfg, productNames, ocById, onOpen }) {
-  const [open, setOpen] = useState(null) // kunci kelompok yang dibuka
-  const [hidden, setHidden] = useState(false)
+// state: 'loading' | 'failed' | 'ready'. view/onView: { open, hidden } disimpan
+// di induk supaya kelompok yang dibuka & pilihan "sembunyikan" bertahan saat
+// daftar eksperimen dimuat ulang.
+export default function BoostPatternPanel({ state = 'ready', patterns, cfg, productNames, ocById, onOpen, view, onView }) {
+  const [own, setOwn] = useState({ open: null, hidden: false })
+  const v = view || own, setV = onView || setOwn
+  const open = v.open, hidden = v.hidden
+  const setOpen = (k) => setV({ ...v, open: k })
+  const setHidden = (h) => setV({ ...v, hidden: h })
+  if (state !== 'ready') {
+    return (
+      <section className="rounded-xl border border-line/15 bg-surface p-3.5">
+        <h4 className="text-sm font-semibold text-ink-strong">Pola dari boost sebelumnya</h4>
+        <p className="text-[11px] text-ink-faint mt-0.5">{state === 'failed' ? 'Pola boost belum bisa dimuat — muat ulang halaman untuk mencoba lagi.' : 'Memuat pola boost…'}</p>
+      </section>
+    )
+  }
   if (!patterns || patterns.total === 0) return null
   const { groups, total, judged, above, hasFloor, enough } = patterns
   const floor = cfg.roiFloor
@@ -29,11 +43,11 @@ export default function BoostPatternPanel({ patterns, cfg, productNames, ocById,
         <div>
           <h4 className="text-sm font-semibold text-ink-strong">Pola dari boost sebelumnya</h4>
           <p className="text-[11px] text-ink-faint mt-0.5">
-            {total} boost video, dikelompokkan menurut keadaan videonya 7 hari sebelum di-boost.
+            {total} boost pada {patterns.videos} video, dikelompokkan menurut keadaan videonya 7 hari sebelum di-boost.
             {hasFloor && enough && ` ${above} dari ${judged} yang sudah bisa dinilai berada di atas ambang ${fmtFloorID(floor)} pada 7 hari pertamanya.`}
           </p>
         </div>
-        <button onClick={() => setHidden(v => !v)} className="text-[11px] text-ink-muted hover:text-ink">{hidden ? 'tampilkan' : 'sembunyikan'}</button>
+        <button onClick={() => setHidden(!hidden)} className="text-[11px] text-ink-muted hover:text-ink">{hidden ? 'tampilkan' : 'sembunyikan'}</button>
       </div>
 
       {!hidden && !hasFloor && (
@@ -41,7 +55,7 @@ export default function BoostPatternPanel({ patterns, cfg, productNames, ocById,
       )}
       {!hidden && hasFloor && !enough && (
         <p className="mt-3 text-xs text-ink-muted">
-          Baru {judged} boost yang bisa dinilai — pola baru ditampilkan setelah ada minimal {MIN_JUDGED}, supaya tidak menyimpulkan dari satu-dua kejadian.
+          Baru {patterns.judgedVideos} video yang hasil boost-nya bisa dinilai — pola baru ditampilkan setelah ada minimal {MIN_JUDGED} video, supaya tidak menyimpulkan dari satu-dua kejadian.
         </p>
       )}
 
@@ -66,9 +80,12 @@ export default function BoostPatternPanel({ patterns, cfg, productNames, ocById,
                       <p className="text-[11px] text-ink-muted">
                         di atas ambang{g.medianRoi != null && ` · ROI tengah ${fmtRoiID(g.medianRoi)}`}
                       </p>
+                      <p className="text-[11px] text-ink-faint">
+                        {g.n} boost · {g.videos} video{g.wait > 0 && ` · ${g.wait} belum dinilai`}
+                      </p>
                     </>
                   ) : (
-                    <p className="mt-1 text-sm text-ink-muted">{g.n} boost · belum ada yang bisa dinilai</p>
+                    <p className="mt-1 text-sm text-ink-muted">{g.n} boost · {g.videos} video · belum ada yang bisa dinilai</p>
                   )}
                   {g.note && <p className="mt-1.5 text-[11px] text-ink-faint">{g.note}</p>}
                 </button>
@@ -98,16 +115,27 @@ export default function BoostPatternPanel({ patterns, cfg, productNames, ocById,
                         className="border-t border-line/10 text-ink cursor-pointer hover:bg-fill/[0.04]">
                         <td className="py-1.5 px-1 text-left">
                           <span className="tabular-nums">{fmtDayID(p.day1)}</span>{' '}
-                          {p.preStatus ? <StatusChip status={p.preStatus} /> : <span className="text-ink-faint">tak terekam</span>}
+                          {p.preStatus ? <StatusChip status={p.preStatus} /> : <span className="text-ink-faint">{p.absent ? 'belum ada di laporan' : 'tak terekam'}</span>}
+                          {p.repeat && <span className="text-[10.5px] text-amber-400"> · boost ulang</span>}
                           {pid && <div className="text-[10.5px] text-ink-faint truncate max-w-[16rem]">{productNames?.[pid] || `produk ${pid}`}</div>}
                         </td>
-                        <td className="py-1.5 px-1 text-right tabular-nums align-top">{p.pre.days > 0 ? fmtRpRbID(p.pre.spend) : '—'}</td>
+                        <td className="py-1.5 px-1 text-right tabular-nums align-top">
+                          {p.pre.days > 0 ? fmtRpRbID(p.pre.spend) : '—'}
+                          {p.pre.days > 0 && p.pre.days < 7 && <div className="text-[10.5px] text-ink-faint">{p.pre.days} hari data</div>}
+                        </td>
                         <td className="py-1.5 px-1 text-right tabular-nums align-top">
                           <span className="text-ink-muted">{p.preRoiShown != null ? fmtRoiID(p.preRoiShown) : '—'}</span>
                           <span className="text-ink-faint"> → </span>
-                          <b className={`font-semibold ${OUT_TONE[p.outcome]}`}>{p.post.roi != null ? fmtRoiVsFloorID(p.post.roi, floor) : '—'}</b>
-                          {p.outcome === 'wait' && <div className="text-[10.5px] text-ink-faint">{p.post.days < MIN_POST_DAYS ? `baru ${p.post.days} hari data` : 'belanja di bawah lantai'}</div>}
-                          {p.outcome !== 'wait' && !p.complete && <div className="text-[10.5px] text-ink-faint">baru {p.post.days} dari 7 hari</div>}
+                          <b className={`font-semibold ${OUT_TONE[p.outcome]}`}>{p.postRoiShown != null ? fmtRoiVsFloorID(p.postRoiShown, floor) : '—'}</b>
+                          {p.outcome === 'wait' && (
+                            <div className="text-[10.5px] text-ink-faint">
+                              {p.post.days >= MIN_POST_DAYS ? 'belanja di bawah lantai'
+                                : p.pending > 0 ? `baru ${p.post.days} hari data` : `data hanya masuk ${p.post.days} dari 7 hari`}
+                            </div>
+                          )}
+                          {p.outcome !== 'wait' && !p.complete && (
+                            <div className="text-[10.5px] text-ink-faint">{p.pending > 0 ? `baru ${p.post.days} dari 7 hari` : `data masuk ${p.post.days} dari 7 hari`}</div>
+                          )}
                         </td>
                         <td className="py-1.5 px-1 text-right tabular-nums align-top">{fmtRpRbID(p.post.spend)}</td>
                         <td className="py-1.5 px-1 pl-3 text-left align-top text-ink-muted">{oc ? `${CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}${oc.provisional && oc.format === 'v2' ? ' · sementara' : ''}` : '—'}</td>
@@ -120,7 +148,7 @@ export default function BoostPatternPanel({ patterns, cfg, productNames, ocById,
           )}
 
           <p className="mt-3 text-[11px] text-ink-faint">
-            Angka = seluruh penayangan video itu di GMV Max (semua campaign), bukan khusus sesi boost-nya. "ROI sebelum" hanya ditulis bila belanja 7 hari sebelumnya mencapai lantai belanja {fmtRpRbID(cfg.spendFloor)}. Hasil dihitung setelah ada minimal {MIN_POST_DAYS} hari data. Ini pola dari {judged} boost — petunjuk, belum kepastian.
+            Angka = seluruh penayangan video itu di GMV Max (semua campaign), bukan khusus sesi boost-nya. "ROI sebelum" hanya ditulis bila belanja 7 hari sebelumnya mencapai lantai belanja {fmtRpRbID(cfg.spendFloor)}. Hasil dihitung setelah ada minimal {MIN_POST_DAYS} hari data. "Di atas ambang" = ROI gabungan hari ke-1–7 saja; kolom Vonis juga menimbang hal lain (konsistensi harian, tercampur), jadi keduanya bisa berbeda. Ini pola dari {judged} boost pada {patterns.judgedVideos} video — petunjuk, belum kepastian.
           </p>
         </>
       )}

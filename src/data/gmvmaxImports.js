@@ -271,7 +271,11 @@ export async function loadVideoDailyProfile(videoIds, { from = null, to = null }
   const byVideo = new Map(ids.map(v => [v, new Map()]))
   const dates = new Set()
   if (ids.length === 0) return { byVideo, dates }
-  const imports = (await listImports()).filter(i => i.snapshot_date && (!from || i.snapshot_date >= from) && (!to || i.snapshot_date <= to))
+  // Potret unggahan berkas multi-hari (angka gabungan N hari) dilewati: kalau
+  // ikut, "7 hari sebelum" memuat belanja di luar jendelanya. Harinya dianggap
+  // tak berdata, seperti di jendela detail.
+  const imports = (await listImports()).filter(i => i.snapshot_date && (!from || i.snapshot_date >= from) && (!to || i.snapshot_date <= to)
+    && !(i.start_date && i.end_date && i.start_date < i.end_date))
   for (const i of imports) dates.add(i.snapshot_date)
   if (imports.length === 0) return { byVideo, dates }
   const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date]))

@@ -13,7 +13,7 @@ const world = (rows, extraDates = []) => {
   }
   return { byDate, dates }
 }
-const prof = (rows, o = {}, extra) => { const w = world(rows, extra); return boostProfile(exp(o), w.byDate, w.dates, CFG) }
+const prof = (rows, o = {}, extra, others) => { const w = world(rows, extra); return boostProfile(exp(o), w.byDate, w.dates, CFG, others) }
 const pre = (status, spendPerDay, roi = 6) => Array.from({ length: 7 }, (_, i) => [i - 6, spendPerDay, spendPerDay * roi, 1, status])
 const post = (spendPerDay, roi, days = 7) => Array.from({ length: days }, (_, i) => [i + 1, spendPerDay, spendPerDay * roi, 2, 'DELIVERING'])
 
@@ -43,6 +43,32 @@ describe('profil satu boost', () => {
     // Potret hari ke-3 dan ke-4 ada, videonya tak ada di laporan; hari ke-5..7 tidak ada potret.
     const p = prof([...pre('DELIVERING', 50000), [1, 60000, 300000, 3, 'DELIVERING'], [2, 60000, 300000, 3, 'DELIVERING']], {}, [3, 4])
     expect([p.post.days, p.post.spend, p.complete]).toEqual([4, 120000, false])
+    expect(p.pending).toBe(3) // hari ke-5..7 belum tiba (sesudah potret terakhir)
+  })
+  it('jendela sudah lewat tetapi potretnya bolong → pending 0 (bukan "baru N hari")', () => {
+    const p = prof([...pre('DELIVERING', 50000), ...post(60000, 6, 4)], {}, [9, 10])
+    expect([p.post.days, p.pending, p.complete, p.outcome]).toEqual([4, 0, false, 'above'])
+  })
+  it('video belum ada di laporan sebelum boost (potretnya ada) → "belum tayang", bukan "tak terekam"', () => {
+    const p = prof(post(60000, 6), {}, [-3, -2, -1, 0])
+    expect([p.group, p.absent, p.preStatus, p.pre.days, p.pre.spend]).toEqual(['belum', true, null, 4, 0])
+  })
+  it('boost ulang pada video yang sama dipisah ke kelompok sendiri', () => {
+    const lain = (id, start_at, o = {}) => ({ id, experiment_type: 'MANUAL_BOOST', creative_video_id: 'v1', start_at, ...o })
+    const rows = [...pre('DELIVERING', 50000), ...post(60000, 7)]
+    // Boost sebelumnya 8 hari lebih awal: hari ke-1..7-nya = 7 hari "sebelum" boost ini.
+    expect(prof(rows, {}, undefined, [lain('e0', '2026-09-10T03:00:00Z')])).toMatchObject({ group: 'ulang', repeat: true })
+    expect(prof(rows, {}, undefined, [lain('e0', '2026-09-05T03:00:00Z')]).group).toBe('ulang') // 13 hari lebih awal: masih menyentuh
+    expect(prof(rows, {}, undefined, [lain('e0', '2026-09-04T03:00:00Z')]).group).toBe('tayang_besar') // 14 hari: tidak
+    expect(prof(rows, {}, undefined, [lain('e0', '2026-09-20T03:00:00Z')]).group).toBe('tayang_besar') // boost SESUDAHNYA bukan sebab
+    expect(prof(rows, {}, undefined, [lain('e0', '2026-09-10T03:00:00Z', { creative_video_id: 'v2' })]).group).toBe('tayang_besar')
+    expect(prof(rows, {}, undefined, [lain('e0', '2026-09-10T03:00:00Z', { experiment_type: 'NEW_CREATIVE_TEST' })]).group).toBe('tayang_besar')
+    expect(prof(rows, {}, undefined, [exp()]).group).toBe('tayang_besar') // dirinya sendiri
+  })
+  it('ROI sesudah tidak ditulis bila belanjanya di bawah lantai', () => {
+    const p = prof([...pre('IN_QUEUE', 100), ...post(65, 200)])
+    expect([p.outcome, p.postRoiShown]).toEqual(['wait', null])
+    expect(prof([...pre('IN_QUEUE', 100), ...post(60000, 6)]).postRoiShown).toBeCloseTo(6)
   })
   it('status sebelum boost tak terekam → kelompok sendiri; bukan boost video → null', () => {
     expect(prof(post(60000, 6)).group).toBe('tanpa')
@@ -60,25 +86,28 @@ describe('profil satu boost', () => {
 
 describe('kelompok', () => {
   const many = [
-    ...Array.from({ length: 4 }, (_, i) => ({ ...prof([...pre('DELIVERING', 50000, 5 + i), ...post(60000, 6 + i)]), id: `a${i}` })),
-    { ...prof([...pre('IN_QUEUE', 100), ...post(20000, 2)]), id: 'b1' },
-    { ...prof([...pre('LEARNING', 100), ...post(20000, 6)]), id: 'b2' },
-    { ...prof([...pre('DELIVERING', 50000), ...post(60000, 9, 2)]), id: 'a-wait' },
+    ...Array.from({ length: 4 }, (_, i) => prof([...pre('DELIVERING', 50000, 5 + i), ...post(60000, 6 + i)], { id: `a${i}`, creative_video_id: `va${i}` })),
+    prof([...pre('IN_QUEUE', 100), ...post(20000, 2)], { id: 'b1', creative_video_id: 'vb1' }),
+    prof([...pre('LEARNING', 100), ...post(20000, 6)], { id: 'b2', creative_video_id: 'vb2' }),
+    prof([...pre('DELIVERING', 50000), ...post(60000, 9, 2)], { id: 'a-wait', creative_video_id: 'va0' }),
     null,
   ]
   it('hitungan "N dari M" per kelompok, urutan tetap, kelompok kosong dibuang', () => {
     const r = groupPatterns(many, CFG)
     expect(r.groups.map(g => g.key)).toEqual(['tayang_besar', 'belum'])
     const [a, b] = r.groups
-    expect([a.n, a.judged, a.above, a.below, a.wait]).toEqual([5, 4, 4, 0, 1])
+    expect([a.n, a.judged, a.above, a.below, a.wait, a.videos]).toEqual([5, 4, 4, 0, 1, 4]) // 5 boost pada 4 video
     expect(a.medianRoi).toBeCloseTo(7.5)
-    expect(a.note).toBe('ROI sebelum boost pun sudah 5,0x–8,0x')
+    expect(a.note).toBe('ROI sebelum boost: 5,0x–8,0x')
     expect([b.n, b.judged, b.above, b.below]).toEqual([2, 2, 1, 1])
     expect(b.note).toBe('1 yang di bawah ambang: sebelumnya Antre')
-    expect([r.total, r.judged, r.above, r.below, r.enough, r.hasFloor]).toEqual([7, 6, 5, 1, true, true])
+    expect([r.total, r.videos, r.judged, r.judgedVideos, r.above, r.below, r.enough, r.hasFloor]).toEqual([7, 6, 6, 6, 5, 1, true, true])
   })
   it('terlalu sedikit boost → belum cukup; tanpa ambang → hasFloor false', () => {
     expect(groupPatterns(many.slice(0, MIN_JUDGED - 1), CFG).enough).toBe(false)
+    // Gerbang memakai VIDEO unik: 6 boost pada satu video belum cukup.
+    const satu = Array.from({ length: 6 }, (_, i) => prof([...pre('DELIVERING', 50000), ...post(60000, 6)], { id: `s${i}` }))
+    expect(groupPatterns(satu, CFG)).toMatchObject({ judged: 6, judgedVideos: 1, enough: false })
     expect(groupPatterns(many, { roiFloor: null }).hasFloor).toBe(false)
     expect(groupPatterns([], CFG)).toMatchObject({ groups: [], total: 0, enough: false })
   })
