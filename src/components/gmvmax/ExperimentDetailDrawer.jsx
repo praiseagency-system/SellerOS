@@ -237,6 +237,10 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
   // Dua pembatas vonis dari LUAR eksperimen.
   const mixed = isContaminated(e)
   const overlapDay = isV2 ? (windowOf(e.checkpoints, 'w7')?.overlap_day ?? null) : null
+  // Akibatnya hanya ditulis bila vonis ini MEMANG terkena pembatas — bukan pada
+  // "Data kurang" / aksi berhenti / ambang kosong, yang sebabnya lain.
+  const limitNote = oc.code === 'W7_WIN_CAPPED' ? ' Karena itu vonisnya dibatasi paling tinggi "Kandidat pemenang".'
+    : oc.code === 'W7_WEAK' || oc.code === 'W7_SPIKE' || /^W3_/.test(oc.code || '') ? ' Karena itu keyakinannya rendah.' : ''
   const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
   const w3 = windowOf(checkpoints, 'w3'), w7 = windowOf(checkpoints, 'w7')
   // Tiga titik ukur selalu tampil: yang tersimpan, atau tanggal jatuh temponya
@@ -371,12 +375,12 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
           {mixed && (
             <p className="mt-2 text-xs text-amber-400">
               <b>Tercampur</b> — ada perubahan lain di jendela ukur{mixText(e) ? `: ${mixText(e)}` : ''}.
-              {isV2 ? ' Karena itu vonisnya dibatasi paling tinggi "Kandidat pemenang".' : ' Vonis ini jangan dipakai menyimpulkan.'}
+              {!isV2 ? ' Vonis ini jangan dipakai menyimpulkan.' : limitNote}
             </p>
           )}
           {overlapDay != null && (
             <p className="mt-2 text-xs text-amber-400">
-              <b>Ada boost lain</b> pada video/produk yang sama mulai hari ke-{overlapDay} — hasil jendela ini bukan dari {noun} ini saja, jadi vonisnya dibatasi dan keyakinannya rendah.
+              <b>Ada boost lain</b> pada video/produk yang sama mulai hari ke-{overlapDay} — hasil jendela ini bukan dari {noun} ini saja.{limitNote}
             </p>
           )}
           {isV2 ? (
@@ -432,14 +436,14 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
         {(daily == null || (calendar.length > 0 && !viewReady)) && <p className="mt-5 text-xs text-ink-faint py-6 text-center">Memuat data harian…</p>}
         {daily != null && calendar.length === 0 && (
           <div className="mt-5">
-            <SubHead>{isV2 ? 'Data harian' : 'Titik ukur tersimpan'}</SubHead>
+            <SubHead>{isV2 || oc.code === 'NOT_EVALUATED' ? 'Data harian' : 'Titik ukur tersimpan'}</SubHead>
             <p className="text-xs text-ink-faint mb-2">
               {dailyErr ? 'Gagal memuat data harian.' : 'Belum ada data harian untuk sasaran ini.'}
               {dailyErr && (
                 <button onClick={() => { setDaily(null); setRetry(n => n + 1) }} className="ml-2 text-accent hover:underline">Coba lagi</button>
               )}
             </p>
-            {!isV2 && <SavedCheckpoints rows={ckRows} kindOf={kindOf} roiFloor={roiFloor} />}
+            {!isV2 && oc.code !== 'NOT_EVALUATED' && <SavedCheckpoints rows={ckRows} kindOf={kindOf} roiFloor={roiFloor} />}
           </div>
         )}
         {calCut && viewReady && (

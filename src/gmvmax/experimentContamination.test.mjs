@@ -117,3 +117,31 @@ test('baseline jalur persetujuan memakai hari WIB: berakhir tepat sehari sebelum
   assert.deepEqual(baselineWindow(at('2026-09-23T17:06:00Z')), { baseline_start: '2026-09-17', baseline_end: '2026-09-23' })
   assert.deepEqual(baselineWindow(at('2026-09-20T03:00:00Z')), { baseline_start: '2026-09-13', baseline_end: '2026-09-19' })
 })
+
+test('eksperimen yang dibuka SURUT tetap diperiksa (tenggang dihitung dari baris dibuat)', async () => {
+  // Jendela 20–26 Sep sudah lewat > 14 hari, tetapi barisnya baru dibuat kemarin.
+  const baru = exp({ created_at: '2026-10-19T02:00:00Z' })
+  const lama = exp({ id: 'lama', created_at: '2026-09-20T03:00:00Z' })
+  const sb = fakeSb({ gmvmax_experiments: [baru, lama], gmvmax_campaign_settings: settings('2026-09-24'), gmvmax_approvals: [] })
+  const r = await markContamination({ sb, workspaceId: WS, now: at('2026-10-20T00:30:00Z') })
+  assert.equal(r.marked, 1)
+  assert.deepEqual(sb.writes.map(w => w.ids), [['e1']])
+})
+
+test('potret hari mulai bolong: perubahan yang merupakan perlakuannya sendiri tidak menandai', async () => {
+  // Perlakuan = budget naik 20 Sep 10.00 WIB; potret berstempel 20 Sep tidak ada,
+  // jadi perubahan baru terlihat di potret 21 Sep (rentang diff 19→21 memuat hari mulai).
+  const cs = settings('2026-09-20').filter(r => r.snapshot_date !== '2026-09-20')
+  const sb = fakeSb({ gmvmax_experiments: [exp({ creative_video_id: null })], gmvmax_campaign_settings: cs, gmvmax_approvals: [] })
+  assert.equal((await markContamination({ sb, workspaceId: WS, now: at('2026-09-25T00:30:00Z') })).marked, 0)
+  // Perubahan LAIN sesudahnya tetap menandai.
+  const sb2 = fakeSb({ gmvmax_experiments: [exp()], gmvmax_campaign_settings: settings('2026-09-23').filter(r => r.snapshot_date !== '2026-09-20'), gmvmax_approvals: [] })
+  assert.equal((await markContamination({ sb: sb2, workspaceId: WS, now: at('2026-09-25T00:30:00Z') })).marked, 1)
+})
+
+test('campaign yang absen sehari dari potret ("campaign baru") bukan bukti tercampur', async () => {
+  const cs = settings(null).filter(r => r.snapshot_date !== '2026-09-23') // c1 hilang dari potret 23 Sep
+  cs.push({ id: 'x23', workspace_id: WS, snapshot_date: '2026-09-23', campaign_id: 'c2', campaign_name: 'C2', budget: 100000 })
+  const sb = fakeSb({ gmvmax_experiments: [exp()], gmvmax_campaign_settings: cs, gmvmax_approvals: [] })
+  assert.equal((await markContamination({ sb, workspaceId: WS, now: at('2026-09-28T00:30:00Z') })).marked, 0)
+})

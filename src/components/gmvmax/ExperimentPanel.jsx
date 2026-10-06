@@ -46,7 +46,7 @@ const VERDICT = {
 }
 const BUCKETS = ['win', 'spike', 'weak', 'none']
 
-export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
+export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRuleConfig }) {
   const [state, setState] = useState({ loading: true })
   // Draft dari tombol "Jadikan eksperimen" (DecisionPanel) → form terbuka saat mount.
   const [showForm, setShowForm] = useState(!!draft)
@@ -69,6 +69,10 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
     getThresholds().then(t => { setRoiFloor(t.experimentRoiFloor ?? null); setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
   }, [])
   useEffect(() => { loadBoostSessions({ days: 60 }).then(setSessions).catch(() => {}) }, [])
+
+  // Panel lain di tab yang sama memakai setelan vonis yang sama dengan daftar
+  // ini. (Hook — harus di atas early-return.)
+  useEffect(() => { onRuleConfig?.(resolveRuleConfig({ roiFloor, spendFloor })) }, [onRuleConfig, roiFloor, spendFloor])
 
   if (state.loading) return <p className="text-sm text-ink-muted py-10 text-center">Memuat eksperimen…</p>
   if (state.error) return <EmptyState title="Gagal memuat" desc={state.error} />

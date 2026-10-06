@@ -157,8 +157,12 @@ export async function openExperimentsFromApprovals({ sb, workspaceId, storeId, n
 //     start_at: potret itu memuat perlakuannya sendiri.
 //   • aksi lain: dieksekusi SETELAH start_at dan tanggal WIB-nya ≤ hari ke-7.
 // Yang diperiksa: RUNNING dan CONCLUDED (evaluator menghitung keduanya) yang
-// jendelanya berakhir paling lama MARK_GRACE_DAYS hari lalu — potret setelan
-// yang ditambal belakangan masih tertangkap, dan bacaan tidak tumbuh selamanya.
+// jendelanya berakhir — ATAU barisnya dibuat — paling lama MARK_GRACE_DAYS hari
+// lalu: potret setelan yang ditambal belakangan masih tertangkap, eksperimen
+// yang dibuka surut tetap diperiksa, dan bacaan tidak tumbuh selamanya.
+// Potret setelan bisa bolong / parsial, jadi: perubahan yang rentang diff-nya
+// memuat stempel hari mulai dianggap perlakuannya sendiri, dan "campaign baru"
+// (campaign absen sehari dari potret) bukan bukti tercampur.
 const MARK_GRACE_DAYS = 14
 
 // PostgREST memotong diam-diam di ±1000 baris → selalu berhalaman & berurutan.
@@ -177,7 +181,7 @@ export async function markContamination({ sb, workspaceId, now = Date.now() }) {
   let exps
   try {
     exps = await pageAll(() => sb.from('gmvmax_experiments')
-      .select('id,campaign_id,creative_video_id,start_at,source_approval_id,contaminated,contamination,status')
+      .select('id,campaign_id,creative_video_id,start_at,source_approval_id,contaminated,contamination,status,created_at')
       .eq('workspace_id', workspaceId).in('status', ['RUNNING', 'CONCLUDED']).order('id', { ascending: true }))
   } catch (error) {
     if (/does not exist|find the table|column/i.test(error.message || '')) return { marked: 0, cleared: 0, absent: true }
@@ -209,7 +213,8 @@ export async function markContamination({ sb, workspaceId, now = Date.now() }) {
     const s = Date.parse(e.start_at), day1 = dayOne(e)
     if (!Number.isFinite(s) || !day1) continue
     const day7 = addIso(day1, 6)
-    if (addIso(day7, MARK_GRACE_DAYS) < today) continue
+    const born = wibDateOf(e.created_at)
+    if (addIso(day7, MARK_GRACE_DAYS) < today && !(born && addIso(born, MARK_GRACE_DAYS) >= today)) continue
     cand.push({ e, s, day1, day7, winFrom: dstr(s) })
   }
   if (!cand.length) return { marked: 0, cleared }
@@ -228,7 +233,8 @@ export async function markContamination({ sb, workspaceId, now = Date.now() }) {
   const settingChanges = []
   for (let i = 1; i < dates.length; i++) {
     for (const ch of diffSettings(byDate.get(dates[i - 1]), byDate.get(dates[i]))) {
-      settingChanges.push({ ...ch, date: dates[i] })
+      if (ch.field === '_new') continue
+      settingChanges.push({ ...ch, date: dates[i], prev: dates[i - 1] })
     }
   }
 
@@ -242,7 +248,9 @@ export async function markContamination({ sb, workspaceId, now = Date.now() }) {
     const hits = []
     for (const ch of settingChanges) {
       if (!e.campaign_id || ch.campaign_id !== e.campaign_id) continue
-      if (ch.date <= winFrom || ch.date > day7) continue   // hari-H = perlakuannya sendiri
+      // hari-H = perlakuannya sendiri; bila potret hari-H bolong, perubahan itu
+      // baru terlihat di potret berikutnya (rentang diff-nya memuat hari-H).
+      if (ch.date <= winFrom || ch.prev < winFrom || ch.date > day7) continue
       hits.push({ jenis: 'setelan_campaign', tanggal: ch.date, bidang: ch.label, dari: ch.from, jadi: ch.to })
     }
     for (const a of aps) {

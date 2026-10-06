@@ -140,3 +140,31 @@ describe('perbaikan pasca-tinjauan', () => {
     expect(liveConclusion(exp({ status: 'CONCLUDED', checkpoints: [] }), CFG).code).toBe('NOT_EVALUATED')
   })
 })
+
+describe('perbaikan tinjauan kedua', () => {
+  const CFG = { roiFloor: 4, spendFloor: 50000 }
+  const mkw = (rows, o = {}) => JSON.parse(JSON.stringify(computeWindows({
+    experiment: exp(o.exp), ruleConfig: CFG, lastDataDate: o.last,
+    series: rows.map(([n, spend, revenue, orders]) => ({ date: dayN(n), spend, revenue, orders })),
+  }).windows))
+  it('lama pembanding ditulis apa adanya, bukan selalu "7 hari"', () => {
+    const e = { experiment_type: 'CREATIVE_EXCLUSION', treatment: 'Video dikeluarkan dari rotasi', baseline_start: dayN(-2), baseline_end: dayN(0) }
+    const cps = mkw([[-2, 40000, 0, 0], [-1, 40000, 0, 0], [0, 40000, 0, 0], [1, 1000, 0, 0], ...Array.from({ length: 6 }, (_, i) => [i + 2, 0, 0, 0])], { exp: e })
+    const t = verdictReasonID(liveConclusion(exp({ ...e, checkpoints: cps }), CFG), { noun: 'perubahan' })
+    expect(t).toContain('3 hari sebelumnya Rp120 rb')
+  })
+  it('data sesudah aksi tidak masuk: tidak diklaim berhenti', () => {
+    const e = { experiment_type: 'CREATIVE_EXCLUSION', treatment: 'Video dikeluarkan dari rotasi' }
+    const cps = mkw([[1, 80000, 240000, 3]], { exp: e, last: dayN(9) })
+    const t = verdictReasonID(liveConclusion(exp({ ...e, checkpoints: cps }), CFG), { noun: 'perubahan' })
+    expect(t).toBe('Data sesudah dikeluarkan hanya masuk 0 dari 6 hari — belum bisa dipastikan belanjanya berhenti.')
+  })
+  it('keyakinan rendah karena hari bolong disebut; sebab pembatas dekat ambang ditulis dua desimal', () => {
+    const weak = mkw([[1, 50000, 100000, 2], [2, 50000, 100000, 2], [4, 50000, 100000, 2], [5, 50000, 100000, 2]], { last: dayN(9) })
+    expect(verdictReasonID(liveConclusion(exp({ checkpoints: weak }), CFG))).toContain('Keyakinan rendah: data hanya masuk 4 dari 7 hari')
+    const capped = mkw([[1, 100000, 1000000, 10], ...Array.from({ length: 6 }, (_, i) => [i + 2, 50000, 198500, 2])])
+    const t = verdictReasonID(liveConclusion(exp({ checkpoints: capped }), CFG))
+    expect(t).not.toContain('4,0x')
+    expect(t).toContain('3,97x')
+  })
+})

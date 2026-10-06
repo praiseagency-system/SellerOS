@@ -55,7 +55,10 @@ function matchExperiment(exps, s) {
   }) || null
 }
 
-export default function OutOfBandPanel() {
+// cfg: setelan vonis dari daftar eksperimen di atasnya ({ roiFloor, spendFloor })
+// — supaya ambang yang baru disimpan langsung berlaku di sini juga. Tanpa prop
+// itu panel memakai setelan yang dimuatnya sendiri.
+export default function OutOfBandPanel({ cfg = null }) {
   const [state, setState] = useState({ loading: true, sessions: [], changes: [], exps: [], lastSnapshot: null })
   // Sejak panel ini berbagi tab dengan Eksperimen (8 Sep 2026), riwayat setelan
   // ditutup dulu: ia blok paling jarang dibuka, tapi satu-satunya yang punya
@@ -91,10 +94,8 @@ export default function OutOfBandPanel() {
       }
       changes.sort((a, b) => b.date.localeCompare(a.date))
       setState({
-        loading: false, sessions, changes,
-        // Vonis yang SAMA dengan daftar eksperimen di atasnya (liveConclusion,
-        // setelan terkini) — bukan kolom tersimpan yang bisa tertinggal sehari.
-        exps: exps.map(e => ({ ...e, conclusion: liveConclusion(e, { roiFloor: th.experimentRoiFloor, spendFloor: th.spendFloor }).conclusion })),
+        loading: false, sessions, changes, exps,
+        ownCfg: { roiFloor: th.experimentRoiFloor, spendFloor: th.spendFloor },
         lastSnapshot: sessions.reduce((m, s) => (!m || s.last_seen > m ? s.last_seen : m), null),
       })
     }).catch(e => { if (alive) setState({ loading: false, error: e.message, sessions: [], changes: [], exps: [] }) })
@@ -151,6 +152,9 @@ export default function OutOfBandPanel() {
               <tbody>
                 {pgS.paged.map(s => {
                   const e = matchExperiment(state.exps, s)
+                  // Vonis yang SAMA dengan daftar eksperimen di atasnya
+                  // (liveConclusion + setelan terkini), termasuk "sementara".
+                  const oc = e ? liveConclusion(e, cfg || state.ownCfg || {}) : null
                   const hidup = state.lastSnapshot && s.last_seen === state.lastSnapshot
                   return (
                     <tr key={s.session_id} className="border-t border-line/20">
@@ -184,9 +188,9 @@ export default function OutOfBandPanel() {
                       </td>
                       <td className="py-1.5">
                         {e ? (
-                          <span className={`inline-flex items-center gap-1 ${CONC_TONE[e.conclusion] || 'text-ink-muted'}`}>
+                          <span className={`inline-flex items-center gap-1 ${CONC_TONE[oc.conclusion] || 'text-ink-muted'}`}>
                             <FlaskConical className="w-3 h-3" />
-                            {CONCLUSION_LABEL?.[e.conclusion] || e.conclusion || 'berjalan'}
+                            {CONCLUSION_LABEL?.[oc.conclusion] || oc.conclusion || 'berjalan'}{oc.provisional && oc.format === 'v2' ? ' · sementara' : ''}
                           </span>
                         ) : (
                           // Max Delivery diukur di level CAMPAIGN, jadi ia tetap terukur

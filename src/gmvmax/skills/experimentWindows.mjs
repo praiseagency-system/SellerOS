@@ -246,8 +246,16 @@ export function classifyWindows({
     // dibelanjai" dinilai dari hari ke-2 dst. saja; hari ke-1 dilaporkan terpisah.
     const after = (w7.daily || []).filter(d => d.d > w7.from)
     const afterSpend = after.reduce((a, d) => a + d.s, 0)
-    const p = { ...base, scope: direction === 'pause' ? 'campaign' : 'video', before: w7.baseline?.spend ?? null, day1Spend: w7.spend - afterSpend, afterSpend, afterDays: after.length }
+    const p = {
+      ...base, scope: direction === 'pause' ? 'campaign' : 'video',
+      before: w7.baseline?.spend ?? null, beforeDays: w7.baseline?.days ?? null,
+      day1Spend: w7.spend - afterSpend, day1Counted: (w7.daily || []).some(d => d.d === w7.from),
+      afterSpend, afterDays: after.length,
+    }
     if (!w7.complete) return R('INCONCLUSIVE', 'LOW', 'REMOVED_WAIT', p, true)
+    // "Berhenti dibelanjai" butuh data sesudah aksi: nol karena datanya tidak
+    // masuk bukan bukti berhenti (setara syarat 4 dari 7 hari di cabang biasa).
+    if (after.length < 4) return R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', 'W7_FEW_DAYS', p)
     return R('DATA_INSUFFICIENT', 'DATA_INSUFFICIENT', afterSpend >= spendFloor ? 'REMOVED_STILL_SPENDING' : 'REMOVED_DONE', p)
   }
 

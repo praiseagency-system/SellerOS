@@ -278,3 +278,11 @@ test('boost level-produk (Max Delivery, tanpa video) menumpang boost video pada 
   assert.equal(overlapDayOf(video, [{ ...video, id: 'x', creative_video_id: 'v2', start_at: '2026-09-21T03:00:00Z' }]), null)
   assert.equal(overlapDayOf(video, [{ ...md, product_id: 'p2' }]), null)
 })
+
+test('aksi berhenti: tanpa data sesudah aksi tidak boleh disebut "berhenti dibelanjai"', () => {
+  // Hari ke-1 ada, hari ke-2..7 tidak masuk, potret terbaru sudah lewat hari ke-7.
+  const v = run([[1, 80000, 240000, 3]], { direction: 'remove', last: day(9) }).v
+  assert.deepEqual([v.conclusion, v.code, v.params.afterDays], ['DATA_INSUFFICIENT', 'W7_FEW_DAYS', 0])
+  const ok = run([[1, 80000, 240000, 3], [2, 0, 0, 0], [3, 0, 0, 0], [4, 0, 0, 0], [5, 0, 0, 0]], { direction: 'remove', last: day(9) }).v
+  assert.deepEqual([ok.code, ok.params.afterDays, ok.params.beforeDays], ['REMOVED_DONE', 4, null])
+})
