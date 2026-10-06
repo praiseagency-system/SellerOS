@@ -33,6 +33,7 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
   // efeknya, dan efek anak berjalan lebih dulu, jadi jangan pindahkan ke useEffect.
   const [tab, setTab] = useState(() => resolveInsightTab(new URLSearchParams(window.location.search).get('tab')))
   const [expDraft, setExpDraft] = useState(null)   // draft eksperimen dari DecisionPanel
+  const [ruleCfg, setRuleCfg] = useState(null)     // setelan vonis dari daftar eksperimen → panel luar-aplikasi
 
   // Bahan rekomendasi yang TIDAK ada di context: setelan campaign (utk campaign
   // mati ber-budget + store_id/status eksekusi) & potret otorisasi spark.
@@ -144,10 +145,10 @@ export default function InsightPage({ onOpenUpload, onNavigate }) {
           terbesarnya (boost yang dijalankan sendiri di Seller Centre). */}
       {tab === 'bukti' && (
         <div className="space-y-6">
-          <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} onNavigate={onNavigate} />
+          <ExperimentPanel draft={expDraft} onDraftUsed={() => setExpDraft(null)} onNavigate={onNavigate} onRuleConfig={setRuleCfg} />
           <div className="pt-5 border-t border-line/15 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-ink-muted">Terjadi di luar aplikasi</h3>
-            <OutOfBandPanel />
+            <OutOfBandPanel cfg={ruleCfg} />
           </div>
         </div>
       )}

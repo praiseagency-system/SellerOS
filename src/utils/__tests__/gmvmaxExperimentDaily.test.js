@@ -77,13 +77,13 @@ describe('buildCalendar', () => {
     expect(cal[cal.length - 1].date).toBe('2026-10-04')
     expect(startDateOf(cal)).toBe('2026-09-19')
   })
-  it('fase & label H: sebelum boost, H0, H+N', () => {
-    expect(day(cal, '2026-09-18')).toMatchObject({ phase: 'pre', offset: -1 })
-    expect(day(cal, '2026-09-19')).toMatchObject({ phase: 'h0', offset: 0 })
-    expect(day(cal, '2026-09-22')).toMatchObject({ phase: 'post', offset: 3 })
+  it('nomor hari: hari mulai = Hari 1, sebelum mulai ≤ 0 dan tanpa label', () => {
+    expect(day(cal, '2026-09-18')).toMatchObject({ phase: 'pre', day: 0 })
+    expect(day(cal, '2026-09-19')).toMatchObject({ phase: 'post', day: 1 })
+    expect(day(cal, '2026-09-22')).toMatchObject({ phase: 'post', day: 4 })
     expect(hLabel(day(cal, '2026-09-18'))).toBe('')
-    expect(hLabel(day(cal, '2026-09-19'))).toBe('H0')
-    expect(hLabel(day(cal, '2026-09-22'))).toBe('H+3')
+    expect(hLabel(day(cal, '2026-09-19'))).toBe('Hari 1')
+    expect(hLabel(day(cal, '2026-09-22'))).toBe('Hari 4')
     expect(sideOf(day(cal, '2026-09-18'))).toBe('pre')
     expect(sideOf(day(cal, '2026-09-19'))).toBe('post')
   })
@@ -99,35 +99,26 @@ describe('buildCalendar', () => {
     const c = buildCalendar({ ...BASE, snapshotDates: null })
     expect(day(c, '2026-09-27')).toMatchObject({ state: 'unknown', counted: false })
   })
-  it('eksperimen muda: kalender tetap sampai H+7, sisanya menunggu data', () => {
+  it('eksperimen muda: kalender tetap sampai hari ke-7, sisanya menunggu data', () => {
     const c = buildCalendar({
       ...BASE, daily: DAILY.filter(r => r.date <= '2026-09-21'),
       snapshotDates: new Set(DAILY.filter(r => r.date <= '2026-09-21').map(r => r.date)), lastDataDate: '2026-09-21',
     })
-    expect(c[c.length - 1].date).toBe('2026-09-26')
+    expect(c[c.length - 1]).toMatchObject({ date: '2026-09-25', day: 7 })
     expect(day(c, '2026-09-21').state).toBe('data')
     expect(day(c, '2026-09-22')).toMatchObject({ state: 'pending', counted: false })
   })
-  it('boost dini hari WIB: tanggal mulai = hari terakhir sebelum boost → tanpa H0, tak dihitung dua kali', () => {
-    const c = buildCalendar({ ...BASE, baselineStart: '2026-09-13', baselineEnd: '2026-09-19' })
-    expect(c[0].date).toBe('2026-09-13')
-    expect(day(c, '2026-09-19')).toMatchObject({ phase: 'pre', offset: 0 })
-    expect(c.some(d => d.phase === 'h0')).toBe(false)
-    const all = presetRanges(c).find(p => p.key === 'all')
-    expect(all.from).toBe('2026-09-20')
+  it('hari ke-1 = tanggal WIB mulai: boost 01.30 WIB tanggal 20 mulai dari 20 Sep', () => {
+    // start_at 19 Sep 18.30Z; pemanggil mengoper dayOne() = 20 Sep; jendela sesi 13–19 Sep.
+    const c = buildCalendar({ ...BASE, startDate: wibDateOf('2026-09-19T18:30:00Z'), baselineStart: '2026-09-13', baselineEnd: '2026-09-19' })
+    expect(day(c, '2026-09-19')).toMatchObject({ phase: 'pre', day: 0 })
+    expect(day(c, '2026-09-20')).toMatchObject({ phase: 'post', day: 1 })
+    expect(presetRanges(c).find(p => p.key === 'h3')).toMatchObject({ from: '2026-09-20', to: '2026-09-22' })
   })
-  it('mulai dini hari lewat jalur persetujuan (jendela UTC): hari UTC-nya bukan hari mulai', () => {
-    // Disetujui 20 Sep 01.30 WIB = 19 Sep 18.30Z; jendela berakhir 18 Sep (UTC−1).
-    const c = buildCalendar({ ...BASE, startAt: '2026-09-19T18:30:00Z' })
-    expect(day(c, '2026-09-19')).toMatchObject({ phase: 'gap', offset: 0 })
-    expect(c.some(d => d.phase === 'h0')).toBe(false)
-    expect(hLabel(day(c, '2026-09-20'))).toBe('H+1')
-    expect(presetRanges(c).find(p => p.key === 'all').from).toBe('2026-09-20')
+  it('jendela tersimpan yang mencakup hari ke-1 tidak menarik hari itu ke sebelum-mulai', () => {
+    const c = buildCalendar({ ...BASE, baselineEnd: '2026-09-19' })
+    expect(day(c, '2026-09-19')).toMatchObject({ phase: 'post', day: 1 })
     expect(presetRanges(c).find(p => p.key === 'pre').to).toBe('2026-09-18')
-  })
-  it('mulai siang: hari mulai tetap H0', () => {
-    const c = buildCalendar({ ...BASE, startAt: '2026-09-19T07:05:00Z' })
-    expect(day(c, '2026-09-19').phase).toBe('h0')
   })
   it('unggahan berkas multi-hari ditandai di hari potretnya', () => {
     const c = buildCalendar({ ...BASE, spanByDate: new Map([['2026-09-26', 7], ['2026-09-27', 3]]) })
@@ -137,7 +128,7 @@ describe('buildCalendar', () => {
   })
   it('tanpa jendela sebelum boost: mulai dari hari mulai', () => {
     const c = buildCalendar({ ...BASE, baselineStart: null, baselineEnd: null })
-    expect(c[0]).toMatchObject({ date: '2026-09-19', phase: 'h0' })
+    expect(c[0]).toMatchObject({ date: '2026-09-19', phase: 'post', day: 1 })
     expect(presetRanges(c).some(p => p.key === 'pre')).toBe(false)
   })
   it('hari di antara jendela sebelum boost dan mulai = gap, bukan sebelum boost', () => {
@@ -158,15 +149,26 @@ describe('buildCalendar', () => {
 })
 
 describe('aggregateDays', () => {
-  it('H+1–7: total = jumlah baris, ROI gabungan dari jumlah', () => {
-    const a = agg('2026-09-20', '2026-09-26')
-    expect(a).toMatchObject({ counted: 7, cost: 186040, revenue: 1350933, orders: 17, impressions: 13183, clicks: 1285 })
-    expect(a.roi).toBeCloseTo(1350933 / 186040, 6)
-    expect(a).toMatchObject({ above: 4, below: 3, zeroRevenue: 1, spendAbove: 103800 })
+  it('hari 1–7: total = jumlah baris, ROI gabungan dari jumlah', () => {
+    const a = agg('2026-09-19', '2026-09-25')
+    expect(a).toMatchObject({ counted: 7, cost: 173277, revenue: 1549805, orders: 19, impressions: 12278, clicks: 1201 })
+    expect(a.roi).toBeCloseTo(1549805 / 173277, 6)
+    expect(a).toMatchObject({ spendDays: 7, above: 4, below: 3, zeroRevenue: 1, spendAbove: 91037 })
   })
-  it('H+1–3: hari di antara titik ukur ikut terhitung', () => {
-    const a = agg('2026-09-20', '2026-09-22')
-    expect(a).toMatchObject({ counted: 3, cost: 68307, revenue: 683005, orders: 9, above: 2, below: 1 })
+  it('hari 1–3: semua hari ikut terhitung, termasuk hari mulai', () => {
+    const a = agg('2026-09-19', '2026-09-21')
+    expect(a).toMatchObject({ counted: 3, cost: 76668, revenue: 761127, orders: 10, above: 2, below: 1 })
+  })
+  it('hari berbelanja kecil (< 10% lantai belanja) tidak dihitung di atas/di bawah ambang', () => {
+    const c = buildCalendar({
+      ...BASE, daily: [...DAILY.filter(r => r.date !== '2026-09-22'), row('2026-09-22', 2384, 84000, 1, 200, 20)],
+    })
+    const a = aggregateDays(daysIn(c, '2026-09-19', '2026-09-25'), 4, 50000)
+    expect(a).toMatchObject({ counted: 7, spendDays: 6, small: 1, above: 3, below: 3, spendDayMin: 5000 })
+    // lantai lain → batas hari berbelanja ikut
+    expect(aggregateDays(daysIn(c, '2026-09-19', '2026-09-25'), 4, 10000)).toMatchObject({ spendDays: 7, small: 0, spendDayMin: 1000 })
+    // lantai kosong → bawaan Rp50.000
+    expect(aggregateDays(daysIn(c, '2026-09-19', '2026-09-25'), 4, null).spendDayMin).toBe(5000)
   })
   it('sejak mulai cocok dengan angka layar pemilik (pembagi = 14 hari berdata)', () => {
     const a = agg('2026-09-19', '2026-10-04')
@@ -202,8 +204,8 @@ describe('aggregateDays', () => {
       spanByDate: new Map([['2026-10-04', 3]]),
     })
     const a = aggregateDays(daysIn(c, '2026-09-27', '2026-10-04'), 4)
-    expect(a).toMatchObject({ counted: 8, idle: 1, noSpend: 1, merged: 1, above: 3, below: 2 })
-    expect(a.idle + a.noSpend + a.merged + a.above + a.below).toBe(a.counted)
+    expect(a).toMatchObject({ counted: 8, idle: 1, noSpend: 1, merged: 1, small: 0, spendDays: 5, above: 3, below: 2 })
+    expect(a.idle + a.noSpend + a.merged + a.small + a.spendDays).toBe(a.counted)
     // hari gabungan & hari tanpa belanja tetap ikut total
     expect(a.revenue).toBe(1417500 + 90000)
   })
@@ -228,11 +230,11 @@ describe('aggregateDays', () => {
 })
 
 describe('presetRanges', () => {
-  it('boost masih terlihat: H+1–3, H+1–7, sebelum boost, sejak mulai', () => {
+  it('boost masih terlihat: hari 1–3, hari 1–7, sebelum boost, sejak mulai', () => {
     const p = presetRanges(cal)
     expect(p.map(x => x.key)).toEqual(['h3', 'h7', 'pre', 'all'])
-    expect(p[0]).toMatchObject({ from: '2026-09-20', to: '2026-09-22' })
-    expect(p[1]).toMatchObject({ from: '2026-09-20', to: '2026-09-26' })
+    expect(p[0]).toMatchObject({ label: 'Hari 1–3', from: '2026-09-19', to: '2026-09-21' })
+    expect(p[1]).toMatchObject({ label: 'Hari 1–7', from: '2026-09-19', to: '2026-09-25' })
     expect(p[2]).toMatchObject({ from: '2026-09-12', to: '2026-09-18', plain: '7 hari' })
     expect(p[3]).toMatchObject({ from: '2026-09-19', to: '2026-10-04', plain: '16 hari' })
   })
@@ -249,7 +251,7 @@ describe('presetRanges', () => {
     const p = presetRanges(cal, { boostLastSeen: '2026-09-10', boostEnded: true })
     expect(p.find(x => x.key === 'after').from).toBe('2026-09-20')
   })
-  it('eksperimen muda: rentang terbuka berhenti di hari data terakhir, bukan di H+7', () => {
+  it('eksperimen muda: rentang terbuka berhenti di hari data terakhir, bukan di hari ke-7', () => {
     const young = buildCalendar({
       ...BASE, daily: DAILY.filter(r => r.date <= '2026-09-21'),
       snapshotDates: new Set(DAILY.filter(r => r.date <= '2026-09-21').map(r => r.date)), lastDataDate: '2026-09-21',
@@ -257,9 +259,9 @@ describe('presetRanges', () => {
     const all = presetRanges(young).find(p => p.key === 'all')
     expect(all).toMatchObject({ from: '2026-09-19', to: '2026-09-21', plain: '3 hari' })
     expect(aggregateDays(daysIn(young, all.from, all.to)).pending).toBe(0)
-    // rentang tetap (H+1–7) tetap sampai H+7 dan menandai sisanya menunggu data
+    // rentang tetap (hari 1–7) tetap sampai hari ke-7 dan menandai sisanya menunggu data
     const h7 = presetRanges(young).find(p => p.key === 'h7')
-    expect(aggregateDays(daysIn(young, h7.from, h7.to))).toMatchObject({ counted: 2, pending: 5 })
+    expect(aggregateDays(daysIn(young, h7.from, h7.to))).toMatchObject({ counted: 3, pending: 4 })
   })
   it('eksperimen yang bukan boost memakai kata bendanya sendiri', () => {
     const pre = presetRanges(cal, { noun: 'perubahan' }).find(x => x.key === 'pre')
@@ -267,19 +269,18 @@ describe('presetRanges', () => {
   })
   it('matchPreset mengenali rentang sendiri yang sama dengan bawaan', () => {
     const p = presetRanges(cal)
-    expect(matchPreset(p, '2026-09-20', '2026-09-26')).toBe('h7')
-    expect(matchPreset(p, '2026-09-21', '2026-09-26')).toBeNull()
+    expect(matchPreset(p, '2026-09-19', '2026-09-25')).toBe('h7')
+    expect(matchPreset(p, '2026-09-20', '2026-09-25')).toBeNull()
   })
 })
 
 describe('rangeName', () => {
-  it('sesudah mulai memakai label H', () => {
-    expect(rangeName(cal, '2026-09-23', '2026-09-25')).toBe('H+4–6')
-    expect(rangeName(cal, '2026-09-19', '2026-09-22')).toBe('H0–H+3')
-    expect(rangeName(cal, '2026-09-23', '2026-09-23')).toBe('H+4')
-    expect(rangeName(cal, '2026-09-19', '2026-09-19')).toBe('H0')
+  it('sesudah mulai memakai nomor hari', () => {
+    expect(rangeName(cal, '2026-09-22', '2026-09-24')).toBe('Hari 4–6')
+    expect(rangeName(cal, '2026-09-19', '2026-09-22')).toBe('Hari 1–4')
+    expect(rangeName(cal, '2026-09-23', '2026-09-23')).toBe('Hari 5')
   })
-  it('sebelum boost memakai tanggal', () => {
+  it('sebelum mulai memakai tanggal', () => {
     expect(rangeName(cal, '2026-09-13', '2026-09-15')).toBe('13–15 Sep')
   })
 })

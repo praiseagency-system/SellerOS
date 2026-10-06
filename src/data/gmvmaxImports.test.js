@@ -215,6 +215,34 @@ describe('loadExperimentDaily — bentuk & aturan rasio', () => {
   })
 })
 
+describe('loadExperimentDaily — status tayang (sasaran video)', () => {
+  it('status per campaign ikut tiap hari, dinormalkan; utuh juga lewat ambil-ulang per import', async () => {
+    imports = makeImports(30)
+    for (const imp of imports) {
+      add(imp.id, { video_id: 'V1', campaign_id: 'C1', status: 'Ditayangkan', cost: 1 })
+      add(imp.id, { video_id: 'V1', campaign_id: 'C2', status: 'In queue' }, 39) // 25 import = tepat 1000 baris
+    }
+    const out = await loadExperimentDaily({ videoId: 'V1' })
+    expect(out).toHaveLength(30)
+    expect(out.every(r => r.statuses.length === 40)).toBe(true)
+    for (const r of [out[0], out[29]]) { // hari tertua: jalur chunk · hari terbaru: ambil-ulang per import
+      expect(r.statuses[0]).toEqual({ campaignId: 'C1', status: 'DELIVERING' })
+      expect(r.statuses[39]).toEqual({ campaignId: 'C2', status: 'IN_QUEUE' })
+    }
+    expect(perImport()).toHaveLength(25)
+    expect(forbidden()).toEqual([])
+  })
+
+  it('baris tanpa status dilewati; sasaran produk/campaign tak membawa status', async () => {
+    imports = makeImports(1)
+    add('imp-0', { video_id: 'V1', product_id: 'P1', campaign_id: 'C1', status: null, cost: 1 })
+    add('imp-0', { video_id: 'V1', product_id: 'P1', campaign_id: null, status: 'Learning', cost: 1 })
+    expect((await loadExperimentDaily({ videoId: 'V1' }))[0].statuses).toEqual([{ campaignId: null, status: 'LEARNING' }])
+    expect((await loadExperimentDaily({ productId: 'P1' }))[0].statuses).toEqual([])
+    expect((await loadExperimentDaily({ campaignId: 'C1' }))[0].statuses).toEqual([])
+  })
+})
+
 describe('loadVideosDaily', () => {
   it('daftar video panjang (>1000 baris per 25 import) kembali utuh', async () => {
     imports = makeImports(25)
