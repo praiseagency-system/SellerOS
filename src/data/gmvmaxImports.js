@@ -286,7 +286,7 @@ export async function loadVideoStatusDaily(videoIds, { from = null, to = null } 
         const d = dateById[r.import_id], m = out.get(String(r.video_id))
         if (!d || !m || !r.status) continue
         if (!m.has(d)) m.set(d, [])
-        m.get(d).push({ campaignId: r.campaign_id ?? null, status: r.status })
+        m.get(d).push({ campaignId: r.campaign_id ?? null, status: normalizeStatus(r.status) })
       }
       if (!data || data.length < PAGE) break
     }
@@ -336,7 +336,7 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
         }
         // Status tayang hanya bermakna untuk sasaran VIDEO (satu baris = satu
         // video di satu campaign); produk/campaign memuat banyak video.
-        if (videoId && r.status) a.statuses.push({ campaignId: r.campaign_id ?? null, status: r.status })
+        if (videoId && r.status) a.statuses.push({ campaignId: r.campaign_id ?? null, status: normalizeStatus(r.status) })
         const imp = num(r.impressions) || 0
         a.cost += num(r.cost) || 0
         a.revenue += num(r.gross_revenue) || 0

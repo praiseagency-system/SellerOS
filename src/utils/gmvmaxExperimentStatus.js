@@ -25,6 +25,8 @@ export const STATUS_META = {
   UNAVAILABLE: { label: 'Tak tersedia', tone: 'off', rank: 8 },
 }
 // TikTok sendiri menulis "NOT_DELIVERYING" (salah eja) — disamakan di sini.
+// Teks berbahasa Indonesia dari unggahan berkas sudah disamakan di pemuat data
+// (normalizeStatus di data/gmvmaxImports.js) sebelum sampai ke sini.
 export function normStatus(raw) {
   if (raw == null || raw === '') return null
   const k = String(raw).toUpperCase().trim().replace(/\s+/g, '_')
@@ -35,13 +37,20 @@ export const statusTone = (s) => STATUS_META[s]?.tone || 'off'
 const rankOf = (s) => STATUS_META[s]?.rank ?? 99
 
 // entries: [{ campaignId, status }] satu hari → { status, others } | null.
-// others = status LAIN video itu di campaign lain pada hari yang sama.
+// Data asli: satu video bisa punya BEBERAPA baris di campaign yang sama pada
+// hari yang sama dengan status berbeda (mis. 1 baris Tayang + 3 baris "Butuh
+// izin"), dan urutan barisnya acak. Jadi yang diambil selalu status TERBAIK
+// (paling dekat ke Tayang) — di campaign eksperimennya bila ada barisnya, kalau
+// tidak dari semua campaign — supaya hasilnya tak bergantung urutan baris.
+// others = status video itu di campaign LAIN (bukan baris kembaran campaign ini).
+const best = (list) => list.reduce((a, e) => (rankOf(e.s) < rankOf(a) ? e.s : a), list[0].s)
 export function pickStatus(entries, campaignId = null) {
   const list = (entries || []).map(e => ({ c: e.campaignId != null ? String(e.campaignId) : null, s: normStatus(e.status) })).filter(e => e.s)
   if (!list.length) return null
-  const own = campaignId != null ? list.find(e => e.c === String(campaignId)) : null
-  const status = own ? own.s : list.reduce((a, e) => (rankOf(e.s) < rankOf(a) ? e.s : a), list[0].s)
-  const others = [...new Set(list.map(e => e.s))].filter(s => s !== status).sort((a, b) => rankOf(a) - rankOf(b))
+  const own = campaignId != null ? list.filter(e => e.c === String(campaignId)) : []
+  const status = best(own.length ? own : list)
+  const elsewhere = own.length ? list.filter(e => e.c !== String(campaignId)) : []
+  const others = [...new Set(elsewhere.map(e => e.s))].filter(x => x !== status).sort((x, y) => rankOf(x) - rankOf(y))
   return { status, others }
 }
 
@@ -94,6 +103,7 @@ export function journeyChips(j, { max = 4 } = {}) {
 }
 
 // Satu kalimat untuk pemilik toko. noun: 'boost' | 'perubahan'.
+// Patokan = status sebelum mulai; bila tak terekam, status hari pertama.
 export function journeySentence(j, { noun = 'boost' } = {}) {
   if (!j) return ''
   const segs = j.segments
@@ -101,14 +111,26 @@ export function journeySentence(j, { noun = 'boost' } = {}) {
   const pre = prev ? `Sebelum ${noun}: ${statusLabel(prev)}${j.before.n > 1 ? ` (${j.before.n} hari berdata)` : ''}.` : `Status sebelum ${noun} tidak terekam.`
   if (!segs.length) return `${pre} Belum ada data status sesudah mulai.`
   if (!j.changed) return `${pre} Tidak berubah sesudah ${noun} dimulai.`
-  const firstTay = segs.find(s => s.status === 'DELIVERING')
+  const TAY = 'DELIVERING'
+  const base = prev ?? segs[0].status
+  const firstTay = segs.find(s => s.status === TAY)
+  let lastTay = -1
+  segs.forEach((s, i) => { if (s.status === TAY) lastTay = i })
   const end = segs[segs.length - 1]
   const parts = []
-  // "Mulai Tayang" hanya diklaim bila status sebelumnya DIKETAHUI bukan Tayang.
-  if (firstTay && prev && prev !== 'DELIVERING') parts.push(`mulai Tayang di hari ke-${firstTay.fromDay}`)
-  if (end.status !== 'DELIVERING') parts.push(`${statusLabel(end.status)} sejak hari ke-${end.fromDay}`)
-  else if (firstTay && end !== firstTay) parts.push(`kembali Tayang di hari ke-${end.fromDay}`)
-  if (!parts.length) return pre
+  if (base !== TAY && firstTay) parts.push(`mulai Tayang di hari ke-${firstTay.fromDay}`)
+  if (end.status !== TAY) {
+    // Hari video BERHENTI tayang = ruas pertama sesudah Tayang terakhir —
+    // bukan awal ruas terakhir, yang bisa jauh sesudahnya.
+    const stop = lastTay >= 0 ? segs[lastTay + 1] : base === TAY ? segs[0] : null
+    if (stop) parts.push(`${statusLabel(stop.status)} sejak hari ke-${stop.fromDay}${end.status !== stop.status ? `, kini ${statusLabel(end.status)}` : ''}`)
+    else if (end.status !== base) parts.push(`${statusLabel(end.status)} sejak hari ke-${end.fromDay}`)
+  } else if (firstTay && end !== firstTay) {
+    parts.push(`kembali Tayang di hari ke-${end.fromDay}`)
+  } else if (base === TAY && segs[0].status !== TAY) {
+    parts.push(`${statusLabel(segs[0].status)} di ${hari(segs[0].fromDay, segs[0].toDay)}, lalu Tayang lagi di hari ke-${end.fromDay}`)
+  }
+  if (!parts.length) parts.push(`${statusLabel(segs[0].status)} di ${hari(segs[0].fromDay, segs[0].toDay)}`)
   const txt = parts.join('; ')
   return `${pre} ${txt[0].toUpperCase()}${txt.slice(1)}.`
 }

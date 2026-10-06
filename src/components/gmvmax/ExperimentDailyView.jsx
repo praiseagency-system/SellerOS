@@ -41,7 +41,7 @@ function emptyNotes(a, verbose = false) {
     a.small > 0 && `${a.small} hari berbelanja di bawah ${fmtRpRbID(a.spendDayMin)}`,
     a.noSpend > 0 && `${a.noSpend} hari tanpa belanja`,
     a.merged > 0 && `${a.merged} hari berisi angka gabungan (unggahan berkas)`,
-    a.idle > 0 && `${a.idle} hari tak tayang`,
+    a.idle > 0 && `${a.idle} hari tak ada di laporan`,
     a.missing > 0 && `${a.missing} hari data tidak masuk${verbose ? ' (tidak dihitung)' : ''}`,
     a.unknown > 0 && `${a.unknown} hari tanpa data${verbose ? ' (tidak dihitung)' : ''}`,
   ].filter(Boolean)
@@ -188,7 +188,7 @@ export default function ExperimentDailyView({
         </p>
         <CalendarChart days={chartDays} sel={sel} ckByDate={ckByDate} boost={boost} noun={noun} onRead={setRead} statusByDate={statusByDate} />
         <p className="text-[11px] text-ink-faint mt-1">
-          {readDay ? <DayReadout day={readDay} /> : 'Ketuk batang untuk angka hari itu.'}
+          {readDay ? <DayReadout day={readDay} status={statusByDate?.get(readDay.date)?.status} /> : 'Ketuk batang untuk angka hari itu.'}
           {many && !selBeyond && (
             <button onClick={() => setShowAll(v => !v)} className="ml-2 text-accent hover:underline">
               {showAll ? 'ringkas sampai hari ke-14' : `tampilkan semua ${calendar.length} hari`}
@@ -219,7 +219,7 @@ export default function ExperimentDailyView({
           detail={detail} onDetail={(date) => setDetail(m => ({ ...m, [date]: !m[date] }))} onDay={clickDay} />
         </div>
         <p className="text-[11px] text-ink-faint mt-1.5">
-          Hari yang datanya tidak masuk tidak dihitung. Hari tak tayang (data masuk, sasaran tidak muncul) dihitung Rp0.
+          Hari yang datanya tidak masuk tidak dihitung. Hari tak ada di laporan (datanya masuk, sasaran tidak muncul) dihitung Rp0.
           ROI{isVideo ? ', CTR, dan CVR' : ''} total dihitung dari jumlah, bukan rata-rata harian.
         </p>
       </div>
@@ -302,13 +302,13 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
   )
 }
 
-function DayReadout({ day }) {
+function DayReadout({ day, status }) {
   const h = hLabel(day)
   const head = `${fmtDayID(day.date)}${h ? ` · ${h}` : ''} — `
   if (day.state === 'data') {
-    return <span className="text-ink-muted">{head}omzet {fmtRpID(day.revenue)} · belanja {fmtRpID(day.cost)} · ROI {fmtRoiID(day.roi)}</span>
+    return <span className="text-ink-muted">{head}omzet {fmtRpID(day.revenue)} · belanja {fmtRpID(day.cost)} · ROI {fmtRoiID(day.roi)}{status ? ` · status ${statusLabel(status)}` : ''}</span>
   }
-  const why = day.state === 'idle' ? 'tak tayang (dihitung Rp0)' : day.state === 'pending' ? 'menunggu data'
+  const why = day.state === 'idle' ? 'tak ada di laporan (dihitung Rp0)' : day.state === 'pending' ? 'menunggu data'
     : day.state === 'missing' ? 'data tidak masuk (tidak dihitung)' : 'tak ada data (tidak dihitung)'
   return <span className="text-ink-muted">{head}{why}</span>
 }
@@ -386,9 +386,7 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead, statusByDate 
               {d.state === 'pending' && <circle cx={cx} cy={B - 5} r="1.5" fill="currentColor" className="text-ink-faint" />}
               {/* Pita status tayang video hari itu, tepat di bawah garis dasar. */}
               {statusByDate?.get(d.date) && (
-                <rect x={x(i) + 1} y={B + 1} width={STEP - 2} height={3} fill={statusFill(statusByDate.get(d.date).status)}>
-                  <title>{`${fmtDayID(d.date)} — ${statusLabel(statusByDate.get(d.date).status)}`}</title>
-                </rect>
+                <rect x={x(i) + 1} y={B + 1} width={STEP - 2} height={3} fill={statusFill(statusByDate.get(d.date).status)} />
               )}
               <text x={cx} y={B + 13} textAnchor="middle" fontSize="10" fill="currentColor" className="text-ink-faint">{dayNum}</text>
               {sub && <text x={cx} y={B + 26} textAnchor="middle" fontSize="10" fill="currentColor" className="text-ink-faint">{sub}</text>}
@@ -421,7 +419,7 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead, statusByDate 
         })}
         {days.map((d, i) => (
           <rect key={d.date} x={x(i)} y={0} width={STEP} height={H} fill="transparent" className="cursor-pointer" onClick={() => onRead(d.date)}>
-            <title>{fmtDayID(d.date)}</title>
+            <title>{`${fmtDayID(d.date)}${statusByDate?.get(d.date) ? ` — ${statusLabel(statusByDate.get(d.date).status)}` : ''}`}</title>
           </rect>
         ))}
       </svg>
@@ -478,7 +476,7 @@ function DailyTable({
     }
     const idle = d.state === 'idle'
     const merged = d.spanDays > 1
-    const sub = idle ? 'tak tayang' : merged ? `angka gabungan ${d.spanDays} hari (unggahan berkas)`
+    const sub = idle ? 'tak ada di laporan' : merged ? `angka gabungan ${d.spanDays} hari (unggahan berkas)`
       : d.day === 1 ? `hari mulai — ${startLabel}` : d.cost === 0 ? 'tanpa belanja' : ''
     const open = !!detail[d.date]
     const dst = st ? statusByDate.get(d.date) || null : null
@@ -576,10 +574,10 @@ function DailyTable({
   }
 
   return (
-    <table className={`w-full text-xs table-fixed ${isVideo ? 'min-w-[540px]' : 'min-w-[420px]'}`}>
+    <table className={`w-full text-xs table-fixed ${st ? 'min-w-[620px]' : isVideo ? 'min-w-[540px]' : 'min-w-[420px]'}`}>
       <colgroup>
         {isVideo
-          ? <><col style={{ width: st ? 112 : 124 }} />{st && <col style={{ width: 76 }} />}<col style={{ width: st ? 78 : 86 }} /><col style={{ width: st ? 84 : 92 }} /><col style={{ width: st ? 46 : 54 }} /><col style={{ width: st ? 40 : 44 }} /><col style={{ width: st ? 46 : 52 }} /><col style={{ width: st ? 46 : 52 }} /><col /></>
+          ? <><col style={{ width: 124 }} />{st && <col style={{ width: 80 }} />}<col style={{ width: 86 }} /><col style={{ width: 92 }} /><col style={{ width: 54 }} /><col style={{ width: 44 }} /><col style={{ width: 52 }} /><col style={{ width: 52 }} /><col /></>
           : <><col /><col style={{ width: 104 }} /><col style={{ width: 112 }} /><col style={{ width: 70 }} /><col style={{ width: 60 }} /></>}
       </colgroup>
       <thead>

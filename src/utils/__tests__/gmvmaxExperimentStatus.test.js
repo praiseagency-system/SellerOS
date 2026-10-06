@@ -23,9 +23,16 @@ describe('status video', () => {
   it('status di campaign eksperimen didahulukan; tanpa itu yang paling dekat ke Tayang', () => {
     const e = [{ campaignId: 'c1', status: 'AUTHORIZATION_NEEDED' }, { campaignId: 'c2', status: 'DELIVERING' }]
     expect(pickStatus(e, 'c1')).toEqual({ status: 'AUTHORIZATION_NEEDED', others: ['DELIVERING'] })
-    expect(pickStatus(e, 'c9')).toEqual({ status: 'DELIVERING', others: ['AUTHORIZATION_NEEDED'] })
+    expect(pickStatus(e, 'c9')).toEqual({ status: 'DELIVERING', others: [] }) // campaign eksperimen tak punya baris → terbaik dari semua
     expect(pickStatus(e, null).status).toBe('DELIVERING')
     expect(pickStatus([], 'c1')).toBe(null)
+    // Data asli (boost 35401f20): beberapa baris di campaign YANG SAMA, urutan
+    // acak → selalu yang terbaik, dan kembarannya bukan "campaign lain".
+    const kembar = [['c1', 'AUTHORIZATION_NEEDED'], ['c1', 'DELIVERING'], ['c1', 'AUTHORIZATION_NEEDED'], ['c1', 'AUTHORIZATION_NEEDED']].map(([campaignId, status]) => ({ campaignId, status }))
+    for (const urut of [kembar, [...kembar].reverse(), [kembar[1], kembar[0], kembar[2], kembar[3]]]) {
+      expect(pickStatus(urut, 'c1')).toEqual({ status: 'DELIVERING', others: [] })
+    }
+    expect(pickStatus([...kembar, { campaignId: 'c2', status: 'IN_QUEUE' }], 'c1')).toEqual({ status: 'DELIVERING', others: ['IN_QUEUE'] })
     expect(pickStatus(null)).toBe(null)
   })
   it('perjalanan status dari data asli', () => {
@@ -48,6 +55,13 @@ describe('status video', () => {
     const s = (seq, o) => journeySentence(statusJourney(cal(seq), 'c1'), o)
     expect(s([[0, 'DELIVERING'], [1, 'DELIVERING'], [2, 'DELIVERING'], [3, 'EXCLUDED']])).toBe('Sebelum boost: Tayang. Dikeluarkan sejak hari ke-3.')
     expect(s([[0, 'DELIVERING'], [1, 'DELIVERING'], [4, 'NOT_DELIVERING'], [5, 'DELIVERING']])).toBe('Sebelum boost: Tayang. Kembali Tayang di hari ke-5.')
+    // Data asli (f1c56692): berhenti tayang di hari ke-3, lalu berganti-ganti status non-Tayang.
+    expect(s([[0, 'DELIVERING'], [1, 'DELIVERING'], [2, 'DELIVERING'], [3, 'EXCLUDED'], [8, 'EXCLUDED'], [9, 'NOT_DELIVERING'], [10, 'EXCLUDED']])).toBe('Sebelum boost: Tayang. Dikeluarkan sejak hari ke-3.')
+    expect(s([[0, 'DELIVERING'], [1, 'DELIVERING'], [3, 'EXCLUDED'], [9, 'NOT_DELIVERING']])).toBe('Sebelum boost: Tayang. Dikeluarkan sejak hari ke-3, kini Tak tayang.')
+    // Turun tepat sesudah mulai lalu tayang lagi sekali.
+    expect(s([[0, 'DELIVERING'], [1, 'NOT_DELIVERING'], [3, 'NOT_DELIVERING'], [4, 'DELIVERING']])).toBe('Sebelum boost: Tayang. Tak tayang di hari 1–3, lalu Tayang lagi di hari ke-4.')
+    // Status sebelum tak terekam, tetapi di dalam eksperimen naik ke Tayang.
+    expect(s([[1, 'IN_QUEUE'], [2, 'LEARNING'], [3, 'DELIVERING']])).toBe('Status sebelum boost tidak terekam. Mulai Tayang di hari ke-3.')
     expect(s([[0, 'IN_QUEUE'], [1, 'LEARNING']], { noun: 'perubahan' })).toBe('Sebelum perubahan: Antre. Learning sejak hari ke-1.')
     // Tanpa data sebelum mulai: "mulai Tayang" TIDAK diklaim.
     expect(s([[1, 'DELIVERING'], [2, 'NOT_DELIVERING']])).toBe('Status sebelum boost tidak terekam. Tak tayang sejak hari ke-2.')
