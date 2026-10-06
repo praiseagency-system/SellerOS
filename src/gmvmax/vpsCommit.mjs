@@ -13,6 +13,16 @@
 // (ember rate-limit tt-ads-mcp-layer dibagi → jangan tembak beruntun). Dengan
 // --advertiser X → hanya X (mis. backfill manual). Token per-workspace dari
 // Supabase (self-refresh). Parity vs OLD dicatat SEBELUM menimpa. Setting NON-FATAL.
+//
+// KETAHANAN (insiden 3 Okt 2026 — satu `fetch failed` saat refresh token = satu
+// hari data hilang tanpa ada yang menambal):
+//   - refresh token mengulang galat jaringan/5xx/429 (providers/supabaseTokenStore.mjs)
+//   - potret keadaan-terkini (langkah 4/4b/7) HANYA untuk tanggal = kemarin WIB;
+//     tanggal lampau (penambal maupun `--date` manual) menulis data performa saja
+//     (currentStateCapture.mjs)
+//   - di AKHIR run harian: tanggal tanpa import is_current dalam
+//     GMVMAX_GAP_FILL_DAYS hari terakhir (default 7; 0 = mati) ditarik ulang
+//     (gapFill.mjs). Lewati sekali jalan dengan --no-gap-fill.
 import { createClient } from '@supabase/supabase-js'
 import { classifyAuth, authEvent, isBlocking } from './runtime/authState.mjs'
 import { resolveSnapshotDate, tzEvidence } from './runtime/jakartaDate.mjs'
@@ -28,8 +38,8 @@ import { findDuplicateIdentities } from './identity.mjs'
 import { findAdvertiser, eligibleAdvertisers, groupByWorkspace } from './advertisers.mjs'
 import { advertiserTargetsForDate } from './sourceModel.mjs'
 import { loadEligibleConnections } from './connections.mjs'
-import { fetchCampaignSettings, persistCampaignSettings } from './campaignSettings.mjs'
-import { fetchBoostSessions, persistBoostSessions, fetchSparkAuth, persistSparkAuth } from './outOfBandCapture.mjs'
+import { captureCurrentState, isLatestBusinessDate } from './currentStateCapture.mjs'
+import { runGapFill, gapFillDaysFromEnv } from './gapFill.mjs'
 import { openExperimentsFromApprovals, openExperimentsFromSessions, markContamination } from './experimentOpener.mjs'
 import { fetchRegistryInputs, fetchAuthorizedAdvertiserIds } from './featureRegistryFetch.mjs'
 import { persistRegistry, resolveWorkspaceOwner } from './featureRegistryWriter.mjs'
@@ -66,9 +76,12 @@ function mergeResults(parts) {
 // Proses SATU workspace end-to-end (jalankan engine tiap advertiser-nya lalu
 // GABUNG jadi 1 snapshot). TIDAK pernah throw — kembalikan {ok,...} supaya
 // kegagalan satu workspace tak menjatuhkan yang lain (isolasi).
-async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now }) {
+// `mode` hanya label audit/log ('commit' | 'commit-gapfill'); perilaku tulis sama.
+async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now, mode = 'commit' }) {
   const runId = makeRunId()
   const advIds = entries.map(e => e.advertiserId)
+  // Potret keadaan-terkini hanya sah untuk kemarin WIB (lihat currentStateCapture.mjs).
+  const latest = isLatestBusinessDate(date, now)
 
   // Token per-WORKSPACE (satu utk semua advertiser workspace ini) — self-refresh.
   let provider
@@ -84,8 +97,16 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       return { ok: false, workspaceId, advertiserId: advIds.join('+'), runId, status: 'AUTH_BLOCKING', error: 'AUTH_BLOCKING' }
     }
   } catch (e) {
-    safeLog({ event: 'TOKEN_SOURCE_FAILED', workspace_id: workspaceId, message: e.message }, console.error)
-    return { ok: false, workspaceId, advertiserId: advIds.join('+'), runId, status: 'TOKEN_FAILED', error: `TOKEN_SOURCE_FAILED: ${e.message}` }
+    // Sampai di sini berarti jatah retry sudah habis (transient:true) ATAU server
+    // menjawab definitif / galat bukan-jaringan (transient:false → tak diulang).
+    // Tiap percobaan sudah punya baris TOKEN_REFRESH_ATTEMPT_FAILED sendiri.
+    const transient = e.transient === true
+    const attempts = e.attempts ?? null
+    safeLog({ event: 'TOKEN_SOURCE_FAILED', workspace_id: workspaceId, transient, attempts, message: e.message }, console.error)
+    return {
+      ok: false, workspaceId, advertiserId: advIds.join('+'), runId, status: 'TOKEN_FAILED', transient,
+      error: `TOKEN_SOURCE_FAILED: ${e.message}${attempts > 1 ? ` (menyerah setelah ${attempts} percobaan)` : ''}`,
+    }
   }
 
   // Lock per-WORKSPACE (kita menulis 1 snapshot/workspace, bukan per advertiser).
@@ -120,37 +141,15 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
       : await writeSnapshot({ sb: dryRun ? null : sb, workspaceId, date, name: labelFor(date), result, commit: !dryRun })
     safeLog({ event: dryRun ? 'COMMIT_DRYRUN' : 'COMMIT_WRITTEN', workspace_id: workspaceId, advertiser_ids: advIds, writer: useVersioned ? 'versioned' : 'legacy', ...w, run_id: runId })
 
-    // 4) Setting campaign (NON-FATAL) tiap advertiser — hanya saat commit.
+    // 4 + 4b) Potret keadaan-terkini: setelan campaign, sesi boost, otorisasi
+    //     spark (NON-FATAL) — hanya saat commit DAN hanya untuk kemarin WIB.
+    //     Untuk tanggal lampau fungsi ini tak memanggil TikTok & tak menulis
+    //     apa pun: API-nya hanya tahu keadaan SEKARANG, menstempelnya dengan
+    //     tanggal lampau memalsukan riwayat setelan.
+    let stateCaptured = false
     if (!dryRun) {
-      for (const en of entries) {
-        try {
-          const csRows = await fetchCampaignSettings(provider, { advertiserId: en.advertiserId, storeId: en.storeId })
-          const { written } = await persistCampaignSettings(sb, { workspaceId, date, rows: csRows })
-          safeLog({ event: 'CAMPAIGN_SETTINGS_CAPTURED', workspace_id: workspaceId, advertiser_id: en.advertiserId, count: written, snapshot_date: date })
-        } catch (e) { safeLog({ event: 'CAMPAIGN_SETTINGS_FAILED', workspace_id: workspaceId, advertiser_id: en.advertiserId, level: 'warn', message: e.message }, console.error) }
-      }
-    }
-
-    // 4b) POTRET AKSI DI LUAR SELLEROS (NON-FATAL). Sesi boost & otorisasi spark
-    //     yang dijalankan lewat Ads Manager/Seller Centre tak pernah masuk
-    //     gmvmax_approvals. Keduanya hanya bisa dibaca sebagai keadaan SEKARANG
-    //     (session_list cuma memberi sesi yang sedang berjalan), jadi tanpa potret
-    //     harian ia lenyap tanpa bekas — dan loop belajar menilai boost hanya dari
-    //     separuh kejadian. Panggilan sesi praktis gratis: featureRegistryFetch
-    //     sudah memanggilnya tiap pagi, selama ini jawabannya dibuang.
-    if (!dryRun) {
-      for (const en of entries) {
-        try {
-          const rows = await fetchBoostSessions(provider, { advertiserId: en.advertiserId, storeId: en.storeId })
-          const { written } = await persistBoostSessions(sb, { workspaceId, date, rows })
-          safeLog({ event: 'BOOST_SESSIONS_CAPTURED', workspace_id: workspaceId, advertiser_id: en.advertiserId, count: written, snapshot_date: date })
-        } catch (e) { safeLog({ event: 'BOOST_SESSIONS_FAILED', level: 'warn', workspace_id: workspaceId, advertiser_id: en.advertiserId, message: e.message }, console.error) }
-        try {
-          const rows = await fetchSparkAuth(provider, { advertiserId: en.advertiserId })
-          const { written } = await persistSparkAuth(sb, { workspaceId, date, rows })
-          safeLog({ event: 'SPARK_AUTH_CAPTURED', workspace_id: workspaceId, advertiser_id: en.advertiserId, count: written, snapshot_date: date })
-        } catch (e) { safeLog({ event: 'SPARK_AUTH_FAILED', level: 'warn', workspace_id: workspaceId, advertiser_id: en.advertiserId, message: e.message }, console.error) }
-      }
+      const cap = await captureCurrentState({ sb, provider, workspaceId, entries, date, now })
+      stateCaptured = cap.captured === true
     }
 
     // 5) Decision Intelligence (NON-FATAL, di balik flag). Generate + persist
@@ -210,7 +209,11 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
     //    potret basi. Idempoten by-signature (persistRegistry); tenant tak eligible
     //    tetap tercatat (fetchRegistryInputs meng-gate ke record tenant saja).
     //    Default OFF sampai GMVMAX_REFRESH_REGISTRY=1 (pola flag cutover bertahap).
-    if (!dryRun && process.env.GMVMAX_REFRESH_REGISTRY === '1') {
+    //    Registry = keadaan SEKARANG juga (tak ber-tanggal, jadi tak memalsukan
+    //    apa pun) — tapi untuk tanggal lampau mengulangnya per tanggal hanya
+    //    membakar kuota API: penambal jalan tepat setelah run utama menyegarkannya,
+    //    dan backfill `--date` manual akan disusul run harian berikutnya.
+    if (!dryRun && latest && process.env.GMVMAX_REFRESH_REGISTRY === '1') {
       try {
         const authorizedAdvertiserIds = await fetchAuthorizedAdvertiserIds(provider)
         const userId = await resolveWorkspaceOwner(sb, workspaceId)
@@ -231,11 +234,12 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
     }
 
     safeLog({
-      event: 'RUN_SUMMARY', run_id: runId, mode: dryRun ? 'commit-dryrun' : 'commit',
+      event: 'RUN_SUMMARY', run_id: runId, mode: dryRun ? 'commit-dryrun' : mode,
       workspace_id: workspaceId, advertiser_ids: advIds, snapshot_date: date,
       row_count: result.rows.length, totals: result.totals,
       pre_commit_parity: parity.status, row_mismatch: mismatch(parity),
       written: !dryRun && w.written === true, import_id: w.importId ?? null,
+      current_state_captured: stateCaptured,
       status: 'SUCCESS', exit_code: 0,
     })
     return {
@@ -253,11 +257,11 @@ async function processWorkspace({ sb, workspaceId, entries, date, dryRun, now })
 
 // Audit per-run per-workspace (gmvmax_sync_runs). NON-FATAL: gagal audit tak
 // menggagalkan commit (mis. tabel belum ada sebelum migrasi 0021 di-apply).
-async function recordSyncRun(sb, r, date) {
+async function recordSyncRun(sb, r, date, mode = 'commit') {
   try {
     const { error } = await sb.from('gmvmax_sync_runs').insert({
       workspace_id: r.workspaceId, advertiser_id: r.advertiserId, snapshot_date: date,
-      run_id: r.runId ?? null, mode: 'commit', status: r.status,
+      run_id: r.runId ?? null, mode, status: r.status,
       row_count: r.rowCount ?? null, cost: r.totals?.cost ?? null,
       revenue: r.totals?.revenue ?? null, orders: r.totals?.orders ?? null,
       parity: r.parity ?? null, import_id: r.importId ?? null,
@@ -269,14 +273,15 @@ async function recordSyncRun(sb, r, date) {
   }
 }
 
-// Muat target date-effective dari gmvmax_tenant_advertisers (SEMUA baris — resolver
-// perlu yang inactive+effective_to utk hitung jendela). HANYA advertiser aktif pada
-// `date` dikembalikan; 7214 pasca-migrasi jadi historical (dikeluarkan). READ-ONLY.
-async function loadDateEffectiveTargets(sb, date) {
+// Muat gmvmax_tenant_advertisers (SEMUA baris — resolver perlu yang
+// inactive+effective_to utk hitung jendela). Dimuat sekali per run lalu di-resolve
+// per tanggal oleh advertiserTargetsForDate: HANYA advertiser aktif pada tanggal
+// itu yang jadi target; 7214 pasca-migrasi jadi historical (dikeluarkan). READ-ONLY.
+async function loadTenantAdvertiserRows(sb) {
   const { data, error } = await sb.from('gmvmax_tenant_advertisers')
     .select('workspace_id,store_id,advertiser_id,advertiser_role,is_active,metadata,priority')
   if (error) throw new Error(`TENANT_ADVERTISERS_LOAD_FAILED: ${error.message}`)
-  return advertiserTargetsForDate(data || [], date)
+  return data || []
 }
 
 async function main() {
@@ -303,11 +308,19 @@ async function main() {
   // Target: --advertiser X → hanya X (backfill manual, dari registry). Else:
   //   GMVMAX_TENANT_SOURCE=connections → data-driven dari tiktok_connections (zero-touch)
   //   default 'registry' → advertisers.mjs (perilaku produksi sekarang; flip SETELAH gate).
-  let targets
-  if (args.advertiser) targets = [findAdvertiser(args.advertiser)]
-  else if (tenantSource === 'connections') targets = await loadEligibleConnections(sb)
-  else if (tenantSource === 'membership') targets = await loadDateEffectiveTargets(sb, date) // date-effective (7214 out pasca-migrasi)
-  else targets = eligibleAdvertisers()
+  // Sebagai fungsi tanggal: penambal menanyakan target untuk tanggal LAMPAU, dan
+  // di sumber 'membership' jawabannya bisa berbeda dari hari ini (date-effective).
+  let membershipRows = null, connectionTargets = null
+  const targetsFor = async (d) => {
+    if (args.advertiser) return [findAdvertiser(args.advertiser)]
+    if (tenantSource === 'connections') return (connectionTargets ??= await loadEligibleConnections(sb))
+    if (tenantSource === 'membership') { // date-effective (7214 out pasca-migrasi)
+      membershipRows ??= await loadTenantAdvertiserRows(sb)
+      return advertiserTargetsForDate(membershipRows, d)
+    }
+    return eligibleAdvertisers()
+  }
+  const targets = await targetsFor(date)
 
   // Kelompokkan per workspace: >1 advertiser/workspace → DIJUMLAHKAN jadi 1 snapshot
   // (mis. Dasfelix migrasi akun ads, satu store). 1 workspace = 1 unit isolasi & lock.
@@ -332,8 +345,46 @@ async function main() {
     total: results.length, ok: results.length - failed.length, failed: failed.length,
     failures: failed.map(f => ({ workspace_id: f.workspaceId, advertiser_id: f.advertiserId, error: f.error })),
   })
-  // Exit 0 hanya bila SEMUA sukses; partial/total gagal → 2 (systemd tandai failed → monitoring).
-  process.exit(failed.length === 0 ? 0 : 2)
+
+  // PENAMBAL HARI BOLONG — hanya pada run harian biasa: semua tenant, tanpa
+  // --date atau `--date yesterday` (bentuk yang dipakai unit systemd). Run
+  // bertarget (--advertiser) atau ber-tanggal eksplisit (--date YYYY-MM-DD)
+  // adalah pekerjaan manual yang disengaja: jangan diam-diam menarik tanggal lain.
+  // --dry-run: hanya memindai & melaporkan rencana, tak menarik apa pun.
+  const gapDays = gapFillDaysFromEnv(process.env.GMVMAX_GAP_FILL_DAYS)
+  const dailyRun = !args.advertiser && (!args.date || args.date === 'yesterday')
+  let gap = null
+  if (dailyRun && args['no-gap-fill'] !== true && gapDays > 0) {
+    gap = await runGapFill({
+      sb, workspaces, mainResults: new Map(results.map(r => [r.workspaceId, r])),
+      latestDate: date, days: gapDays, dryRun, startedAt: now, pauseMs: INTER_ADV_DELAY_MS,
+      entriesFor: async (workspaceId, d) =>
+        groupByWorkspace(await targetsFor(d)).find(w => w.workspaceId === workspaceId)?.entries ?? null,
+      processDate: async ({ workspaceId, entries, date: d }) => {
+        const t0 = Date.now()
+        const r = await processWorkspace({ sb, workspaceId, entries, date: d, dryRun: false, now, mode: 'commit-gapfill' })
+        r.durationMs = Date.now() - t0
+        await recordSyncRun(sb, r, d, 'commit-gapfill')
+        return r
+      },
+    })
+    const asLog = (list) => list.map(({ workspaceId, date: d, ...rest }) => ({ workspace_id: workspaceId, ...(d ? { snapshot_date: d } : {}), ...rest }))
+    safeLog({
+      event: 'GAP_FILL_SUMMARY', snapshot_date: date, days: gapDays, dry_run: dryRun, scanned: gap.scanned,
+      filled: asLog(gap.filled), failed: asLog(gap.failed), deferred: asLog(gap.deferred), skipped: asLog(gap.skipped),
+      scan_failed: asLog(gap.scanFailed), planned: asLog(gap.planned), recovered_workspaces: [...gap.recovered],
+    }, gap.failed.length || gap.scanFailed.length ? console.error : console.log)
+  } else {
+    safeLog({ event: 'GAP_FILL_OFF', snapshot_date: date, reason: args.advertiser ? 'SINGLE_ADVERTISER' : !dailyRun ? 'EXPLICIT_DATE' : args['no-gap-fill'] === true ? 'FLAG' : 'DISABLED' })
+  }
+
+  // Exit 0 hanya bila SEMUA beres; partial/total gagal → 2 (systemd tandai failed → monitoring).
+  // Workspace yang gagal di run utama tapi kemarinnya berhasil ditarik ulang oleh
+  // penambal dianggap pulih. Tanggal lampau yang gagal ditambal / pindaian yang
+  // gagal ikut membuat exit 2 — lubang yang tak tertutup harus terlihat, bukan diam.
+  const unresolved = failed.filter(f => !gap?.recovered.has(f.workspaceId))
+  const gapBad = gap ? gap.failed.length + gap.scanFailed.length : 0
+  process.exit(unresolved.length === 0 && gapBad === 0 ? 0 : 2)
 }
 
 main().catch(e => { safeLog({ event: 'UNCAUGHT', message: e.message, code: e.code || null }, console.error); process.exit(1) })
