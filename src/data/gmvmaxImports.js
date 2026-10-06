@@ -259,6 +259,41 @@ export async function loadVideosDaily(videoIds) {
   return out
 }
 
+// Status tayang harian untuk SEKUMPULAN video dalam satu rentang tanggal —
+// dipakai daftar eksperimen (label "Antre → Tayang") tanpa memuat deret penuh
+// tiap eksperimen. Balik: Map<videoId, Map<tanggal, [{ campaignId, status }]>>.
+// Dipaginasi (PostgREST memotong di ~1000 baris/permintaan tanpa galat).
+export async function loadVideoStatusDaily(videoIds, { from = null, to = null } = {}) {
+  const ids = [...new Set((videoIds || []).filter(Boolean).map(String))]
+  const out = new Map(ids.map(v => [v, new Map()]))
+  if (ids.length === 0) return out
+  const imports = (await listImports()).filter(i => i.snapshot_date && (!from || i.snapshot_date >= from) && (!to || i.snapshot_date <= to))
+  if (imports.length === 0) return out
+  const dateById = Object.fromEntries(imports.map(i => [i.id, i.snapshot_date]))
+  const impIds = imports.map(i => i.id)
+  for (let i = 0; i < impIds.length; i += 25) {
+    const chunk = impIds.slice(i, i + 25)
+    for (let f = 0; ; f += PAGE) {
+      const { data, error } = await supabase
+        .from('gmvmax_creatives')
+        .select('import_id, video_id, campaign_id, status')
+        .in('import_id', chunk)
+        .in('video_id', ids)
+        .order('id', { ascending: true })
+        .range(f, f + PAGE - 1)
+      if (error) throw error
+      for (const r of data || []) {
+        const d = dateById[r.import_id], m = out.get(String(r.video_id))
+        if (!d || !m || !r.status) continue
+        if (!m.has(d)) m.set(d, [])
+        m.get(d).push({ campaignId: r.campaign_id ?? null, status: normalizeStatus(r.status) })
+      }
+      if (!data || data.length < PAGE) break
+    }
+  }
+  return out
+}
+
 // Deret harian untuk SATU sasaran eksperimen (video / produk / campaign) lintas
 // semua snapshot current — dipakai drawer detail eksperimen. Prioritas sasaran:
 // video > produk > campaign. Satu video bisa muncul di >1 campaign pada hari yang
@@ -286,7 +321,7 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from('gmvmax_creatives')
-        .select('import_id, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
+        .select('import_id, campaign_id, status, cost, gross_revenue, sku_orders, impressions, clicks, vr_2s, vr_6s, vr_25, vr_50, vr_75, vr_100')
         .in('import_id', chunk)
         .eq(target[0], target[1])
         .order('id', { ascending: true })
@@ -297,8 +332,11 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
         if (!d) continue
         const a = byDate.get(d) || {
           date: d, cost: 0, revenue: 0, orders: 0, impressions: 0, clicks: 0,
-          vrW: [0, 0, 0, 0, 0, 0],
+          vrW: [0, 0, 0, 0, 0, 0], statuses: [],
         }
+        // Status tayang hanya bermakna untuk sasaran VIDEO (satu baris = satu
+        // video di satu campaign); produk/campaign memuat banyak video.
+        if (videoId && r.status) a.statuses.push({ campaignId: r.campaign_id ?? null, status: normalizeStatus(r.status) })
         const imp = num(r.impressions) || 0
         a.cost += num(r.cost) || 0
         a.revenue += num(r.gross_revenue) || 0
@@ -315,7 +353,7 @@ export async function loadExperimentDaily({ videoId, productId, campaignId }) {
     .sort((x, y) => (x.date < y.date ? -1 : 1))
     .map(a => ({
       date: a.date, cost: a.cost, revenue: a.revenue, orders: a.orders,
-      impressions: a.impressions, clicks: a.clicks,
+      impressions: a.impressions, clicks: a.clicks, statuses: a.statuses,
       roi: a.cost > 0 ? a.revenue / a.cost : null,
       ctr: a.impressions > 0 ? a.clicks / a.impressions : null,
       cvr: a.clicks > 0 ? a.orders / a.clicks : null,

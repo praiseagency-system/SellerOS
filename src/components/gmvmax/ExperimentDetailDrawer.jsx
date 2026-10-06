@@ -28,6 +28,8 @@ import {
   fmtRpID, fmtRpRbID, fmtRpTinyID, fmtRoiID, fmtRoiVsFloorID, fmtFloorID, fmtSignedX, reasonTextID, verdictReasonID, CONFIDENCE_LABEL, STATUS_LABEL,
 } from '../../utils/gmvmaxExperimentFormat'
 import ExperimentDailyView from './ExperimentDailyView'
+import StatusChip from './StatusChip'
+import { statusJourney, journeyChips, journeySentence, statusLabel } from '../../utils/gmvmaxExperimentStatus'
 
 const typeLabel = (t) => (EXPERIMENT_TYPES.find(([k]) => k === t)?.[1]) || t
 const CONC = {
@@ -226,6 +228,16 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
     snapshotDates: daily.snapshotDates, lastDataDate: daily.lastDataDate, spanByDate: daily.spanByDate,
   }) : []), [daily, startDate, e.baseline_start, e.baseline_end])
   const noun = BOOST_TYPES.has(e.experiment_type) ? 'boost' : 'perubahan'
+  // Status tayang video per hari (hanya sasaran video) → perjalanan status.
+  const journey = useMemo(
+    () => (e.creative_video_id ? statusJourney(calendar, e.campaign_id) : null),
+    [calendar, e.creative_video_id, e.campaign_id])
+  // Status video yang sama di campaign LAIN pada hari berdata terakhir.
+  const otherStatus = useMemo(() => {
+    if (!journey) return []
+    const lastDay = [...journey.byDate.values()].pop()
+    return lastDay?.others || []
+  }, [journey])
   // Formulir manual hanya menyimpan tanggal — jangan menulis jam karangan.
   const startLabel = fmtStartWib(e.start_at, { dateOnly: !e.source_session_id && !e.source_approval_id })
 
@@ -428,6 +440,23 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
               )}
             </>
           )}
+          {journey && (
+            <div className="mt-3 pt-2.5 border-t border-line/10">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-ink-faint mr-0.5">Status video</span>
+                {journeyChips(journey).map((c, i) => (
+                  <span key={i} className="inline-flex items-center gap-1.5">
+                    {i > 0 && <span className="text-ink-faint text-[11px]" aria-hidden="true">→</span>}
+                    {c.status ? <StatusChip status={c.status}>{c.text}</StatusChip> : <span className="text-[11px] text-ink-faint">{c.text}</span>}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-ink-muted">
+                {journeySentence(journey, { noun })}
+                {otherStatus.length > 0 && ` Di campaign lain: ${otherStatus.map(statusLabel).join(', ')}.`}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Data harian: kartu rentang → grafik → tabel → pembanding → retensi */}
@@ -454,6 +483,7 @@ export default function ExperimentDetailDrawer({ exp: e, cfg: cfgIn, onClose, on
         {calendar.length > 0 && viewReady && (
           <ExperimentDailyView key={e.id} calendar={calendar} roiFloor={roiFloor} spendFloor={spendFloor}
             preComparable={preComparable} checkpoints={isV2 ? [] : checkpoints} boost={boost} isVideo={!!e.creative_video_id}
+            statusByDate={journey?.byDate || null}
             startLabel={startLabel} noun={noun} />
         )}
 

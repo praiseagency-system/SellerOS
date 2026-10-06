@@ -11,6 +11,8 @@ import {
   EXPERIMENT_TYPES, CONCLUSION_LABEL,
 } from '../../data/gmvmaxExperiments'
 import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
+import { loadVideoStatusDaily } from '../../data/gmvmaxImports'
+import { statusShift } from '../../utils/gmvmaxExperimentStatus'
 import { getThresholds, saveExperimentRoiFloor } from '../../data/gmvmaxSettings'
 import { useGmvMax } from '../../contexts/GmvMaxContext'
 import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
@@ -69,6 +71,21 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRule
     getThresholds().then(t => { setRoiFloor(t.experimentRoiFloor ?? null); setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
   }, [])
   useEffect(() => { loadBoostSessions({ days: 60 }).then(setSessions).catch(() => {}) }, [])
+  // Status tayang video di sekitar tanggal mulai → label "Antre → Tayang" di
+  // baris. Satu bacaan untuk semua eksperimen video; gagal memuat didiamkan
+  // (label itu tambahan, bukan syarat daftar).
+  const [statusByVideo, setStatusByVideo] = useState(null)
+  const statusSig = (state.rows || []).filter(e => e.creative_video_id && dayOne(e))
+    .map(e => `${e.creative_video_id}@${dayOne(e)}`).sort().join('|')
+  useEffect(() => {
+    if (!statusSig) return
+    const pairs = statusSig.split('|').map(x => x.split('@'))
+    const days = pairs.map(p => p[1]).sort()
+    let on = true
+    loadVideoStatusDaily(pairs.map(p => p[0]), { from: addDaysISO(days[0], -3), to: addDaysISO(days[days.length - 1], 6) })
+      .then(m => { if (on) setStatusByVideo(m) }).catch(() => {})
+    return () => { on = false }
+  }, [statusSig])
 
   // Panel lain di tab yang sama memakai setelan vonis yang sama dengan daftar
   // ini. (Hook — harus di atas early-return.)
@@ -106,6 +123,7 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRule
   const nLegacy = items.filter(it => it.oc.format === 'legacy').length
   const row = (it) => (
     <ExperimentRow key={it.exp.id} it={it} cfg={cfg} productNames={productNames}
+      shift={it.exp.creative_video_id ? statusShift(it.exp, statusByVideo?.get(String(it.exp.creative_video_id))) : null}
       onChanged={reload} onOpen={() => setDetail(it.exp)} />
   )
 
@@ -227,7 +245,7 @@ function WindowPill({ w, cfg, direction }) {
   )
 }
 
-function ExperimentRow({ it, cfg, productNames, onChanged, onOpen }) {
+function ExperimentRow({ it, cfg, productNames, shift, onChanged, onOpen }) {
   const { exp: e, oc, alerts } = it
   const roiFloor = cfg.roiFloor
   const isV2 = oc.format === 'v2'
@@ -260,8 +278,8 @@ function ExperimentRow({ it, cfg, productNames, onChanged, onOpen }) {
       <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${tint}`}><Icon size={15} /></span>
       <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] md:basis-0">
         <p className="text-sm text-ink-strong truncate">{e.treatment || '—'}</p>
-        <p className="text-[11px] text-ink-faint md:truncate" title={warn ? `${sub} · ${warn}` : sub}>
-          {sub}{warn && <span className="text-amber-400"> · {warn}</span>}
+        <p className="text-[11px] text-ink-faint md:truncate" title={[sub, shift && `status video: ${shift.text}`, warn].filter(Boolean).join(' · ')}>
+          {sub}{shift && <span className="text-ink-muted" aria-label={`Status video berubah: ${shift.text}`}> · {shift.text}</span>}{warn && <span className="text-amber-400"> · {warn}</span>}
         </p>
       </div>
       {/* Lebar kolom dipatok di layar lebar supaya vonis sejajar antarbaris. */}
