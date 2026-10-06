@@ -30,3 +30,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cadangan skrip hitung ulang eksperimen (data bisnis, jangan di-commit)
+gmvmax-experiments-backup-*.json

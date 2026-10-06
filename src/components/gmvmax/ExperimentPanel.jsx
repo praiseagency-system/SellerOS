@@ -18,7 +18,10 @@ import { experimentAlerts, indexSessions, latestSeenOf } from '../../utils/gmvma
 import {
   ALL, CLOSE, buildTiles, applyFilter, resolveFilter, verdictBucket,
 } from '../../utils/gmvmaxExperimentGroups'
-import { fmtRoiID, fmtSignedX, CONFIDENCE_LABEL } from '../../utils/gmvmaxExperimentFormat'
+import { fmtRoiID, fmtRoiVsFloorID, fmtRpRbID, fmtRpTinyID, fmtSignedX, verdictReasonID, CONFIDENCE_LABEL } from '../../utils/gmvmaxExperimentFormat'
+import {
+  resolveRuleConfig, windowOf, windowJudged, actionDirection, isContaminated, dayOne, wibDateOf,
+} from '../../gmvmax/skills/experimentWindows.mjs'
 import { addDaysISO, fmtDayID, latestWorkerSnapshot } from '../../utils/gmvmaxExperimentDaily'
 import ExperimentDetailDrawer from './ExperimentDetailDrawer'
 
@@ -42,14 +45,13 @@ const VERDICT = {
   none: { badge: 'bg-fill/5 text-ink-muted', bar: 'bg-line/30', label: 'Belum ada vonis' },
 }
 const BUCKETS = ['win', 'spike', 'weak', 'none']
-const iso = (d) => d.toISOString().slice(0, 10)
-const fmtD = (s) => (s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '—')
 
-export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
+export default function ExperimentPanel({ draft, onDraftUsed, onNavigate, onRuleConfig }) {
   const [state, setState] = useState({ loading: true })
   // Draft dari tombol "Jadikan eksperimen" (DecisionPanel) → form terbuka saat mount.
   const [showForm, setShowForm] = useState(!!draft)
   const [roiFloor, setRoiFloor] = useState(null)
+  const [spendFloor, setSpendFloor] = useState(null)
   const [detail, setDetail] = useState(null) // eksperimen yang dibuka di drawer
   const [filter, setFilter] = useState(ALL) // ubin ringkasan yang sedang dipilih
   // Potret sesi boost — dipakai HANYA untuk peringatan "boost tak terlihat lagi".
@@ -63,8 +65,14 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   }, [])
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { reload() }, [reload])
-  useEffect(() => { getThresholds().then(t => setRoiFloor(t.experimentRoiFloor ?? null)).catch(() => {}) }, [])
+  useEffect(() => {
+    getThresholds().then(t => { setRoiFloor(t.experimentRoiFloor ?? null); setSpendFloor(t.spendFloor ?? null) }).catch(() => {})
+  }, [])
   useEffect(() => { loadBoostSessions({ days: 60 }).then(setSessions).catch(() => {}) }, [])
+
+  // Panel lain di tab yang sama memakai setelan vonis yang sama dengan daftar
+  // ini. (Hook — harus di atas early-return.)
+  useEffect(() => { onRuleConfig?.(resolveRuleConfig({ roiFloor, spendFloor })) }, [onRuleConfig, roiFloor, spendFloor])
 
   if (state.loading) return <p className="text-sm text-ink-muted py-10 text-center">Memuat eksperimen…</p>
   if (state.error) return <EmptyState title="Gagal memuat" desc={state.error} />
@@ -76,9 +84,11 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   // worker — tanpa itu, toko yang boost-nya satu per satu tak pernah diperingatkan.
   const latestSeen = [latestSeenOf(sessions), latestWorkerSnapshot(imports || [])]
     .filter(Boolean).map(d => String(d).slice(0, 10)).sort().pop() || null
-  // Vonis LIVE dari roiFloor terkini (server sinkron tiap eval harian).
+  // Vonis LIVE dari setelan terkini (server menyamakan tiap evaluasi harian).
+  // Lantai belanja selalu ada — kosong berarti bawaan Rp50.000.
+  const cfg = resolveRuleConfig({ roiFloor, spendFloor })
   const items = rows.map(e => {
-    const oc = liveConclusion(e, roiFloor)
+    const oc = liveConclusion(e, cfg)
     return {
       exp: e, oc, conclusion: oc.conclusion,
       alerts: experimentAlerts({
@@ -92,8 +102,10 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
   const running = shown.filter(it => it.exp.status === 'RUNNING')
   const done = shown.filter(it => it.exp.status !== 'RUNNING')
   const nRunning = rows.filter(r => r.status === 'RUNNING').length
+  // Selama bundel server lama masih terpasang, barisnya tetap berformat lama.
+  const nLegacy = items.filter(it => it.oc.format === 'legacy').length
   const row = (it) => (
-    <ExperimentRow key={it.exp.id} it={it} roiFloor={roiFloor} productNames={productNames}
+    <ExperimentRow key={it.exp.id} it={it} cfg={cfg} productNames={productNames}
       onChanged={reload} onOpen={() => setDetail(it.exp)} />
   )
 
@@ -126,6 +138,11 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
           ))}
           <span className="ml-auto">{shown.length} dari {rows.length} ditampilkan · klik baris untuk rincian</span>
         </div>
+        {nLegacy > 0 && (
+          <p className="text-[11px] text-ink-faint">
+            {nLegacy} eksperimen masih dinilai dengan aturan lama (tiga hari tunggal) — menunggu server menghitung ulang dengan total hari ke-1–3 dan ke-1–7.
+          </p>
+        )}
       </>}
 
       {running.length > 0 && <div className="space-y-1.5">
@@ -138,7 +155,7 @@ export default function ExperimentPanel({ draft, onDraftUsed, onNavigate }) {
       </div>}
 
       {detail && (
-        <ExperimentDetailDrawer exp={detail} roiFloor={roiFloor} onNavigate={onNavigate}
+        <ExperimentDetailDrawer exp={detail} cfg={cfg} onNavigate={onNavigate}
           onClose={() => setDetail(null)} onChanged={reload} />
       )}
     </div>
@@ -177,22 +194,56 @@ function alertText(alerts) {
     // lastSeen = STEMPEL potret (tanggal data kemarin); potretnya diambil pagi
     // berikutnya, jadi boost terakhir terlihat pada lastSeen + 1.
     ended && `boost terakhir terlihat ${fmtDayID(addDaysISO(String(ended.lastSeen).slice(0, 10), 1))}`,
-    passed && `jendela 7 hari lewat (${passed.days} hari)`,
+    passed && `jendela 7 hari lewat (${passed.days} hari)${passed.missing > 0 ? `, ${passed.missing} hari datanya belum masuk` : ''}`,
   ].filter(Boolean).join(' · ')
 }
 
 // Satu eksperimen = satu baris; rincian, Tutup, dan Hapus ada di drawer detail.
 // Tombol Tutup hanya muncul di baris yang berperingatan, supaya bersih-bersih
 // tak perlu membuka drawer satu per satu.
-function ExperimentRow({ it, roiFloor, productNames, onChanged, onOpen }) {
+// Kotak jendela di baris daftar (aturan v2): "3 hr 4,9x · Rp237 rb". Warna
+// hanya bila jendelanya memang dinilai; kalau tidak, kotaknya netral dan
+// menyebut sebabnya — ROI raksasa dari belanja receh tak lagi berwarna hijau.
+function WindowPill({ w, cfg, direction }) {
+  if (!w) return null
+  const n = w.days
+  const roi = w.spend > 0 ? w.revenue / w.spend : null
+  // Satu syarat dengan aturan vonis (cukup hari berdata, lantai, arah aksi).
+  const judged = windowJudged(w, cfg, direction)
+  const tone = !judged ? 'bg-fill/5 text-ink-muted' : roi >= cfg.roiFloor ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+  // ROI hanya ditulis bila belanjanya mencapai lantai: "200x" dari Rp450 bukan
+  // informasi, walau kotaknya abu-abu.
+  const enough = w.spend > 0 && w.spend >= cfg.spendFloor
+  const text = w.counted === 0 ? (w.complete ? 'tak ada data' : 'menunggu')
+    : !enough ? `belanja ${fmtRpTinyID(w.spend)}`
+      : !w.complete ? `${fmtRoiVsFloorID(roi, cfg.roiFloor)} · ${w.counted}/${n} hari`
+        : `${fmtRoiVsFloorID(roi, cfg.roiFloor)} · ${fmtRpTinyID(w.spend)}`
+  const why = w.counted === 0 ? '' : !w.complete ? ` — baru ${w.counted} dari ${n} hari` : w.spend < cfg.spendFloor ? ` — belanja di bawah lantai ${fmtRpRbID(cfg.spendFloor)}` : ''
+  return (
+    <span className={`text-[11px] rounded-md px-1.5 py-1 tabular-nums whitespace-nowrap ${tone}`}
+      title={`Hari 1–${n}: ROI gabungan ${fmtRoiVsFloorID(roi, cfg.roiFloor)} dari belanja ${fmtRpRbID(w.spend)}${why}`}>
+      <span className="opacity-60">{n} hr</span> {text}
+    </span>
+  )
+}
+
+function ExperimentRow({ it, cfg, productNames, onChanged, onOpen }) {
   const { exp: e, oc, alerts } = it
+  const roiFloor = cfg.roiFloor
+  const isV2 = oc.format === 'v2'
+  const noun = e.experiment_type === 'MANUAL_BOOST' || e.experiment_type === 'ACCELERATE_TESTING' ? 'boost' : 'perubahan'
   const [busy, setBusy] = useState(false)
   const checkpoints = Array.isArray(e.checkpoints) ? e.checkpoints : []
   const [Icon, tint] = typeIcon(e.experiment_type)
+  const direction = actionDirection(e)
+  // Dua pembatas vonis dari LUAR eksperimen — keduanya diberi tanda kuning.
+  const mixed = isContaminated(e)
+  const overlapDay = isV2 ? (windowOf(checkpoints, 'w7')?.overlap_day ?? null) : null
   const v = VERDICT[verdictBucket(oc.conclusion)]
   const warn = alertText(alerts)
   const pid = e.product_id ? String(e.product_id).trim() : null
-  const sub = [typeLabel(e.experiment_type), pid && (productNames?.[pid] || `produk ${pid}`), `mulai ${fmtD(e.start_at)}`]
+  // Tanggal mulai = hari ke-1 jendela (WIB), bukan tanggal menurut zona peramban.
+  const sub = [typeLabel(e.experiment_type), pid && (productNames?.[pid] || `produk ${pid}`), `mulai ${dayOne(e) ? fmtDayID(dayOne(e)) : '—'}`]
     .filter(Boolean).join(' · ')
   // Warna checkpoint hanya bila ambang ROI diisi — tanpa ambang tak ada patokan.
   const cpTone = (roi) => (roi == null || roiFloor == null ? 'bg-fill/5 text-ink-muted'
@@ -214,18 +265,20 @@ function ExperimentRow({ it, roiFloor, productNames, onChanged, onOpen }) {
         </p>
       </div>
       {/* Lebar kolom dipatok di layar lebar supaya vonis sejajar antarbaris. */}
-      <div className={`gap-1 shrink-0 md:w-56 md:justify-end ${checkpoints.length ? 'flex' : 'hidden md:flex'}`}>
-        {checkpoints.map((c, i) => (
-          <span key={i} className={`text-[11px] rounded-md px-1.5 py-1 tabular-nums ${cpTone(c.roi)}`}
+      <div className={`gap-1 shrink-0 md:w-[17rem] md:justify-end ${checkpoints.length ? 'flex' : 'hidden md:flex'}`}>
+        {isV2 && <><WindowPill w={windowOf(checkpoints, 'w3')} cfg={cfg} direction={direction} /><WindowPill w={windowOf(checkpoints, 'w7')} cfg={cfg} direction={direction} /></>}
+        {!isV2 && checkpoints.map((c, i) => (
+          <span key={c.label || i} className={`text-[11px] rounded-md px-1.5 py-1 tabular-nums ${cpTone(c.roi)}`}
             title={c.roi_delta_vs_baseline != null
               ? `${c.label}: ${fmtSignedX(Number(c.roi_delta_vs_baseline))} dibanding sebelum mulai` : c.label}>
             <span className="opacity-60">{c.label}</span> {c.roi != null ? fmtRoiID(Number(c.roi)) : '—'}
           </span>
         ))}
       </div>
-      <span title={CONFIDENCE_LABEL[oc.confidence] ? `keyakinan ${CONFIDENCE_LABEL[oc.confidence]}` : undefined}
-        className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-44 truncate text-center ${v.badge}`}>
-        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}
+      <span title={[isV2 || oc.code === 'NOT_EVALUATED' ? verdictReasonID(oc, { noun }) : '', CONFIDENCE_LABEL[oc.confidence] ? `Keyakinan ${CONFIDENCE_LABEL[oc.confidence]}.` : '', mixed ? 'Tercampur perubahan lain.' : '', overlapDay != null ? `Ada boost lain pada video/produk yang sama mulai hari ke-${overlapDay}.` : ''].filter(Boolean).join(' ') || undefined}
+        className={`shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 md:w-48 truncate text-center ${v.badge}`}>
+        {(mixed || overlapDay != null) && <span className="text-amber-400" aria-label={mixed ? 'Tercampur' : 'Ada boost lain'}>● </span>}
+        {CONCLUSION_LABEL[oc.conclusion] || oc.conclusion}{oc.provisional && isV2 ? ' · sementara' : ''}
       </span>
       <span className={`shrink-0 md:w-14 justify-end ${warn ? 'flex' : 'hidden md:flex'}`}>
         {warn && <button disabled={busy} onClick={close}
@@ -239,7 +292,9 @@ function ExperimentRow({ it, roiFloor, productNames, onChanged, onOpen }) {
 }
 
 function ExperimentForm({ draft, onDone, onCancel }) {
-  const today = new Date()
+  // Tanggal WIB: tanggal mulai menjadi hari ke-1 jendela vonis, jadi formulir
+  // yang dibuka pukul 00.00–06.59 WIB tidak boleh terisi tanggal kemarin (UTC).
+  const today = wibDateOf(new Date().toISOString())
   const [f, setF] = useState({
     experiment_type: draft?.experiment_type || 'MANUAL_BOOST',
     treatment: draft?.treatment || '',
@@ -247,9 +302,9 @@ function ExperimentForm({ draft, onDone, onCancel }) {
     campaign_id: draft?.campaign_id || '',
     creative_video_id: draft?.creative_video_id || '',
     stop_condition: draft?.stop_condition || '',
-    baseline_start: iso(new Date(today.getTime() - 3 * 864e5)),
-    baseline_end: iso(new Date(today.getTime() - 1 * 864e5)),
-    start_at: iso(today),
+    baseline_start: addDaysISO(today, -3),
+    baseline_end: addDaysISO(today, -1),
+    start_at: today,
     notes: draft?.notes || '',
   })
   const [saving, setSaving] = useState(false)
@@ -289,7 +344,7 @@ function ExperimentForm({ draft, onDone, onCancel }) {
         <button disabled={saving} onClick={save} className="text-sm px-4 py-2 rounded-lg bg-accent text-white font-medium disabled:opacity-50">{saving ? 'Menyimpan…' : 'Simpan eksperimen'}</button>
         <button disabled={saving} onClick={onCancel} className="text-sm px-3 py-2 rounded-lg text-ink-muted border border-line/20">Batal</button>
       </div>
-      <p className="text-[11px] text-ink-faint">Titik ukur H+1/H+3/H+7 dan vonis diisi otomatis tiap pagi dari data harian. Hanya pencatatan — tidak mengubah apa pun di TikTok.</p>
+      <p className="text-[11px] text-ink-faint">Vonis dihitung otomatis tiap pagi dari total hari ke-1–3 dan hari ke-1–7 (tanggal mulai = hari ke-1). Hanya pencatatan — tidak mengubah apa pun di TikTok.</p>
     </div>
   )
 }

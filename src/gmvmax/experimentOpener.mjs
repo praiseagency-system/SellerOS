@@ -13,9 +13,11 @@
 // Read-only ke TikTok (tidak memanggilnya sama sekali); menulis HANYA ke
 // gmvmax_experiments. Non-fatal di pemanggil.
 import { diffSettings } from './campaignSettings.mjs'
+import { dayOne, wibDateOf, contaminationInWindow } from './skills/experimentWindows.mjs'
 
 const DAY = 86400000
 const dstr = (ms) => new Date(ms).toISOString().slice(0, 10)
+const addIso = (iso, n) => dstr(Date.parse(`${iso}T00:00:00Z`) + n * DAY)
 
 // Aksi → jenis eksperimen + subjek yang diukur. Aksi yang TIDAK memulai
 // perlakuan baru (uji, ubah/hentikan sesi) sengaja tak membuka eksperimen:
@@ -90,8 +92,11 @@ export function planFromApproval(ap) {
 
 // Baseline WAJIB dinyatakan (aturan migrasi 0031): 7 hari penuh SEBELUM aksi
 // dijalankan, berakhir sehari sebelumnya supaya hari-H tak ikut mencemari.
+// Dalam hari WIB — sama dengan hari ke-1 jendela vonis. Dulu tanggal UTC, sehingga
+// aksi pukul 00.00–06.59 WIB kehilangan hari tepat sebelum perlakuan.
 export function baselineWindow(startMs) {
-  return { baseline_start: dstr(startMs - 7 * DAY), baseline_end: dstr(startMs - DAY) }
+  const day1 = dstr(startMs + 7 * 3600000)
+  return { baseline_start: addIso(day1, -7), baseline_end: addIso(day1, -1) }
 }
 
 // Buka eksperimen untuk semua approval EXECUTED yang belum punya eksperimen.
@@ -140,27 +145,87 @@ export async function openExperimentsFromApprovals({ sb, workspaceId, storeId, n
 // Kalau ada perubahan LAIN yang mendarat di dalam jendela pengukuran, kita tidak
 // bisa tahu sebab hasilnya yang mana. Contoh nyata: boost sebuah video hari Senin,
 // lalu budget campaign-nya dinaikkan lewat Ads Manager hari Rabu. Hasil bagus di
-// Minggu bukan bukti boost-nya berhasil. Eksperimen begini ditandai dan TIDAK
-// dipakai menyimpulkan apa pun — lebih baik kehilangan satu data daripada
-// mempelajari sebab yang keliru.
+// Minggu bukan bukti boost-nya berhasil. Eksperimen begini ditandai; vonisnya
+// tetap dihitung tetapi DIBATASI (lihat experimentWindows.classifyWindows).
+//
+// JENDELA = jendela vonis yang sama: hari ke-1..7 WIB (dayOne .. +6). Dulu
+// batasnya start_at + 7×24 jam dalam tanggal UTC, sehingga perubahan di hari
+// ke-8 — sering justru TINDAK LANJUT pemilik atas vonis hari ke-7 — ikut
+// menandai dan menurunkan vonis yang sudah final.
+//   • setelan campaign: potret berstempel D memuat perubahan antara pagi D dan
+//     pagi D+1 → dihitung bila D ≤ hari ke-7. Batas bawah tetap tanggal UTC
+//     start_at: potret itu memuat perlakuannya sendiri.
+//   • aksi lain: dieksekusi SETELAH start_at dan tanggal WIB-nya ≤ hari ke-7.
+// Yang diperiksa: RUNNING dan CONCLUDED (evaluator menghitung keduanya) yang
+// jendelanya berakhir — ATAU barisnya dibuat — paling lama MARK_GRACE_DAYS hari
+// lalu: potret setelan yang ditambal belakangan masih tertangkap, eksperimen
+// yang dibuka surut tetap diperiksa, dan bacaan tidak tumbuh selamanya.
+// Potret setelan bisa bolong / parsial, jadi: perubahan yang rentang diff-nya
+// memuat stempel hari mulai dianggap perlakuannya sendiri, dan "campaign baru"
+// (campaign absen sehari dari potret) bukan bukti tercampur.
+const MARK_GRACE_DAYS = 14
+
+// PostgREST memotong diam-diam di ±1000 baris → selalu berhalaman & berurutan.
+async function pageAll(build) {
+  const out = []
+  for (let f = 0; ; f += 1000) {
+    const { data, error } = await build().range(f, f + 999)
+    if (error) throw error
+    out.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  return out
+}
+
 export async function markContamination({ sb, workspaceId, now = Date.now() }) {
-  const { data: exps, error } = await sb.from('gmvmax_experiments')
-    .select('id,campaign_id,creative_video_id,start_at,source_approval_id,contaminated')
-    .eq('workspace_id', workspaceId).eq('status', 'RUNNING')
-  if (error) {
-    if (/does not exist|find the table|column/i.test(error.message || '')) return { marked: 0, absent: true }
+  let exps
+  try {
+    exps = await pageAll(() => sb.from('gmvmax_experiments')
+      .select('id,campaign_id,creative_video_id,start_at,source_approval_id,contaminated,contamination,status,created_at')
+      .eq('workspace_id', workspaceId).in('status', ['RUNNING', 'CONCLUDED']).order('id', { ascending: true }))
+  } catch (error) {
+    if (/does not exist|find the table|column/i.test(error.message || '')) return { marked: 0, cleared: 0, absent: true }
     throw error
   }
-  if (!exps?.length) return { marked: 0 }
+  if (!exps.length) return { marked: 0, cleared: 0 }
+  const stamp = new Date(now).toISOString()
 
-  const earliest = Math.min(...exps.map(e => Date.parse(e.start_at)).filter(Number.isFinite))
-  const from = dstr(earliest - DAY)
+  // 1) Bersihkan tanda lama yang SELURUH kejadiannya di luar hari ke-1..7
+  //    (warisan jendela lama). Hanya dari bukti yang tersimpan — tanpa bacaan.
+  let cleared = 0
+  for (const e of exps) {
+    if (!e.contaminated) continue
+    const k = contaminationInWindow(e)
+    if (!k || k.kept.length === k.total) continue
+    const patch = k.kept.length
+      ? { contamination: { jendela: [k.day1, k.day7], kejadian: k.kept }, updated_at: stamp }
+      : { contaminated: false, contamination: null, updated_at: stamp }
+    const { error: ue } = await sb.from('gmvmax_experiments').update(patch).eq('workspace_id', workspaceId).eq('id', e.id)
+    if (ue) continue
+    if (!k.kept.length) { e.contaminated = false; e.contamination = null; cleared++ }
+  }
+
+  // 2) Tandai yang baru.
+  const today = wibDateOf(stamp)
+  const cand = []
+  for (const e of exps) {
+    if (e.contaminated) continue
+    const s = Date.parse(e.start_at), day1 = dayOne(e)
+    if (!Number.isFinite(s) || !day1) continue
+    const day7 = addIso(day1, 6)
+    const born = wibDateOf(e.created_at)
+    if (addIso(day7, MARK_GRACE_DAYS) < today && !(born && addIso(born, MARK_GRACE_DAYS) >= today)) continue
+    cand.push({ e, s, day1, day7, winFrom: dstr(s) })
+  }
+  if (!cand.length) return { marked: 0, cleared }
+  const earliest = Math.min(...cand.map(c => c.s))
 
   // Sumber gangguan 1: perubahan setelan campaign (dari mana pun asalnya).
-  const { data: cs } = await sb.from('gmvmax_campaign_settings')
-    .select('*').eq('workspace_id', workspaceId).gte('snapshot_date', from).order('snapshot_date')
+  const cs = await pageAll(() => sb.from('gmvmax_campaign_settings')
+    .select('*').eq('workspace_id', workspaceId).gte('snapshot_date', dstr(earliest - DAY))
+    .order('snapshot_date', { ascending: true }).order('id', { ascending: true }))
   const byDate = new Map()
-  for (const r of cs || []) {
+  for (const r of cs) {
     if (!byDate.has(r.snapshot_date)) byDate.set(r.snapshot_date, [])
     byDate.get(r.snapshot_date).push(r)
   }
@@ -168,47 +233,44 @@ export async function markContamination({ sb, workspaceId, now = Date.now() }) {
   const settingChanges = []
   for (let i = 1; i < dates.length; i++) {
     for (const ch of diffSettings(byDate.get(dates[i - 1]), byDate.get(dates[i]))) {
-      settingChanges.push({ ...ch, date: dates[i] })
+      if (ch.field === '_new') continue
+      settingChanges.push({ ...ch, date: dates[i], prev: dates[i - 1] })
     }
   }
 
   // Sumber gangguan 2: approval LAIN yang dieksekusi di jendela yang sama.
-  const { data: aps } = await sb.from('gmvmax_approvals')
+  const aps = await pageAll(() => sb.from('gmvmax_approvals')
     .select('id,action_type,target,executed_at').eq('workspace_id', workspaceId).eq('status', 'EXECUTED')
+    .gte('executed_at', new Date(earliest).toISOString()).order('id', { ascending: true }))
 
   let marked = 0
-  for (const e of exps) {
-    if (e.contaminated) continue
-    const s = Date.parse(e.start_at)
-    if (!Number.isFinite(s)) continue
-    const endMs = Math.min(now, s + 7 * DAY)
-    const winFrom = dstr(s), winTo = dstr(endMs)
+  for (const { e, s, day1, day7, winFrom } of cand) {
     const hits = []
-
     for (const ch of settingChanges) {
       if (!e.campaign_id || ch.campaign_id !== e.campaign_id) continue
-      if (ch.date <= winFrom || ch.date > winTo) continue   // hari-H = perlakuannya sendiri
+      // hari-H = perlakuannya sendiri; bila potret hari-H bolong, perubahan itu
+      // baru terlihat di potret berikutnya (rentang diff-nya memuat hari-H).
+      if (ch.date <= winFrom || ch.prev < winFrom || ch.date > day7) continue
       hits.push({ jenis: 'setelan_campaign', tanggal: ch.date, bidang: ch.label, dari: ch.from, jadi: ch.to })
     }
-    for (const a of aps || []) {
+    for (const a of aps) {
       if (a.id === e.source_approval_id) continue
       const t = Date.parse(a.executed_at)
-      if (!Number.isFinite(t) || t <= s || t > endMs) continue
+      if (!Number.isFinite(t) || t <= s) continue
+      const tgl = wibDateOf(a.executed_at)
+      if (!tgl || tgl > day7) continue
       const sameCampaign = e.campaign_id && String(a.target?.campaign_id) === e.campaign_id
       const sameVideo = e.creative_video_id && String(a.target?.video_id) === e.creative_video_id
-      if (sameCampaign || sameVideo) {
-        hits.push({ jenis: 'aksi_lain', tanggal: dstr(t), aksi: a.action_type })
-      }
+      if (sameCampaign || sameVideo) hits.push({ jenis: 'aksi_lain', tanggal: tgl, aksi: a.action_type })
     }
-
     if (hits.length) {
       const { error: ue } = await sb.from('gmvmax_experiments')
-        .update({ contaminated: true, contamination: { jendela: [winFrom, winTo], kejadian: hits }, updated_at: new Date(now).toISOString() })
-        .eq('id', e.id)
+        .update({ contaminated: true, contamination: { jendela: [day1, day7], kejadian: hits }, updated_at: stamp })
+        .eq('workspace_id', workspaceId).eq('id', e.id)
       if (!ue) marked++
     }
   }
-  return { marked }
+  return { marked, cleared }
 }
 
 // ── JEMBATAN 2 — sesi boost DI LUAR APLIKASI → eksperimen ────────────────────

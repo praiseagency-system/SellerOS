@@ -17,6 +17,8 @@ import { loadBoostSessions } from '../../data/gmvmaxBoostSessions'
 import { loadCampaignSettingsHistory } from '../../data/gmvmaxCampaignSettings'
 import { listExperiments, CONCLUSION_LABEL } from '../../data/gmvmaxExperiments'
 import { diffSettings } from '../../gmvmax/campaignSettings.mjs'
+import { getThresholds } from '../../data/gmvmaxSettings'
+import { liveConclusion } from '../../utils/gmvmaxExperimentLive'
 
 const NEAR_MS = 6 * 3600 * 1000
 const JENIS = { CREATIVE_NO_BID: 'Creative Boost', NO_BID: 'Max Delivery' }
@@ -53,7 +55,10 @@ function matchExperiment(exps, s) {
   }) || null
 }
 
-export default function OutOfBandPanel() {
+// cfg: setelan vonis dari daftar eksperimen di atasnya ({ roiFloor, spendFloor })
+// — supaya ambang yang baru disimpan langsung berlaku di sini juga. Tanpa prop
+// itu panel memakai setelan yang dimuatnya sendiri.
+export default function OutOfBandPanel({ cfg = null }) {
   const [state, setState] = useState({ loading: true, sessions: [], changes: [], exps: [], lastSnapshot: null })
   // Sejak panel ini berbagi tab dengan Eksperimen (8 Sep 2026), riwayat setelan
   // ditutup dulu: ia blok paling jarang dibuka, tapi satu-satunya yang punya
@@ -69,7 +74,8 @@ export default function OutOfBandPanel() {
       // aplikasi jauh sebelum potret sesi boost ada (baru mulai 28 Agu 2026).
       loadCampaignSettingsHistory({ days: 90 }).catch(() => []),
       listExperiments().then(r => r.rows).catch(() => []),
-    ]).then(([sessions, settings, exps]) => {
+      getThresholds().catch(() => ({})),
+    ]).then(([sessions, settings, exps, th]) => {
       if (!alive) return
       // Perubahan setelan = selisih antara dua potret berurutan. Tanggalnya =
       // tanggal potret KEDUA, jadi "terlihat berubah pada hari itu" — bukan klaim
@@ -89,6 +95,7 @@ export default function OutOfBandPanel() {
       changes.sort((a, b) => b.date.localeCompare(a.date))
       setState({
         loading: false, sessions, changes, exps,
+        ownCfg: { roiFloor: th.experimentRoiFloor, spendFloor: th.spendFloor },
         lastSnapshot: sessions.reduce((m, s) => (!m || s.last_seen > m ? s.last_seen : m), null),
       })
     }).catch(e => { if (alive) setState({ loading: false, error: e.message, sessions: [], changes: [], exps: [] }) })
@@ -145,6 +152,9 @@ export default function OutOfBandPanel() {
               <tbody>
                 {pgS.paged.map(s => {
                   const e = matchExperiment(state.exps, s)
+                  // Vonis yang SAMA dengan daftar eksperimen di atasnya
+                  // (liveConclusion + setelan terkini), termasuk "sementara".
+                  const oc = e ? liveConclusion(e, cfg || state.ownCfg || {}) : null
                   const hidup = state.lastSnapshot && s.last_seen === state.lastSnapshot
                   return (
                     <tr key={s.session_id} className="border-t border-line/20">
@@ -178,9 +188,9 @@ export default function OutOfBandPanel() {
                       </td>
                       <td className="py-1.5">
                         {e ? (
-                          <span className={`inline-flex items-center gap-1 ${CONC_TONE[e.conclusion] || 'text-ink-muted'}`}>
+                          <span className={`inline-flex items-center gap-1 ${CONC_TONE[oc.conclusion] || 'text-ink-muted'}`}>
                             <FlaskConical className="w-3 h-3" />
-                            {CONCLUSION_LABEL?.[e.conclusion] || e.conclusion || 'berjalan'}
+                            {CONCLUSION_LABEL?.[oc.conclusion] || oc.conclusion || 'berjalan'}{oc.provisional && oc.format === 'v2' ? ' · sementara' : ''}
                           </span>
                         ) : (
                           // Max Delivery diukur di level CAMPAIGN, jadi ia tetap terukur

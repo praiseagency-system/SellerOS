@@ -2,15 +2,16 @@
 // rentang, grafik bersumbu kalender, tabel harian, pembanding sebelum boost,
 // dan retensi. SATU rentang aktif menggerakkan semuanya — grafik dan tabel
 // disorot (tidak disaring); total, pembanding, dan retensi dihitung ulang dari
-// satu fungsi agregat (aggregateDays). Vonis di kartu atas TIDAK ikut berubah:
-// aturan vonis masih membaca tiga titik ukur (mengubahnya = tahap 2).
+// satu fungsi agregat (aggregateDays). Vonis di kartu atas TIDAK ikut berubah
+// saat rentang diganti: ia selalu dari jendela hari ke-1–3 dan ke-1–7 yang
+// dihitung server.
 import { useMemo, useState } from 'react'
 import { ChevronRight, ChevronDown, X } from 'lucide-react'
 import {
   aggregateDays, daysIn, presetRanges, matchPreset, rangeName, sideOf, hLabel, fmtDayID, fmtSpanID,
 } from '../../utils/gmvmaxExperimentDaily'
 import {
-  fmtNumID, fmtDec1ID, fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtPctID, fmtFloorID,
+  fmtNumID, fmtDec1ID, fmtRpID, fmtRpShortID, fmtRpRbID, fmtRoiID, fmtRoiVsFloorID, fmtPctID, fmtFloorID,
 } from '../../utils/gmvmaxExperimentFormat'
 
 const HIDE_KEY = 'sq_exp_daily_table_hidden'
@@ -35,6 +36,7 @@ function roiTone(roi, roiFloor, neutral = false) {
 // above + below, daftar ini selalu menjelaskan seluruh hari dalam rentang.
 function emptyNotes(a, verbose = false) {
   return [
+    a.small > 0 && `${a.small} hari berbelanja di bawah ${fmtRpRbID(a.spendDayMin)}`,
     a.noSpend > 0 && `${a.noSpend} hari tanpa belanja`,
     a.merged > 0 && `${a.merged} hari berisi angka gabungan (unggahan berkas)`,
     a.idle > 0 && `${a.idle} hari tak tayang`,
@@ -52,7 +54,7 @@ export default function ExperimentDailyView({
     [calendar, boost?.lastSeen, boost?.ended, noun],
   )
   const byKey = useMemo(() => Object.fromEntries(presets.map(p => [p.key, p])), [presets])
-  // Bawaan SELALU H+1–7, supaya angka pembuka punya arti yang sama di semua
+  // Bawaan SELALU hari ke-1–7, supaya angka pembuka punya arti yang sama di semua
   // eksperimen. Pengecualian: belum ada satu hari pun sesudah mulai.
   const [picked, setSel] = useState(() => {
     const hasRun = calendar.some(d => d.phase === 'post' && d.counted)
@@ -80,15 +82,15 @@ export default function ExperimentDailyView({
   // tidak pernah membacanya.
   const ckByDate = new Map(checkpoints.filter(c => c.date && c.roi != null).map(c => [c.date, c]))
   const selDays = daysIn(calendar, sel.from, sel.to)
-  const selAgg = aggregateDays(selDays, roiFloor)
+  const selAgg = aggregateDays(selDays, roiFloor, spendFloor)
   const selSide = selDays.length ? sideOf(selDays[0]) : 'post'
   const selName = sel.key ? byKey[sel.key].label : rangeName(calendar, sel.from, sel.to)
-  const LOWER = { pre: `sebelum ${noun}`, after: 'setelah boost dicabut', all: 'sejak mulai' }
-  const selLower = sel.key ? (LOWER[sel.key] || byKey[sel.key].label) : selName
+  const LOWER = { h3: 'hari 1–3', h7: 'hari 1–7', pre: `sebelum ${noun}`, after: 'setelah boost dicabut', all: 'sejak mulai' }
+  const selLower = sel.key ? (LOWER[sel.key] || byKey[sel.key].label) : selName.replace(/^Hari/, 'hari')
   const selSpan = fmtSpanID(sel.from, sel.to)
 
   const pre = byKey.pre || null
-  const preAgg = pre ? aggregateDays(daysIn(calendar, pre.from, pre.to), roiFloor) : null
+  const preAgg = pre ? aggregateDays(daysIn(calendar, pre.from, pre.to), roiFloor, spendFloor) : null
 
   const cards = [byKey.h3, byKey.h7, byKey.pre, byKey.after].filter(Boolean)
   if (cards.length < 4 && byKey.all) cards.push(byKey.all)
@@ -116,14 +118,14 @@ export default function ExperimentDailyView({
   }
 
   const many = calendar.length > 27
-  // Rentang terpilih di luar H+14 → tampilkan semua, supaya pitanya terlihat.
-  const selBeyond = selDays.some(d => d.offset > 14)
-  const chartDays = many && !showAll && !selBeyond ? calendar.filter(d => d.offset <= 14) : calendar
+  // Rentang terpilih di luar hari ke-14 → tampilkan semua, supaya pitanya terlihat.
+  const selBeyond = selDays.some(d => d.day > 14)
+  const chartDays = many && !showAll && !selBeyond ? calendar.filter(d => d.day <= 14) : calendar
   const readDay = read ? calendar.find(d => d.date === read) : null
   // Pembanding selalu "sebelum boost vs sesuatu sesudah mulai".
   const cmpRange = selSide === 'pre' ? byKey.h7 : sel
-  const cmpAgg = selSide === 'pre' ? aggregateDays(daysIn(calendar, byKey.h7.from, byKey.h7.to), roiFloor) : selAgg
-  const cmpLower = selSide === 'pre' ? 'H+1–7' : selLower
+  const cmpAgg = selSide === 'pre' ? aggregateDays(daysIn(calendar, byKey.h7.from, byKey.h7.to), roiFloor, spendFloor) : selAgg
+  const cmpLower = selSide === 'pre' ? 'hari 1–7' : selLower
   // Jendela sebelum-mulai tidak diisi → kolomnya "—", bukan seluruh bagian hilang.
   const baseAgg = preAgg || aggregateDays([])
 
@@ -138,7 +140,7 @@ export default function ExperimentDailyView({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {cards.map(p => (
             <RangeCard key={p.key} p={p} active={sel.key === p.key} onClick={() => choose(p.key)}
-              agg={p.key === 'pre' ? preAgg : aggregateDays(daysIn(calendar, p.from, p.to), roiFloor)}
+              agg={p.key === 'pre' ? preAgg : aggregateDays(daysIn(calendar, p.from, p.to), roiFloor, spendFloor)}
               roiFloor={roiFloor} spendFloor={spendFloor} preComparable={preComparable} />
           ))}
         </div>
@@ -171,7 +173,7 @@ export default function ExperimentDailyView({
           <span><i className="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-1" />omzet</span>
           <span><i className="inline-block w-2 h-2 rounded-sm bg-fill/40 mr-1" />belanja (skala sama dengan omzet)</span>
           <span><span className="text-amber-400">●</span> ROI hari itu</span>
-          <span><span className="text-amber-400">◎</span> titik ukur</span>
+          {ckByDate.size > 0 && <span><span className="text-amber-400">◎</span> titik ukur lama</span>}
           {pre && <span>arsiran = sebelum {noun}</span>}<span>pita = rentang terpilih</span><span>kotak putus = data tidak masuk</span>
           {boost && <span><i className="inline-block w-3 h-0.5 bg-accent mr-1 align-middle" />boost terlihat (perkiraan)</span>}
         </p>
@@ -180,7 +182,7 @@ export default function ExperimentDailyView({
           {readDay ? <DayReadout day={readDay} /> : 'Ketuk batang untuk angka hari itu.'}
           {many && !selBeyond && (
             <button onClick={() => setShowAll(v => !v)} className="ml-2 text-accent hover:underline">
-              {showAll ? 'ringkas sampai H+14' : `tampilkan semua ${calendar.length} hari`}
+              {showAll ? 'ringkas sampai hari ke-14' : `tampilkan semua ${calendar.length} hari`}
             </button>
           )}
         </p>
@@ -196,8 +198,8 @@ export default function ExperimentDailyView({
           </>
         }>Data harian</SubHead>
         <p className="text-[11px] text-ink-faint -mt-1 mb-1">
-          <span className="text-amber-400">◎</span> titik ukur
-          {roiFloor != null && <> · hijau = ROI ≥ ambang {fmtFloorID(roiFloor)}, merah = di bawahnya</>} · garis = besar belanja
+          {ckByDate.size > 0 && <><span className="text-amber-400">◎</span> titik ukur lama · </>}
+          {roiFloor != null && <>hijau = ROI ≥ ambang {fmtFloorID(roiFloor)}, merah = di bawahnya (hari berbelanja ≥ {fmtRpRbID(selAgg.spendDayMin)}) · </>}garis = besar belanja
         </p>
         <div className="overflow-x-auto">
         <DailyTable calendar={calendar} sel={sel} selAgg={selAgg} selSide={selSide} selLower={selLower}
@@ -222,7 +224,7 @@ export default function ExperimentDailyView({
             {cmpAgg.missing > 0 && ` — ${cmpAgg.missing} hari data tidak masuk, tidak dihitung`}.
             {' '}Rata-rata per hari = jumlah ÷ hari yang datanya masuk. Ini angka iklan GMV Max, bukan tayangan organik.
             {(baseAgg.merged > 0 || cmpAgg.merged > 0) && ' Ada hari berisi angka gabungan beberapa hari (unggahan berkas), jadi rata-rata per hari di rentang itu terlalu besar.'}
-            {selSide === 'pre' && ` Rentang terpilih = sebelum ${noun}, jadi pembandingnya H+1–7.`}
+            {selSide === 'pre' && ` Rentang terpilih = sebelum ${noun}, jadi pembandingnya hari 1–7.`}
           </p>
           <CompareTable base={baseAgg} post={cmpAgg} baseLabel={cap(`sebelum ${noun}`)} postLabel={cap(cmpLower)} comparable={pre ? preComparable : null} />
           {(baseAgg.vr || cmpAgg.vr) && (
@@ -246,6 +248,9 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
   // Rentang yang belum lengkap: ROI tanpa warna ambang + cap "sementara".
   const provisional = !isPre && !empty && agg.pending > 0
   const small = isPre && preComparable === false
+  // Belanja di bawah lantai: ROI tidak diwarnai — sama dengan chip dasar vonis
+  // dan kotak di daftar ("80,9x" dari Rp1 ribu bukan pemenang).
+  const tiny = !empty && agg.cost > 0 && spendFloor != null && agg.cost < spendFloor
   const notes = empty ? [] : emptyNotes(agg)
   if (provisional) notes.push(`sementara — baru ${agg.counted} dari ${agg.calendarDays} hari`)
   if (p.approx) notes.push('tanggal dicabut = perkiraan')
@@ -265,7 +270,7 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
         <span className="text-[11px] text-ink-muted">{fmtSpanID(p.from, p.to)} · {p.plain}</span>
         {!empty && (small
           ? <span className="text-xs text-ink-muted whitespace-nowrap">ROI {fmtRoiID(agg.roi)}</span>
-          : <span className={`text-lg leading-6 font-semibold tabular-nums ${roiTone(agg.roi, roiFloor, isPre || provisional)}`}>{fmtRoiID(agg.roi)}</span>)}
+          : <span className={`text-lg leading-6 font-semibold tabular-nums ${roiTone(agg.roi, roiFloor, isPre || provisional || tiny)}`}>{fmtRoiVsFloorID(agg.roi, roiFloor)}</span>)}
       </div>
       {empty ? (
         <p className="text-[11px] text-ink-faint mt-1">
@@ -277,7 +282,7 @@ function RangeCard({ p, agg, active, onClick, roiFloor, spendFloor, preComparabl
           <p className="text-[11px] text-ink-muted">
             {fmtNumID(agg.orders)} order
             {!isPre && (roiFloor != null
-              ? ` · ${agg.above} dari ${agg.counted} hari ≥ ${fmtFloorID(roiFloor)}`
+              ? ` · ${agg.above} dari ${agg.spendDays} hari berbelanja ≥ ${fmtFloorID(roiFloor)}`
               : ` · hari beromzet: ${agg.withRevenue} dari ${agg.counted}`)}
           </p>
           {agg.cost === 0 && <p className="text-[11px] text-ink-faint">belum ada belanja</p>}
@@ -353,10 +358,9 @@ function CalendarChart({ days, sel, ckByDate, boost, noun, onRead }) {
           const cx = x(i) + STEP / 2
           const dim = d.date >= sel.from && d.date <= sel.to ? 1 : 0.4
           const dayNum = +d.date.slice(8, 10)
-          // Label sumbu hanya penanda posisi H+1/H+3/H+7; cincin ◎ tetap hanya
-          // untuk titik yang terukur.
-          const ckDay = d.phase === 'post' && (d.offset === 1 || d.offset === 3 || d.offset === 7)
-          const sub = ckDay ? hLabel(d) : (i === 0 || dayNum === 1) ? fmtDayID(d.date).split(' ')[1] : ''
+          // Label sumbu = penanda ujung jendela vonis (hari ke-1, 3, 7).
+          const edge = d.phase === 'post' && (d.day === 1 || d.day === 3 || d.day === 7)
+          const sub = edge ? `hari ${d.day}` : (i === 0 || dayNum === 1) ? fmtDayID(d.date).split(' ')[1] : ''
           const hc = d.cost > 0 ? Math.max(2, B - y(d.cost)) : 0
           return (
             <g key={d.date}>
@@ -427,11 +431,11 @@ function DailyTable({
   // Hari sebelum mulai yang DI LUAR jendela tersimpan: tampil, tapi bukan bagian
   // total "sebelum …" — dipisah supaya baris yang terlihat cocok dengan totalnya.
   const gapDays = calendar.filter(d => d.phase === 'gap')
-  const runDays = calendar.filter(d => sideOf(d) === 'post' && d.offset <= 7)
-  const lateDays = calendar.filter(d => d.offset > 7)
-  const hasH0 = calendar.some(d => d.phase === 'h0')
+  const runDays = calendar.filter(d => d.phase === 'post' && d.day <= 7)
+  const lateDays = calendar.filter(d => d.day > 7)
+  const lateAggArgs = [roiFloor, spendFloor]
   const after = presets.after || null
-  const lateAgg = lateDays.length ? aggregateDays(lateDays, roiFloor) : null
+  const lateAgg = lateDays.length ? aggregateDays(lateDays, ...lateAggArgs) : null
   const lateIsAfter = !!after && lateDays.length > 0 && after.from === lateDays[0].date
   const th = 'font-semibold py-1.5 px-1 text-right'
   const td = 'py-1.5 px-1 text-right tabular-nums align-top'
@@ -458,8 +462,7 @@ function DailyTable({
     const idle = d.state === 'idle'
     const merged = d.spanDays > 1
     const sub = idle ? 'tak tayang' : merged ? `angka gabungan ${d.spanDays} hari (unggahan berkas)`
-      : d.phase === 'h0' ? 'hari mulai (sebagian)' : (!hasH0 && d.offset === 1) ? `hari pertama ${noun}`
-        : d.cost === 0 ? 'tanpa belanja' : ''
+      : d.day === 1 ? `hari mulai — ${startLabel}` : d.cost === 0 ? 'tanpa belanja' : ''
     const open = !!detail[d.date]
     const seen = boost && d.date >= boost.firstSeen && d.date <= boost.lastSeen
     return [
@@ -478,7 +481,7 @@ function DailyTable({
           <div className="h-0.5 bg-line/10 mt-0.5"><div className="h-0.5 bg-fill/40" style={{ width: `${Math.round((d.cost / maxCost) * 100)}%` }} /></div>
         </td>
         <td className={td}>{fmtRpID(d.revenue)}</td>
-        <td className={`${td} ${roiTone(d.roi, roiFloor, merged || sideOf(d) === 'pre')}`}>{fmtRoiID(d.roi)}</td>
+        <td className={`${td} ${roiTone(d.roi, roiFloor, merged || sideOf(d) === 'pre' || d.cost < selAgg.spendDayMin)}`}>{fmtRoiID(d.roi)}</td>
         <td className={td}>{fmtNumID(d.orders)}</td>
         {isVideo && (
           <>
@@ -521,7 +524,7 @@ function DailyTable({
         </td>
         <td className={td}>{fmtRpID(agg.cost)}</td>
         <td className={td}>{fmtRpID(agg.revenue)}</td>
-        <td className={`${td} ${neutral ? 'text-ink-muted' : roiTone(agg.roi, roiFloor)}`}>{fmtRoiID(agg.roi)}</td>
+        <td className={`${td} ${neutral ? 'text-ink-muted' : roiTone(agg.roi, roiFloor, spendFloor != null && agg.cost < spendFloor)}`}>{fmtRoiID(agg.roi)}</td>
         <td className={td}>{fmtNumID(agg.orders)}</td>
         {isVideo && <><td className={td}>{fmtPctID(agg.ctr)}</td><td className={td}>{fmtPctID(agg.cvr)}</td><td /></>}
       </tr>
@@ -537,7 +540,7 @@ function DailyTable({
     foot = `${[`${selAgg.counted} hari`, ...emptyNotes(selAgg, true)].join(' · ')} · ROI tidak diwarnai ambang — ini masa sebelum ${noun}.`
   } else {
     const parts = roiFloor != null
-      ? [`${selAgg.above} hari di atas ambang`, `${selAgg.below} hari di bawah ambang${selAgg.below > 0 && selAgg.zeroRevenue ? ` (${Math.min(selAgg.zeroRevenue, selAgg.below)} tanpa omzet)` : ''}`]
+      ? [`${selAgg.above} hari berbelanja di atas ambang`, `${selAgg.below} di bawah ambang${selAgg.below > 0 && selAgg.zeroRevenue ? ` (${Math.min(selAgg.zeroRevenue, selAgg.below)} tanpa omzet)` : ''}`]
       : [`${selAgg.withRevenue} hari beromzet`]
     foot = `${selAgg.counted} hari: ${[...parts, ...emptyNotes(selAgg, true)].join(' · ')}.`
     if (roiFloor != null && selAgg.cost > 0) {
@@ -580,7 +583,6 @@ function DailyTable({
           {gapDays.length > 0 && (openPre || !preAgg) && sep('gap-sep',
             `${fmtSpanID(gapDays[0].date, gapDays[gapDays.length - 1].date)} · di luar jendela sebelum ${noun} — tidak masuk total di atas`)}
           {gapDays.length > 0 && (openPre || !preAgg) && gapDays.flatMap(dayRow)}
-          {sep('start-sep', `${noun} mulai ${startLabel}`)}
           {rowsWithSep(runDays)}
           {lateAgg && lateIsAfter && afterSep}
           {lateAgg && groupRow({
@@ -603,7 +605,7 @@ function DailyTable({
             <td className="py-1.5 px-1 text-left">Total {selLower}</td>
             <td className={td}>{fmtRpID(selAgg.cost)}</td>
             <td className={td}>{fmtRpID(selAgg.revenue)}</td>
-            <td className={`${td} ${roiTone(selAgg.roi, roiFloor, selSide === 'pre' || selAgg.pending > 0)}`}>{fmtRoiID(selAgg.roi)}</td>
+            <td className={`${td} ${roiTone(selAgg.roi, roiFloor, selSide === 'pre' || selAgg.pending > 0 || (spendFloor != null && selAgg.cost < spendFloor))}`}>{fmtRoiVsFloorID(selAgg.roi, roiFloor)}</td>
             <td className={td}>{fmtNumID(selAgg.orders)}</td>
             {isVideo && <><td className={td}>{fmtPctID(selAgg.ctr)}</td><td className={td}>{fmtPctID(selAgg.cvr)}</td><td /></>}
           </tr>
