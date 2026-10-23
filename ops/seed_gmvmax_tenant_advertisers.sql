@@ -8,9 +8,11 @@
 -- menghapus membership. Advertiser ID di bawah = konfigurasi operasional.
 --
 -- Konfigurasi:
---   AsterixSty : 7313535999831769090 = PRIMARY
---   Dasfelix   : 7663429402298089480 = PRIMARY (akun baru)
---                7214793879483170817 = LEGACY  (akun lama, store & token sama)
+--   AsterixSty : 7313535999831769090 = PRIMARY  aktif
+--   Dasfelix   : 7663429402298089480 = PRIMARY  aktif (akun baru)
+--                7214793879483170817 = LEGACY   NON-AKTIF (migrasi selesai 2026-07-19;
+--                  disimpan utk lineage, TIDAK diproses recurring). Rerun TAK
+--                  mengaktifkan ulang (is_active=false diperbarui via ON CONFLICT).
 -- ============================================================================
 
 do $$
@@ -28,13 +30,17 @@ begin
   insert into public.gmvmax_tenant_advertisers
     (workspace_id, store_id, connection_group_id, source_connection_id, advertiser_id, advertiser_role, is_active, priority, metadata)
   values
-    (v_ws, v_store, v_ws::text, v_conn, '7663429402298089480', 'PRIMARY', true, 100, jsonb_build_object('advertiser_name', 'Dasfelix (akun baru)')),
-    (v_ws, v_store, v_ws::text, v_conn, '7214793879483170817', 'LEGACY',  true, 200, jsonb_build_object('advertiser_name', 'Dasfelix Store (lama)'))
+    -- 7663 PRIMARY aktif; 7214 LEGACY NON-AKTIF (transisi selesai — lineage saja).
+    (v_ws, v_store, v_ws::text, v_conn, '7663429402298089480', 'PRIMARY', true,  100,
+       jsonb_build_object('advertiser_name', 'Dasfelix (akun baru)')),
+    (v_ws, v_store, v_ws::text, v_conn, '7214793879483170817', 'LEGACY',  false, 200,
+       jsonb_build_object('advertiser_name', 'Dasfelix Store (lama)', 'effective_to', '2026-07-19',
+                          'transition_completed', true, 'reason', 'ACCOUNT_MIGRATION_COMPLETED'))
   on conflict (workspace_id, advertiser_id) do update
     set store_id = excluded.store_id, connection_group_id = excluded.connection_group_id,
         source_connection_id = excluded.source_connection_id, advertiser_role = excluded.advertiser_role,
         is_active = excluded.is_active, priority = excluded.priority, metadata = excluded.metadata, updated_at = now();
-  raise notice 'Dasfelix membership OK: workspace=% store=% (PRIMARY 7663 + LEGACY 7214, conn=%)', v_ws, v_store, v_conn;
+  raise notice 'Dasfelix membership OK: workspace=% store=% (PRIMARY 7663 aktif + LEGACY 7214 NON-AKTIF, conn=%)', v_ws, v_store, v_conn;
 
   -- ── AsterixSty: resolve via koneksi pemegang advertiser PRIMARY 7313 ──
   select count(*) into v_cnt from public.tiktok_connections where advertiser_id = '7313535999831769090';
