@@ -244,7 +244,7 @@ function MainApp() {
           />
         )}
         {currentPage === 'products' && (
-          <ProductsPage onOpenProduct={openProduct} onNewProduct={newProduct} />
+          <ProductsPage onOpenProduct={openProduct} onNewProduct={newProduct} onOpenCampaigns={() => handleNavigate('campaign')} />
         )}
         {currentPage === 'performance' && <StorePerformancePage />}
         {currentPage === 'campaign' && <CampaignPage />}

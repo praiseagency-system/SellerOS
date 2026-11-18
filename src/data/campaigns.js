@@ -31,6 +31,9 @@ function rowToCampaign(r) {
     registration: (r.registration && typeof r.registration === 'object') ? r.registration : {},
     // Batas pendaftaran ke marketplace (0063) — 'YYYY-MM-DD' atau ''.
     registrationDeadline: r.registration_deadline || '',
+    // Alasan produk tidak ikut campaign, dicatat manual (0069). Seperti
+    // registration, TIDAK ikut `toRow` — ditulis lewat setCampaignSkipped.
+    skipped: Array.isArray(r.skipped) ? r.skipped : [],
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -162,6 +165,19 @@ export async function setCampaignApprovals(campaignId, approvals) {
   const { data, error } = await supabase
     .from('campaigns')
     .update({ approvals, updated_at: new Date().toISOString() })
+    .eq('id', campaignId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return rowToCampaign(data)
+}
+
+// Alasan produk tidak ikut campaign (kolom skipped, migrasi 0069). Ditulis
+// terpisah dari saveCampaign, sama seperti registration/approvals.
+export async function setCampaignSkipped(campaignId, skipped) {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ skipped, updated_at: new Date().toISOString() })
     .eq('id', campaignId)
     .select('*')
     .single()

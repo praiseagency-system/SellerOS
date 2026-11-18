@@ -7,6 +7,7 @@ import { skuApprovalSummary, hrefOf } from '../utils/campaignPricing'
 import { registrationBadge, registrationDetail, registrationStatus } from '../utils/campaignRegistration'
 import { campaignStatus, periodsSummary, campaignPeriods, periodSpan, periodRange } from '../utils/campaignPeriods'
 import { decisionUrgency } from '../utils/campaignUrgency'
+import { skipReasonLabel } from '../utils/campaignByProduct'
 
 const tokenFromUrl = () => new URLSearchParams(window.location.search).get('t') || ''
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
@@ -244,6 +245,21 @@ function approvalBadge(sum, ended) {
   return { label: 'Semua disetujui', cls: 'bg-green-500/12 text-green-300' }
 }
 
+// Entri skipped digabung per produk: varian-varian dengan alasan sama jadi
+// satu baris. `null` varIdx = semua varian.
+function skippedForClient(c) {
+  const byKey = new Map()
+  for (const e of c.skipped || []) {
+    if (!e?.productId) continue
+    const key = `${e.productId}|${e.reason}|${e.note || ''}`
+    const cur = byKey.get(key) || { key, name: e.productName || 'Produk', reason: e.reason, note: e.note || '', vars: [], all: false }
+    if (e.varIdx == null) cur.all = true
+    else if (e.variantName) cur.vars.push(e.variantName)
+    byKey.set(key, cur)
+  }
+  return [...byKey.values()].map(s => ({ ...s, variants: s.all || !s.vars.length ? '' : s.vars.join(', ') }))
+}
+
 function CampaignCard({ row, portalToken }) {
   const { c, sum, status, need: needs, urg } = row
   const badge = approvalBadge(sum, status.key === 'ended')
@@ -299,6 +315,25 @@ function CampaignCard({ row, portalToken }) {
           </span>
         )}
       </div>
+
+      {/* Produk yang sengaja tidak diajukan tim + alasannya (kolom skipped,
+          hanya entri yang ditandai "tampilkan ke client" — disaring di RPC). */}
+      {skippedForClient(c).length > 0 && (
+        <details className="mt-3 rounded-lg border border-line/10 bg-fill/[0.03]">
+          <summary className="cursor-pointer px-3 py-2 text-[12px] font-semibold text-ink">
+            {skippedForClient(c).length} produk tidak diajukan
+          </summary>
+          <ul className="px-3 pb-2.5 flex flex-col gap-1.5">
+            {skippedForClient(c).map(s => (
+              <li key={s.key} className="text-[11px] text-ink-muted leading-relaxed">
+                <span className="font-semibold text-ink">{s.name}</span>
+                {s.variants && <span className="text-ink-faint"> ({s.variants})</span>}
+                {' · '}{skipReasonLabel(s.reason)}{s.note ? `: ${s.note}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {/* Status pendaftaran ke marketplace — barisnya sendiri di kaki kartu,
           bukan badge kecil di antara badge lain, supaya benar-benar terbaca. */}
