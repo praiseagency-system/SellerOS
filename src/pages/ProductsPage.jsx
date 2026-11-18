@@ -1,9 +1,8 @@
 import { TableScroll } from '../components/ui/DataTable'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Upload, CalendarRange,
+  Package, Search, Copy, Trash2, Pencil, X, BarChart3, Plus, GitCompare, Ticket, Upload,
 } from 'lucide-react'
-import CampaignByProductPanel from '../components/CampaignByProductPanel'
 import { PlatformIcon } from '../components/PlatformIcon'
 import { listProducts, deleteProduct, duplicateProduct, saveProduct } from '../data/calcProducts'
 import { computeCalc, productStatus, computePriceTiers } from '../utils/calc'
@@ -52,9 +51,9 @@ function withMetrics(p) {
   return { ...p, summary, state, calc, status: summary.status, variations: productVariations(p) }
 }
 
-export default function ProductsPage({ onOpenProduct, onNewProduct, onOpenCampaigns }) {
+export default function ProductsPage({ onOpenProduct, onNewProduct }) {
   const [products, setProducts] = useState([])
-  const [tab, setTab] = useState('produk') // 'produk' | 'voucher' | 'campaign'
+  const [tab, setTab] = useState('produk') // 'produk' | 'voucher'
   const [showCatalog, setShowCatalog] = useState(false)
 
   const [search, setSearch]   = useState('')
@@ -154,7 +153,6 @@ export default function ProductsPage({ onOpenProduct, onNewProduct, onOpenCampai
         {[
           { id: 'produk', label: 'Produk', icon: Package },
           { id: 'voucher', label: 'Voucher', icon: Ticket },
-          { id: 'campaign', label: 'Campaign per Produk', icon: CalendarRange },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -167,8 +165,6 @@ export default function ProductsPage({ onOpenProduct, onNewProduct, onOpenCampai
 
       {tab === 'voucher' ? (
         <VoucherPanel products={products} />
-      ) : tab === 'campaign' ? (
-        <CampaignByProductPanel products={products} onOpenProduct={onOpenProduct} onOpenCampaigns={onOpenCampaigns} />
       ) : (
       <>
       {/* Dashboard */}

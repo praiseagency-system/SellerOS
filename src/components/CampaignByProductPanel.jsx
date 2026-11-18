@@ -23,6 +23,9 @@ import SkipReasonModal from './SkipReasonModal'
 
 const PLATFORM_LABEL = { shopee: 'Shopee', tiktok: 'TikTok' }
 
+const platformOf = x => (x?.platform === 'shopee' ? 'shopee' : 'tiktok')
+const PHASE_ORDER = ['running', 'upcoming', 'ended']
+const PHASE_DOT = { running: 'bg-green-400', upcoming: 'bg-blue-400', ended: 'bg-ink-muted' }
 const PHASE_CLS = {
   running:  'bg-green-500/12 text-green-300',
   upcoming: 'bg-blue-600/15 text-blue-300',
@@ -118,8 +121,7 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
   const [actor, setActor] = useState({ email: '', name: '' })
   const [view, setView] = useState('rekap') // rekap | gap
   const [search, setSearch] = useState('')
-  const [fMarket, setFMarket] = useState('all')
-  const [phase, setPhase] = useState('all')
+  const [platformTab, setPlatformTab] = useState(null) // null = ikut isi data
   const [hideEmpty, setHideEmpty] = useState(true)
   const [open, setOpen] = useState(() => new Set())
   const [reason, setReason] = useState('all')
@@ -148,40 +150,48 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products])
 
+  // TikTok & Shopee dipisah: produk dan campaign hanya dibandingkan dengan
+  // marketplace-nya sendiri, dan tiap marketplace punya daftar sendiri.
+  const platformCount = useMemo(() => {
+    const n = { tiktok: 0, shopee: 0 }
+    for (const p of products) n[platformOf(p)]++
+    return n
+  }, [products])
+  const plat = platformTab || (platformCount.tiktok === 0 && platformCount.shopee > 0 ? 'shopee' : 'tiktok')
+  const platProducts = useMemo(() => products.filter(p => platformOf(p) === plat), [products, plat])
+  const platCampaigns = useMemo(() => campaigns.filter(c => platformOf(c) === plat), [campaigns, plat])
+
   // ── Rekap ────────────────────────────────────────────────────────────────
-  const rekap = useMemo(() => products.map(p => ({ p, rows: productCampaignRows(p, campaigns, productMap) })), [products, campaigns, productMap])
-  const gaps = useMemo(() => products.map(p => {
-    const rows = productGapRows(p, campaigns, productMap)
-    return { p, rows, sum: gapSummary(p, campaigns, rows) }
-  }), [products, campaigns, productMap])
+  const rekap = useMemo(() => platProducts.map(p => ({ p, rows: productCampaignRows(p, platCampaigns, productMap) })), [platProducts, platCampaigns, productMap])
+  const gaps = useMemo(() => platProducts.map(p => {
+    const rows = productGapRows(p, platCampaigns, productMap)
+    return { p, rows, sum: gapSummary(p, platCampaigns, rows) }
+  }), [platProducts, platCampaigns, productMap])
   const gapTotal = gaps.reduce((s, g) => s + g.rows.length, 0)
 
   const stats = useMemo(() => {
     const joined = rekap.filter(r => r.rows.length).length
-    const runningCamps = campaigns.filter(c => rekap.some(r => r.rows.some(x => x.campaign.id === c.id && x.phase === 'running'))).length
+    const runningCamps = platCampaigns.filter(c => rekap.some(r => r.rows.some(x => x.campaign.id === c.id && x.phase === 'running'))).length
     let pending = 0
     for (const r of rekap) for (const x of r.rows) if (x.phase !== 'ended') pending += x.approval.pending
     const noOpen = rekap.filter(r => !r.rows.some(x => x.phase !== 'ended')).length
     return { joined, runningCamps, pending, noOpen }
-  }, [rekap, campaigns])
+  }, [rekap, platCampaigns])
 
   const q = search.trim().toLowerCase()
   const matchProduct = p => !q || `${p.name} ${p.sku || ''} ${productVariations(p).map(v => v.sku || '').join(' ')}`.toLowerCase().includes(q)
 
   const rekapList = rekap
-    .filter(({ p }) => fMarket === 'all' || p.platform === fMarket)
     .map(({ p, rows }) => {
       const hitByCampaign = q && rows.some(x => campName(x.campaign).toLowerCase().includes(q) || (x.campaign.parentCampaign || '').toLowerCase().includes(q))
-      return { p, rows, all: rows, show: matchProduct(p) || hitByCampaign }
+      return { p, rows, show: matchProduct(p) || hitByCampaign }
     })
-    .filter(x => x.show)
-    .map(x => ({ ...x, rows: x.rows.filter(r => phase === 'all' || r.phase === phase) }))
-    .filter(x => !hideEmpty || x.all.length)
+    .filter(x => x.show && (!hideEmpty || x.rows.length))
 
-  const openCampaignOptions = useMemo(() => campaigns.filter(c => isOpenCampaign(c)), [campaigns])
+  const openCampaignOptions = useMemo(() => platCampaigns.filter(c => isOpenCampaign(c)), [platCampaigns])
 
   const gapList = gaps
-    .filter(({ p }) => (fMarket === 'all' || p.platform === fMarket) && matchProduct(p))
+    .filter(({ p }) => matchProduct(p))
     .map(g => ({ ...g, all: g.rows, rows: g.rows.filter(r => (reason === 'all' || r.reason === reason) && (fCampaign === 'all' || r.campaign.id === fCampaign)) }))
     .filter(g => g.rows.length)
 
@@ -232,19 +242,35 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Tab platform — TikTok & Shopee dipisah, sama seperti daftar campaign */}
+      <div className="flex items-center gap-1.5 border-b border-line/8 pb-2 flex-wrap">
+        {['tiktok', 'shopee'].map(id => {
+          const on = plat === id
+          return (
+            <button key={id} type="button" onClick={() => { setPlatformTab(id); setFCampaign('all') }} aria-pressed={on}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                on ? (id === 'tiktok' ? 'bg-gray-700 text-white' : 'bg-orange-500/20 text-orange-300')
+                   : 'text-ink-muted hover:text-ink hover:bg-fill/8'}`}>
+              <PlatformIcon id={id} className="w-3.5 h-3.5" />
+              {PLATFORM_LABEL[id]} <span className={on ? 'opacity-70' : 'text-ink-faint'}>· {platformCount[id]} produk</span>
+            </button>
+          )
+        })}
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmented label="Tampilan" value={view} onChange={setView}
           options={[['rekap', 'Rekap'], ['gap', 'Tidak ikut campaign', gapTotal]]} />
         <p className="text-[13px] text-ink-muted">
           {view === 'gap'
-            ? <>Dibandingkan dengan <strong className="text-ink font-semibold">{openCampaignOptions.length} campaign</strong> yang sedang berjalan atau akan datang di marketplace yang sama</>
-            : <>{campaigns.length} campaign · {products.length} produk</>}
+            ? <>Dibandingkan dengan <strong className="text-ink font-semibold">{openCampaignOptions.length} campaign {PLATFORM_LABEL[plat]}</strong> yang sedang berjalan atau akan datang</>
+            : <>{platCampaigns.length} campaign {PLATFORM_LABEL[plat]} · {platProducts.length} produk</>}
         </p>
       </div>
 
       {view === 'rekap' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Stat label="Produk ikut campaign" value={stats.joined} sub={`/ ${products.length} produk`} />
+          <Stat label="Produk ikut campaign" value={stats.joined} sub={`/ ${platProducts.length} produk`} />
           <Stat label="Campaign berjalan hari ini" value={stats.runningCamps} cls="text-green-400" />
           <Stat label="Varian menunggu approval" value={stats.pending} cls="text-amber-300" />
           <Stat label="Produk tanpa campaign aktif" value={stats.noOpen} cls="text-orange-300" />
@@ -271,24 +297,11 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
             </select>
           </label>
         )}
-        <label>
-          <span className="sr-only">Marketplace</span>
-          <select value={fMarket} onChange={e => setFMarket(e.target.value)}
-            className="bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink-muted focus:outline-none focus:ring-2 focus:ring-blue-600/40">
-            <option value="all" className="bg-surface">Semua Marketplace</option>
-            <option value="tiktok" className="bg-surface">TikTok</option>
-            <option value="shopee" className="bg-surface">Shopee</option>
-          </select>
-        </label>
         {view === 'rekap' && (
-          <>
-            <Segmented label="Status campaign" value={phase} onChange={setPhase}
-              options={[['all', 'Semua'], ['running', PHASE.running.label], ['upcoming', PHASE.upcoming.label], ['ended', PHASE.ended.label]]} />
-            <label className="flex items-center gap-2 px-1 py-2 text-[13px] text-ink-muted cursor-pointer">
-              <input type="checkbox" checked={hideEmpty} onChange={e => setHideEmpty(e.target.checked)} className="accent-blue-600 w-4 h-4" />
-              Sembunyikan produk tanpa campaign
-            </label>
-          </>
+          <label className="flex items-center gap-2 px-1 py-2 text-[13px] text-ink-muted cursor-pointer">
+            <input type="checkbox" checked={hideEmpty} onChange={e => setHideEmpty(e.target.checked)} className="accent-blue-600 w-4 h-4" />
+            Sembunyikan produk tanpa campaign
+          </label>
         )}
       </div>
 
@@ -339,12 +352,17 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
 
 // ── Rekap ──────────────────────────────────────────────────────────────────
 function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) {
+  // Kelompok "Selesai" per produk dilipat default supaya yang berjalan &
+  // akan datang tidak tenggelam di bawah riwayat panjang.
+  const [endedOpen, setEndedOpen] = useState(() => new Set())
   if (!list.length) {
     return <div className="bg-surface rounded-2xl border border-line/10 p-10 text-center text-sm text-ink-muted">Tidak ada produk yang cocok.</div>
   }
+  const toggleEnded = id => setEndedOpen(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   return (
     <div className="flex flex-col gap-3">
-      {list.map(({ p, rows, all }) => {
+      {list.map(({ p, rows }) => {
+        const all = rows
         const isOpen = open.has(p.id)
         const running = all.filter(r => r.phase === 'running').length
         const upcoming = all.filter(r => r.phase === 'upcoming').length
@@ -385,8 +403,14 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                             <th className="py-3 px-2 font-semibold">Pendaftaran</th>
                           </tr>
                         </thead>
-                        <tbody>
-                          {rows.map(r => {
+                        {PHASE_ORDER.map(ph => {
+                          const sec = rows.filter(r => r.phase === ph)
+                          const collapsed = ph === 'ended' && !endedOpen.has(p.id)
+                          return (
+                        <tbody key={ph}>
+                          <PhaseHeader phase={ph} count={sec.length} colSpan={8}
+                            collapsible={ph === 'ended' && sec.length > 0} collapsed={collapsed} onToggle={() => toggleEnded(p.id)} />
+                          {!collapsed && sec.map(r => {
                             const ap = approvalLabel(r.approval)
                             const reg = REGISTRATION[r.registration]
                             return (
@@ -409,6 +433,8 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                             )
                           })}
                         </tbody>
+                          )
+                        })}
                       </table>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
@@ -425,7 +451,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                   </>
                 ) : (
                   <div className="flex flex-wrap items-center justify-between gap-3 py-4">
-                    <p className="text-[13px] text-ink-muted">{all.length ? 'Tidak ada campaign dengan status ini untuk produk ini.' : 'Produk ini belum masuk campaign mana pun.'}</p>
+                    <p className="text-[13px] text-ink-muted">Produk ini belum masuk campaign mana pun.</p>
                     <button onClick={() => onSkip(p)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-line/15 text-ink-muted hover:text-ink">
                       Lihat alasannya
                     </button>
@@ -489,8 +515,13 @@ function GapList({ list, onOpenProduct, onOpenCampaigns, onSkip }) {
                   <th className="py-2.5 pl-2 pr-4"><span className="sr-only">Aksi</span></th>
                 </tr>
               </thead>
-              <tbody>
-                {rows.map(r => (
+              {['running', 'upcoming'].map(ph => {
+                const sec = rows.filter(r => r.phase === ph)
+                if (!sec.length) return null
+                return (
+              <tbody key={ph}>
+                <PhaseHeader phase={ph} count={sec.length} colSpan={6} unit="baris" />
+                {sec.map(r => (
                   <tr key={r.key} className="border-t border-line/6 align-top">
                     <td className="py-3 pl-4 pr-2">
                       <p className="font-semibold text-ink">{campName(r.campaign)}</p>
@@ -509,11 +540,37 @@ function GapList({ list, onOpenProduct, onOpenCampaigns, onSkip }) {
                   </tr>
                 ))}
               </tbody>
+                )
+              })}
             </table>
           </div>
         </div>
       ))}
     </div>
+  )
+}
+
+// Baris judul kelompok status di dalam tabel: Berjalan / Akan datang / Selesai.
+function PhaseHeader({ phase, count, colSpan, unit = 'campaign', collapsible, collapsed, onToggle }) {
+  const label = (
+    <span className="inline-flex items-center gap-2">
+      <span aria-hidden="true" className={`w-2 h-2 rounded-full ${PHASE_DOT[phase]}`} />
+      <span className="text-[12px] font-semibold text-ink">{PHASE[phase].label}</span>
+      <span className="text-[11px] text-ink-muted">{count} {unit}</span>
+    </span>
+  )
+  return (
+    <tr className="border-t border-line/8 bg-fill/[0.03]">
+      <td colSpan={colSpan} className="py-2 px-2">
+        {collapsible ? (
+          <button onClick={onToggle} aria-expanded={!collapsed} className="inline-flex items-center gap-2 hover:opacity-80">
+            {label}
+            <span className="text-[11px] font-semibold text-blue-400">{collapsed ? 'Tampilkan' : 'Sembunyikan'}</span>
+          </button>
+        ) : label}
+        {!collapsible && count === 0 && <span className="ml-2 text-[11px] text-ink-faint">— tidak ada</span>}
+      </td>
+    </tr>
   )
 }
 

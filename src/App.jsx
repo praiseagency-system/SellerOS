@@ -244,10 +244,10 @@ function MainApp() {
           />
         )}
         {currentPage === 'products' && (
-          <ProductsPage onOpenProduct={openProduct} onNewProduct={newProduct} onOpenCampaigns={() => handleNavigate('campaign')} />
+          <ProductsPage onOpenProduct={openProduct} onNewProduct={newProduct} />
         )}
         {currentPage === 'performance' && <StorePerformancePage />}
-        {currentPage === 'campaign' && <CampaignPage />}
+        {currentPage === 'campaign' && <CampaignPage onOpenProduct={openProduct} />}
         {currentPage === 'settings' && (
           <SettingsPage initialTab={settingsTab} currentWorkspace={currentWorkspace} />
         )}
