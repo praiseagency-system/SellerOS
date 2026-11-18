@@ -27,22 +27,22 @@ const platformOf = x => (x?.platform === 'shopee' ? 'shopee' : 'tiktok')
 const PHASE_ORDER = ['running', 'upcoming', 'ended']
 const PHASE_DOT = { running: 'bg-green-400', upcoming: 'bg-blue-400', ended: 'bg-ink-muted' }
 const PHASE_CLS = {
-  running:  'bg-green-500/12 text-green-300',
+  running:  'bg-green-500/10 text-green-300',
   upcoming: 'bg-blue-600/15 text-blue-300',
   ended:    'bg-fill/10 text-ink-muted',
 }
 const APPROVAL_CLS = {
-  approved: 'bg-green-500/12 text-green-300',
-  pending:  'bg-amber-500/12 text-amber-300',
-  mixed:    'bg-amber-500/12 text-amber-300',
-  rejected: 'bg-red-500/12 text-red-300',
+  approved: 'bg-green-500/10 text-green-300',
+  pending:  'bg-amber-500/10 text-amber-300',
+  mixed:    'bg-amber-500/10 text-amber-300',
+  rejected: 'bg-red-500/10 text-red-300',
 }
 const REASON_CLS = {
   rejected: { badge: 'bg-red-500/15 text-red-300',       dot: 'bg-red-400' },
   margin:   { badge: 'bg-orange-500/15 text-orange-300', dot: 'bg-orange-400' },
-  noprice:  { badge: 'bg-amber-500/14 text-amber-300',   dot: 'bg-amber-300' },
-  nohpp:    { badge: 'bg-yellow-200/12 text-yellow-200', dot: 'bg-yellow-200' },
-  excluded: { badge: 'bg-violet-500/16 text-violet-300', dot: 'bg-violet-300' },
+  noprice:  { badge: 'bg-amber-500/15 text-amber-300',   dot: 'bg-amber-300' },
+  nohpp:    { badge: 'bg-yellow-200/10 text-yellow-200', dot: 'bg-yellow-200' },
+  excluded: { badge: 'bg-violet-500/15 text-violet-300', dot: 'bg-violet-300' },
   manual:   { badge: 'bg-teal-500/15 text-teal-300',     dot: 'bg-teal-300' },
   none:     { badge: 'bg-fill/10 text-ink',              dot: 'bg-ink-muted' },
 }
@@ -76,7 +76,7 @@ function ProductHead({ p, meta }) {
       <ProductThumb p={p} />
       <div className="min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-fill/8 text-ink-muted flex-shrink-0">
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-fill/10 text-ink-muted flex-shrink-0">
             <PlatformIcon id={p.platform} className="w-3 h-3" />{PLATFORM_LABEL[p.platform] || p.platform}
           </span>
           <span className="text-sm font-semibold text-ink-strong truncate">{p.name}</span>
@@ -243,14 +243,14 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
   return (
     <div className="flex flex-col gap-5">
       {/* Tab platform — TikTok & Shopee dipisah, sama seperti daftar campaign */}
-      <div className="flex items-center gap-1.5 border-b border-line/8 pb-2 flex-wrap">
+      <div className="flex items-center gap-1.5 border-b border-line/10 pb-2 flex-wrap">
         {['tiktok', 'shopee'].map(id => {
           const on = plat === id
           return (
             <button key={id} type="button" onClick={() => { setPlatformTab(id); setFCampaign('all') }} aria-pressed={on}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[13px] font-semibold transition-colors ${
                 on ? (id === 'tiktok' ? 'bg-gray-700 text-white' : 'bg-orange-500/20 text-orange-300')
-                   : 'text-ink-muted hover:text-ink hover:bg-fill/8'}`}>
+                   : 'text-ink-muted hover:text-ink hover:bg-fill/10'}`}>
               <PlatformIcon id={id} className="w-3.5 h-3.5" />
               {PLATFORM_LABEL[id]} <span className={on ? 'opacity-70' : 'text-ink-faint'}>· {platformCount[id]} produk</span>
             </button>
@@ -312,7 +312,7 @@ export default function CampaignByProductPanel({ products, onOpenProduct, onOpen
             const n = k === 'all' ? Object.values(reasonCounts).reduce((a, b) => a + b, 0) : reasonCounts[k]
             return (
               <button key={k} onClick={() => setReason(k)} aria-pressed={on}
-                className={`text-left p-3 rounded-2xl border transition-colors ${on ? 'bg-blue-600/12 border-blue-500/70' : 'bg-surface border-line/10 hover:border-line/25'}`}>
+                className={`text-left p-3 rounded-2xl border transition-colors ${on ? 'bg-blue-600/10 border-blue-500/70' : 'bg-surface border-line/10 hover:border-line/25'}`}>
                 <span className="flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
                   <span aria-hidden="true" className={`w-2 h-2 rounded-sm ${k === 'all' ? 'bg-blue-400' : REASON_CLS[k].dot}`} />
                   {k === 'all' ? 'Semua alasan' : GAP_REASON[k].label}
@@ -374,10 +374,10 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
               className="w-full flex flex-wrap items-center gap-3 px-4 py-3.5 text-left hover:bg-fill/[0.03] transition-colors">
               <ProductHead p={p} meta={productMeta(p)} />
               <div className="flex flex-wrap items-center gap-1.5">
-                {all.length > 0 && <Badge cls="bg-fill/8 text-ink-muted">{all.length} campaign</Badge>}
+                {all.length > 0 && <Badge cls="bg-fill/10 text-ink-muted">{all.length} campaign</Badge>}
                 {running > 0 && <Badge cls={PHASE_CLS.running}>{running} berjalan</Badge>}
                 {upcoming > 0 && <Badge cls={PHASE_CLS.upcoming}>{upcoming} akan datang</Badge>}
-                {!all.length && <Badge cls="bg-amber-500/12 text-amber-300">Belum ikut campaign</Badge>}
+                {!all.length && <Badge cls="bg-amber-500/10 text-amber-300">Belum ikut campaign</Badge>}
               </div>
               <div className="text-right min-w-[150px]">
                 <p className="text-[11px] text-ink-muted">Harga campaign aktif</p>
@@ -386,7 +386,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
               <ChevronDown aria-hidden="true" className={`w-4 h-4 text-ink-muted flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
             {isOpen && (
-              <div className="border-t border-line/8 px-4 pb-4">
+              <div className="border-t border-line/10 px-4 pb-4">
                 {rows.length ? (
                   <>
                     <div className="overflow-x-auto">
@@ -414,7 +414,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                             const ap = approvalLabel(r.approval)
                             const reg = REGISTRATION[r.registration]
                             return (
-                              <tr key={r.campaign.id} className="border-t border-line/6 align-top">
+                              <tr key={r.campaign.id} className="border-t border-line/5 align-top">
                                 <td className="py-3 px-2 max-w-[280px]">
                                   <p className="font-semibold text-ink">{campName(r.campaign)}</p>
                                   {r.campaign.parentCampaign && <p className="text-[11px] text-ink-muted mt-0.5">{r.campaign.parentCampaign}</p>}
@@ -499,9 +499,9 @@ function GapList({ list, onOpenProduct, onOpenCampaigns, onSkip }) {
     <div className="flex flex-col gap-3">
       {list.map(({ p, rows, sum }) => (
         <div key={p.id} className="bg-surface border border-line/10 rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3.5 border-b border-line/8">
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3.5 border-b border-line/10">
             <ProductHead p={p} meta={`${productMeta(p)}${sum.joinedAny ? ' · ikut sebagian' : ' · tidak ikut satu pun campaign aktif'}`} />
-            <Badge cls="bg-fill/8 text-ink">{sum.missed} dari {sum.open} campaign terlewat</Badge>
+            <Badge cls="bg-fill/10 text-ink">{sum.missed} dari {sum.open} campaign terlewat</Badge>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-[13px]">
@@ -522,7 +522,7 @@ function GapList({ list, onOpenProduct, onOpenCampaigns, onSkip }) {
               <tbody key={ph}>
                 <PhaseHeader phase={ph} count={sec.length} colSpan={6} unit="baris" />
                 {sec.map(r => (
-                  <tr key={r.key} className="border-t border-line/6 align-top">
+                  <tr key={r.key} className="border-t border-line/5 align-top">
                     <td className="py-3 pl-4 pr-2">
                       <p className="font-semibold text-ink">{campName(r.campaign)}</p>
                       <p className="text-[11px] text-ink-muted mt-1">
@@ -560,7 +560,7 @@ function PhaseHeader({ phase, count, colSpan, unit = 'campaign', collapsible, co
     </span>
   )
   return (
-    <tr className="border-t border-line/8 bg-fill/[0.03]">
+    <tr className="border-t border-line/10 bg-fill/[0.03]">
       <td colSpan={colSpan} className="py-2 px-2">
         {collapsible ? (
           <button onClick={onToggle} aria-expanded={!collapsed} className="inline-flex items-center gap-2 hover:opacity-80">
@@ -595,7 +595,7 @@ function MatrixModal({ product, campaigns, productMap, onClose }) {
                 <tr className="text-left align-bottom">
                   <th className="py-2 px-2 text-[10px] uppercase tracking-wide text-ink-muted font-semibold">Varian</th>
                   <th className="py-2 px-2 text-[10px] uppercase tracking-wide text-ink-muted font-semibold text-right">Normal</th>
-                  <th className="py-2 px-2 text-[10px] uppercase tracking-wide text-ink-muted font-semibold text-right border-r border-line/8">HPP</th>
+                  <th className="py-2 px-2 text-[10px] uppercase tracking-wide text-ink-muted font-semibold text-right border-r border-line/10">HPP</th>
                   {rows.map(r => (
                     <th key={r.campaign.id} className="py-2 px-2 text-right min-w-[120px]">
                       <Badge cls={PHASE_CLS[r.phase]}>{r.status.label}</Badge>
@@ -607,13 +607,13 @@ function MatrixModal({ product, campaigns, productMap, onClose }) {
               </thead>
               <tbody>
                 {vars.map((v, idx) => (
-                  <tr key={idx} className="border-t border-line/6 align-top">
+                  <tr key={idx} className="border-t border-line/5 align-top">
                     <td className="py-3 px-2">
                       <p className="font-semibold text-ink">{v.name || product.name}</p>
                       <p className="text-[11px] text-ink-muted">{v.sku || '—'}</p>
                     </td>
                     <td className="py-3 px-2 text-right text-ink-muted tabular-nums">{fmt(+v.jual || +v.hargaCoret || null)}</td>
-                    <td className="py-3 px-2 text-right text-ink-muted tabular-nums border-r border-line/8">{+v.hpp ? fmt(+v.hpp) : '—'}</td>
+                    <td className="py-3 px-2 text-right text-ink-muted tabular-nums border-r border-line/10">{+v.hpp ? fmt(+v.hpp) : '—'}</td>
                     {rows.map(r => {
                       const c = cell(r, idx)
                       if (!c) return <td key={r.campaign.id} className="py-3 px-2 text-right text-ink-faint">—<p className="text-[11px]">tidak ikut</p></td>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Megaphone, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Search, Package,
   CalendarRange, AlertTriangle, ArrowLeft, Save, FileText, Link2, ExternalLink, Folder, RefreshCw, Share2, Copy,
-  Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList, ClipboardX,
+  Users, Eye, EyeOff, Bell, Check, ClipboardCheck, ClipboardList,
   Clock } from 'lucide-react'
 import Modal from './Modal'
 import { listCampaigns, saveCampaign, deleteCampaign, ensureShareToken, regenerateShareToken, updateApprovalSettings, setCampaignRegistration, setCampaignApprovals } from '../data/campaigns'
@@ -494,8 +494,8 @@ export default function CampaignPanel({ products }) {
                   <p className="text-[13px] font-semibold text-ink-strong truncate">{row.key}</p>
                   <span className="text-[11px] text-ink-faint flex-shrink-0">· {row.count} sub-campaign</span>
                   {row.needReg > 0 && (
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300 flex-shrink-0">
-                      {row.needReg} perlu didaftarkan
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border border-amber-400/55 bg-amber-500/15 text-amber-300 flex-shrink-0 inline-flex items-center gap-1">
+                      <ClipboardList className="w-3 h-3" />{row.needReg} perlu didaftarkan
                     </span>
                   )}
                   {row.fresh > 0 && (
@@ -521,8 +521,10 @@ export default function CampaignPanel({ products }) {
             const open = expanded === c.id
             const Chevron = open ? ChevronDown : ChevronRight
             return (
-              <div key={c.id} className={`bg-surface rounded-2xl border shadow-sm overflow-hidden ${
-                act.count > 0 ? 'border-blue-500/35' : needReg ? 'border-amber-500/35' : 'border-line/10'} ${row.nested ? 'ml-5' : ''}`}>
+              <div key={c.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
+                needReg && registrationUrgent(c) ? 'bg-amber-500/[0.06] border-amber-400/55'
+                  : act.count > 0 ? 'bg-surface border-blue-500/35'
+                  : needReg ? 'bg-surface border-amber-500/35' : 'bg-surface border-line/10'} ${row.nested ? 'ml-5' : ''}`}>
                 <div className="flex items-center gap-3 p-4">
                   <button onClick={() => setExpanded(x => x === c.id ? null : c.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                     <Chevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
@@ -601,18 +603,7 @@ export default function CampaignPanel({ products }) {
                       <a href={hrefOf(c.link)} target="_blank" rel="noopener noreferrer" title="Buka link campaign"
                         className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/8 transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>
                     )}
-                    {(() => { const rs = registrationStatus(c)
-                      const Icon = rs === 'none' ? (needReg ? ClipboardX : ClipboardList) : ClipboardCheck
-                      const cls = rs === 'done' ? 'text-blue-400'
-                        : rs === 'progress' ? 'text-amber-400'
-                        : needReg ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'
-                      return (
-                        <button title={rs === 'none' ? (needReg ? registrationReason(c) : 'Belum didaftarkan ke marketplace — klik untuk ubah') : `${REGISTRATION[rs].label} · ${registrationDetail(c)}`}
-                          onClick={() => setRegFor(c)}
-                          className={`p-1.5 rounded-lg transition-colors hover:bg-fill/8 ${cls}`}>
-                          <Icon className="w-3.5 h-3.5" />
-                        </button>
-                      ) })()}
+                    <RegisterButton c={c} needReg={needReg} onClick={() => setRegFor(c)} />
                     <button title={c.portalHidden ? 'Disembunyikan dari portal client — klik untuk tampilkan' : 'Tampil di portal client — klik untuk sembunyikan'}
                       onClick={() => handleTogglePortal(c)}
                       className={`p-1.5 rounded-lg transition-colors hover:bg-fill/8 ${c.portalHidden ? 'text-amber-400' : 'text-ink-faint hover:text-blue-400'}`}>
@@ -1589,6 +1580,67 @@ function ShareApprovalModal({ campaign, onClose, onSaved }) {
 // Lembar kerja pendaftaran ke marketplace. Bukan cuma pemilih status: isinya
 // justru yang dibutuhkan saat membuka Seller Centre — SKU mana yang boleh
 // masuk (bisa disalin), mana yang jangan, dan mana yang client belum putuskan.
+// Tombol status pendaftaran di kartu campaign — menggantikan ikon clipboard
+// kecil supaya tim langsung melihat & mengklik campaign yang perlu
+// didaftarkan. Semua keadaan membuka RegistrationModal.
+//   perlu + mendesak → amber solid + glow, "Mendesak · N SKU siap"
+//   perlu            → amber garis tepi, "N SKU siap"
+//   sedang diproses  → garis putus-putus "Sedang diproses · Tandai selesai"
+//   sudah            → chip biru tenang
+//   belum bisa       → abu "Menunggu approval"; campaign selesai → ikon kecil
+function RegisterButton({ c, needReg, onClick }) {
+  const rs = registrationStatus(c)
+  const platform = PLATFORM_LABEL[c.platform] || 'marketplace'
+  const base = 'inline-flex items-center gap-1.5 rounded-xl text-[12px] whitespace-nowrap transition-colors'
+  if (rs === 'done') {
+    return (
+      <button onClick={onClick} title={`${REGISTRATION.done.label} · ${registrationDetail(c)}`}
+        className={`${base} px-2.5 py-1.5 font-semibold border border-blue-400/35 bg-blue-600/10 text-blue-300 hover:bg-blue-600/20`}>
+        <Check className="w-3.5 h-3.5" />Sudah didaftarkan
+      </button>
+    )
+  }
+  if (rs === 'progress') {
+    return (
+      <button onClick={onClick} title={`${REGISTRATION.progress.label} · ${registrationDetail(c)}`}
+        className={`${base} px-3 py-1.5 font-semibold border border-dashed border-amber-400/60 text-amber-300 hover:bg-amber-500/10`}>
+        <Clock className="w-3.5 h-3.5" />Sedang diproses · Tandai selesai
+      </button>
+    )
+  }
+  if (needReg) {
+    const urgent = registrationUrgent(c)
+    const ready = approvalSummary(c).approved
+    return (
+      <span className="flex flex-col items-end gap-0.5">
+        <button onClick={onClick} title={registrationReason(c)}
+          className={`${base} px-3.5 py-2 text-[13px] font-bold ${urgent
+            ? 'bg-amber-500 text-amber-950 hover:bg-amber-400 shadow-[0_0_0_4px_rgba(245,158,11,0.18)]'
+            : 'border border-amber-400/65 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'}`}>
+          <ClipboardCheck className="w-4 h-4" />Daftarkan ke {platform}
+        </button>
+        <span className={`text-[10px] font-semibold ${urgent ? 'text-red-300' : 'text-ink-muted'}`}>
+          {urgent ? `Mendesak · ${ready} SKU siap` : `${ready} SKU siap`}
+        </span>
+      </span>
+    )
+  }
+  if (campaignStatus(c).key === 'ended') {
+    return (
+      <button onClick={onClick} title="Belum didaftarkan ke marketplace — klik untuk ubah"
+        className="p-1.5 rounded-lg text-ink-faint hover:text-blue-400 hover:bg-fill/10 transition-colors">
+        <ClipboardList className="w-3.5 h-3.5" />
+      </button>
+    )
+  }
+  return (
+    <button onClick={onClick} title="Belum ada SKU yang disetujui client"
+      className={`${base} px-2.5 py-1.5 font-medium border border-line/10 text-ink-muted hover:text-ink hover:border-line/25`}>
+      <ClipboardList className="w-3.5 h-3.5" />Menunggu approval
+    </button>
+  )
+}
+
 function RegistrationModal({ campaign, onClose, onSave }) {
   const cur = registrationStatus(campaign)
   const [note, setNote] = useState(campaign?.registration?.note || '')

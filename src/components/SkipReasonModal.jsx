@@ -93,7 +93,7 @@ export default function SkipReasonModal({ product, initialCampaignId, gapRows, c
                   <span className="block text-[13px] font-semibold text-ink">{campName(c)}{c.parentCampaign ? ` · ${c.parentCampaign}` : ''}</span>
                   <span className="block text-[11px] text-ink-muted mt-0.5">{periodsSummary(c) || 'Tanpa tanggal'}</span>
                 </span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-fill/8 text-ink-muted whitespace-nowrap">{hint}</span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-fill/10 text-ink-muted whitespace-nowrap">{hint}</span>
               </label>
             )
           })}
@@ -109,7 +109,7 @@ export default function SkipReasonModal({ product, initialCampaignId, gapRows, c
             {mode === 'some' && (
               <div className="flex flex-wrap gap-2 mt-1">
                 {vars.map((v, i) => (
-                  <label key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line/12 text-[13px] text-ink cursor-pointer">
+                  <label key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line/10 text-[13px] text-ink cursor-pointer">
                     <input type="checkbox" checked={chosen.has(i)} onChange={() => toggleSet(setChosen, i)} className="accent-blue-600" />
                     {v.name || `Varian ${i + 1}`}{v.sku ? <span className="text-ink-faint">· {v.sku}</span> : null}
                   </label>
@@ -124,7 +124,7 @@ export default function SkipReasonModal({ product, initialCampaignId, gapRows, c
           <div role="group" aria-labelledby="skip-reason" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {SKIP_REASON_ORDER.map(k => (
               <button key={k} onClick={() => setReason(k)} aria-pressed={reason === k}
-                className={`text-left p-2.5 rounded-xl border transition-colors ${reason === k ? 'border-blue-500/70 bg-blue-600/12' : 'border-line/10 hover:border-line/25'}`}>
+                className={`text-left p-2.5 rounded-xl border transition-colors ${reason === k ? 'border-blue-500/70 bg-blue-600/10' : 'border-line/10 hover:border-line/25'}`}>
                 <span className="block text-[13px] font-semibold text-ink">{SKIP_REASON[k].label}</span>
                 <span className="block text-[11px] text-ink-muted mt-0.5">{SKIP_REASON[k].hint}</span>
               </button>
@@ -136,7 +136,7 @@ export default function SkipReasonModal({ product, initialCampaignId, gapRows, c
           <span className="text-[13px] font-semibold text-ink-strong">Catatan <span className="font-normal text-ink-muted">· {noteRequired ? 'wajib untuk "Lainnya"' : 'opsional'}</span></span>
           <textarea rows={3} value={note} onChange={e => setNote(e.target.value)}
             placeholder="mis. Restock baru masuk 20 Des, ikutkan lagi di campaign Januari."
-            className="resize-y bg-fill/5 border border-line/12 rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
+            className="resize-y bg-fill/5 border border-line/10 rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-blue-600/40" />
         </label>
 
         <label className="flex items-start gap-2.5 text-[13px] text-ink cursor-pointer">
@@ -147,7 +147,7 @@ export default function SkipReasonModal({ product, initialCampaignId, gapRows, c
         </label>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 px-5 py-3.5 border-t border-line/8">
+      <div className="flex flex-wrap items-center gap-2 px-5 py-3.5 border-t border-line/10">
         <p className="flex-1 min-w-[180px] text-[11px] text-ink-muted">
           {picked.size ? `Disimpan untuk ${picked.size} campaign · ${nVar}. Bisa diubah atau dihapus kapan saja.` : 'Pilih minimal satu campaign.'}
         </p>
