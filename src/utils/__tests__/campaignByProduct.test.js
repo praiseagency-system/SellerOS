@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  phaseOf, productCampaignRows, productGapRows, variantGap, gapSummary, approvalLabel,
+  phaseOf, productCampaignRows, customerPrice, productGapRows, variantGap, gapSummary, approvalLabel,
   buildSkipEntries, replaceProductSkips, removeProductSkips, skipEntryOf,
 } from '../campaignByProduct'
 
@@ -56,6 +56,23 @@ describe('rekap campaign per produk', () => {
   it('label approval meringkas status per SKU', () => {
     expect(approvalLabel({ total: 3, approved: 3, rejected: 0, pending: 0 }).key).toBe('approved')
     expect(approvalLabel({ total: 3, approved: 1, rejected: 1, pending: 1 }).label).toBe('Sebagian (1/3)')
+  })
+})
+
+describe('harga ke customer', () => {
+  it('harga campaign dikurangi voucher terbesar; tanpa voucher = harga campaign', () => {
+    expect(customerPrice({ price: '100000' }, {})).toBe(100000)
+    const cfg = { kind: 'cofunded', vouchers: [{ discPct: 10 }, { discPct: 20, maxDisc: 15000 }] }
+    expect(customerPrice({ price: '100000' }, cfg)).toBe(85000)
+    expect(customerPrice({ price: '' }, cfg)).toBeNull()
+  })
+
+  it('rekap membawa rentang harga ke customer', () => {
+    const c = camp({ voucherConfig: { kind: 'normal', vouchers: [{ discPct: 10 }] },
+      items: [{ productId: 'p1', varIdx: 0, price: '120000' }, { productId: 'p1', varIdx: 1, price: '100000' }] })
+    const [row] = productCampaignRows(P, [c], MAP, NOW)
+    expect(row.customer).toEqual({ min: 90000, max: 108000 })
+    expect(row.hasVoucher).toBe(true)
   })
 })
 

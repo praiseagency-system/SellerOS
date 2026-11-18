@@ -390,7 +390,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                 {rows.length ? (
                   <>
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[920px] text-[13px]">
+                      <table className="w-full min-w-[1040px] text-[13px]">
                         <thead>
                           <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
                             <th className="py-3 px-2 font-semibold">Campaign</th>
@@ -398,6 +398,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                             <th className="py-3 px-2 font-semibold">Status</th>
                             <th className="py-3 px-2 font-semibold">Varian ikut</th>
                             <th className="py-3 px-2 font-semibold text-right">Harga campaign</th>
+                            <th className="py-3 px-2 font-semibold text-right" title="Harga campaign dikurangi voucher terbesar campaign itu">Harga ke customer</th>
                             <th className="py-3 px-2 font-semibold text-right">Margin</th>
                             <th className="py-3 px-2 font-semibold">Approval</th>
                             <th className="py-3 px-2 font-semibold">Pendaftaran</th>
@@ -408,7 +409,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                           const collapsed = ph === 'ended' && !endedOpen.has(p.id)
                           return (
                         <tbody key={ph}>
-                          <PhaseHeader phase={ph} count={sec.length} colSpan={8}
+                          <PhaseHeader phase={ph} count={sec.length} colSpan={9}
                             collapsible={ph === 'ended' && sec.length > 0} collapsed={collapsed} onToggle={() => toggleEnded(p.id)} />
                           {!collapsed && sec.map(r => {
                             const ap = approvalLabel(r.approval)
@@ -423,6 +424,10 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                                 <td className="py-3 px-2"><Badge cls={PHASE_CLS[r.phase]}>{r.status.label}</Badge></td>
                                 <td className="py-3 px-2 text-ink-muted">{r.variantsIn} / {r.variantsTotal}</td>
                                 <td className="py-3 px-2 text-right font-semibold text-ink tabular-nums whitespace-nowrap">{range(r.price, fmt)}</td>
+                                <td className="py-3 px-2 text-right tabular-nums whitespace-nowrap">
+                                  <span className={r.hasVoucher ? 'font-semibold text-blue-300' : 'text-ink-muted'}>{range(r.customer, fmt)}</span>
+                                  {r.hasVoucher && <p className="text-[10px] text-ink-faint">setelah voucher</p>}
+                                </td>
                                 <td className={`py-3 px-2 text-right font-semibold tabular-nums whitespace-nowrap ${r.margin ? marginCls(r.margin.min) : 'text-ink-faint'}`}
                                   title={r.margin ? `Margin terburuk (termasuk beban voucher co-funded). Target ${r.target}%` : 'HPP belum diisi'}>
                                   {range(r.margin, fmtPct)}
@@ -438,7 +443,7 @@ function RekapList({ list, open, onToggle, onMatrix, onOpenCampaigns, onSkip }) 
                       </table>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
-                      <p className="text-[11px] text-ink-muted">Harga &amp; margin = rentang varian yang ikut. Margin memakai beban voucher co-funded bila ada.</p>
+                      <p className="text-[11px] text-ink-muted">Harga &amp; margin = rentang varian yang ikut. Harga ke customer = harga campaign dikurangi voucher terbesar. Margin memakai beban voucher co-funded bila ada.</p>
                       <div className="flex gap-2">
                         <button onClick={onOpenCampaigns} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-line/15 text-ink-muted hover:text-ink">
                           <ExternalLink className="w-3.5 h-3.5" />Buka halaman Campaign
@@ -582,7 +587,7 @@ function MatrixModal({ product, campaigns, productMap, onClose }) {
     const it = r.items.find(x => x.varIdx === idx)
     if (!it) return null
     const single = productCampaignRows(product, [{ ...r.campaign, items: [it] }], productMap)[0]
-    return { price: +it.price || 0, margin: single?.margin?.min ?? null, status: approvalStatusOfItem(r.campaign.approvals, it) }
+    return { price: +it.price || 0, customer: single?.customer?.min ?? null, margin: single?.margin?.min ?? null, status: approvalStatusOfItem(r.campaign.approvals, it) }
   }
   const APPROVAL_TXT = { approved: ['Disetujui', 'text-green-300'], pending: ['Menunggu', 'text-amber-300'], rejected: ['Ditolak', 'text-red-300'] }
   return (
@@ -621,6 +626,7 @@ function MatrixModal({ product, campaigns, productMap, onClose }) {
                       return (
                         <td key={r.campaign.id} className="py-3 px-2 text-right tabular-nums">
                           <p className="font-semibold text-ink">{fmt(c.price)}</p>
+                          {r.hasVoucher && c.customer != null && <p className="text-[11px] text-blue-300">customer {fmt(c.customer)}</p>}
                           <p className={`text-xs font-semibold ${marginCls(c.margin)}`}>{c.margin == null ? 'margin —' : `margin ${fmtPct(c.margin)}`}</p>
                           <p className={`text-[11px] ${aCls}`}>{aTxt}</p>
                         </td>

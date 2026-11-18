@@ -140,6 +140,7 @@ export default function CampaignPanel({ products }) {
   const [platformTab, setPlatformTab] = useState(null)   // null = ikut isi data
   const [openFolders, setOpenFolders] = useState(() => new Set())
   const [closedFolders, setClosedFolders] = useState(() => new Set())
+  const [showEnded, setShowEnded] = useState(false) // daftar campaign Selesai dilipat default
   // Penanda "keputusan client baru": batas waktu terakhir dilihat (per device,
   // per workspace) + email kita sendiri supaya keputusan admin lewat /approve
   // tidak ikut terhitung sebagai kabar dari client.
@@ -227,7 +228,7 @@ export default function CampaignPanel({ products }) {
   const tab = platformTab || (platformCount.tiktok === 0 && platformCount.shopee > 0 ? 'shopee' : 'tiktok')
   // Campaign di tab platform yang aktif, dikelompokkan per judul induk.
   // Yang tanpa induk tampil langsung sebagai kartu (tanpa folder).
-  const { folders, loose } = useMemo(() => {
+  const { active, ended } = useMemo(() => {
     const inTab = found
       .filter(c => (c.platform === 'shopee' ? 'shopee' : 'tiktok') === tab)
       .filter(c => filter === 'all'
@@ -238,38 +239,55 @@ export default function CampaignPanel({ products }) {
     // tertinggal (yang mendesak lebih dulu lagi). Urutan lain tetap.
     const rank = c => (newCountOf(c) > 0 ? 4 : 0) + (registrationUrgent(c) ? 2 : needRegOf(c) ? 1 : 0)
     const sorted = [...inTab].sort((a, b) => rank(b) - rank(a))
-    const order = [], map = new Map(), loose = []
-    for (const c of sorted) {
-      const key = (c.parentCampaign || '').trim()
-      if (!key) { loose.push(c); continue }
-      if (!map.has(key)) { map.set(key, []); order.push(key) }
-      map.get(key).push(c)
+    // Campaign yang sudah selesai dipisah ke daftarnya sendiri di bawah,
+    // supaya yang berjalan / akan datang tidak tenggelam.
+    const group = list => {
+      const order = [], map = new Map(), loose = []
+      for (const c of list) {
+        const key = (c.parentCampaign || '').trim()
+        if (!key) { loose.push(c); continue }
+        if (!map.has(key)) { map.set(key, []); order.push(key) }
+        map.get(key).push(c)
+      }
+      return { folders: order.map(key => ({ key, items: map.get(key) })), loose }
     }
-    return { folders: order.map(key => ({ key, items: map.get(key) })), loose }
+    const isEnded = c => campaignStatus(c).key === 'ended'
+    return { active: group(sorted.filter(c => !isEnded(c))), ended: group(sorted.filter(isEnded)) }
   }, [found, tab, filter, newCountOf, pendingOf, needRegOf])
+  const endedCount = ended.folders.reduce((n, f) => n + f.items.length, 0) + ended.loose.length
 
   // Daftar datar: folder judul + sub-campaign yang terbuka, lalu campaign
-  // tanpa induk. Satu loop render — folder cuma baris pembuka.
+  // tanpa induk. Satu loop render — folder cuma baris pembuka. Bagian
+  // "Selesai" menyusul di bawah, dilipat default (terbuka saat mencari).
   const rows = useMemo(() => {
     const out = []
-    for (const f of folders) {
-      const fresh = f.items.reduce((n, c) => n + newCountOf(c), 0)
-      // Folder dengan kabar baru terbuka sendiri, kecuali sudah ditutup manual.
-      // Saat mencari, folder yang berisi hasil ikut terbuka.
-      const open = openFolders.has(f.key)
-        || ((searching || fresh > 0 || f.items.some(needRegOf)) && !closedFolders.has(f.key))
-      const span = periodSpan(f.items.flatMap(c => campaignPeriods(c)))
-      out.push({
-        type: 'folder', key: f.key, count: f.items.length, open, fresh,
-        needReg: f.items.filter(needRegOf).length,
-        running: f.items.filter(c => campaignStatus(c).key === 'running').length,
-        range: (span.start || span.end) ? periodRange({ start: span.start, end: span.end }) : 'tanpa tanggal',
-      })
-      if (open) for (const c of f.items) out.push({ type: 'card', c, nested: true })
+    const push = ({ folders, loose }, prefix) => {
+      for (const f of folders) {
+        const id = `${prefix}${f.key}`
+        const fresh = f.items.reduce((n, c) => n + newCountOf(c), 0)
+        // Folder dengan kabar baru terbuka sendiri, kecuali sudah ditutup manual.
+        // Saat mencari, folder yang berisi hasil ikut terbuka.
+        const open = openFolders.has(id)
+          || ((searching || fresh > 0 || f.items.some(needRegOf)) && !closedFolders.has(id))
+        const span = periodSpan(f.items.flatMap(c => campaignPeriods(c)))
+        out.push({
+          type: 'folder', key: id, label: f.key, count: f.items.length, open, fresh,
+          needReg: f.items.filter(needRegOf).length,
+          running: f.items.filter(c => campaignStatus(c).key === 'running').length,
+          range: (span.start || span.end) ? periodRange({ start: span.start, end: span.end }) : 'tanpa tanggal',
+        })
+        if (open) for (const c of f.items) out.push({ type: 'card', c, nested: true })
+      }
+      for (const c of loose) out.push({ type: 'card', c, nested: false })
     }
-    for (const c of loose) out.push({ type: 'card', c, nested: false })
+    push(active, '')
+    if (endedCount > 0) {
+      const open = searching || showEnded
+      out.push({ type: 'endedHeader', key: 'endedHeader', count: endedCount, open })
+      if (open) push(ended, 'ended:')
+    }
     return out
-  }, [folders, loose, openFolders, closedFolders, newCountOf, needRegOf, searching])
+  }, [active, ended, endedCount, showEnded, openFolders, closedFolders, newCountOf, needRegOf, searching])
 
   // Folder dibuka manual vs ditutup manual disimpan terpisah: folder yang
   // terbuka otomatis karena ada kabar baru harus tetap bisa ditutup.
@@ -483,6 +501,22 @@ export default function CampaignPanel({ products }) {
             </p>
           )}
           {rows.map(row => {
+            // Pembatas daftar campaign yang sudah selesai — klik untuk buka/tutup.
+            if (row.type === 'endedHeader') {
+              const EChevron = row.open ? ChevronDown : ChevronRight
+              return (
+                <button key={row.key} onClick={() => setShowEnded(s => !s)} aria-expanded={row.open} disabled={searching}
+                  className="w-full mt-3 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl border border-dashed border-line/15 bg-fill/5 text-left hover:border-line/25 transition-colors disabled:cursor-default">
+                  <EChevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
+                  <span className="w-2 h-2 rounded-full bg-ink-faint flex-shrink-0" />
+                  <p className="text-[13px] font-semibold text-ink">Campaign selesai</p>
+                  <span className="text-[11px] text-ink-faint">· {row.count} campaign</span>
+                  <span className="ml-auto text-[11px] font-semibold text-blue-400">
+                    {searching ? 'hasil pencarian' : row.open ? 'Sembunyikan' : 'Tampilkan'}
+                  </span>
+                </button>
+              )
+            }
             // Folder judul campaign (campaign induk) — klik untuk buka sub-campaign.
             if (row.type === 'folder') {
               const FChevron = row.open ? ChevronDown : ChevronRight
@@ -491,7 +525,7 @@ export default function CampaignPanel({ products }) {
                   className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-surface border shadow-sm text-left transition-colors ${row.open ? 'border-line/20' : 'border-line/10 hover:border-line/25'}`}>
                   <FChevron className="w-4 h-4 text-ink-faint flex-shrink-0" />
                   <Folder className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                  <p className="text-[13px] font-semibold text-ink-strong truncate">{row.key}</p>
+                  <p className="text-[13px] font-semibold text-ink-strong truncate">{row.label}</p>
                   <span className="text-[11px] text-ink-faint flex-shrink-0">· {row.count} sub-campaign</span>
                   {row.needReg > 0 && (
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border border-amber-400/55 bg-amber-500/15 text-amber-300 flex-shrink-0 inline-flex items-center gap-1">

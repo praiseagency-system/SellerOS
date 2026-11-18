@@ -110,6 +110,20 @@ function worstItemMargin(item, productMap, voucherCfg) {
   return out.length ? Math.min(...out) : null
 }
 
+// Harga yang dibayar customer untuk satu item: harga campaign dikurangi
+// voucher terbesar campaign itu (asumsi cart 1 varian sampai lolos min.
+// pesanan, sama seperti voucherEffect). Tanpa voucher = harga campaign.
+export function customerPrice(item, voucherCfg) {
+  const p = num(item?.price)
+  if (!(p > 0)) return null
+  let best = p
+  for (const v of voucherList(voucherCfg)) {
+    const eff = voucherEffect(v, item.price)
+    if (eff && eff.custPerUnit < best) best = eff.custPerUnit
+  }
+  return best
+}
+
 export function targetMarginOf(c) {
   return num(c?.voucherConfig?.targetMargin) || DEFAULT_TARGET_MARGIN
 }
@@ -130,6 +144,7 @@ export function productCampaignRows(product, campaigns, productMap, now = Date.n
     if (!act.length) continue
     const status = campaignStatus(c, now)
     const prices = act.map(it => num(it.price)).filter(p => p > 0)
+    const custPrices = act.map(it => customerPrice(it, c.voucherConfig)).filter(p => p != null)
     const margins = act
       .filter(it => num(productVariations(product)[it.varIdx]?.hpp) > 0)
       .map(it => worstItemMargin(it, productMap, c.voucherConfig))
@@ -142,6 +157,8 @@ export function productCampaignRows(product, campaigns, productMap, now = Date.n
       variantsIn: act.length,
       variantsTotal: total,
       price: minMax(prices),
+      customer: minMax(custPrices),
+      hasVoucher: voucherList(c.voucherConfig).length > 0,
       margin: minMax(margins),
       target: targetMarginOf(c),
       approval: skuApprovalSummary(act, c.approvals),

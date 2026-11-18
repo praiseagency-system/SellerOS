@@ -58,6 +58,8 @@ export default function StorePerformancePage() {
   const [showFiles, setShowFiles] = useState(false)   // toggle daftar file terimport
   const [importMonth, setImportMonth] = useState(null) // bulan wajib saat impor
   const [importPlatform, setImportPlatform] = useState(null) // platform wajib: 'shopee' | 'tiktok'
+  const [pending, setPending] = useState(null) // file yang sudah dibaca, menunggu tombol Import
+  const [done, setDone] = useState(null)       // pesan sukses import terakhir
   const fileRef = useRef(null)
 
   // Muat voucher (untuk cocokkan nominal voucher pesanan → nama voucher).
@@ -100,37 +102,58 @@ export default function StorePerformancePage() {
   // Estimasi biaya logistik (LSF) dari order TikTok pada periode terpilih.
   const tiktokLSF = useMemo(() => blendedLogistics({ ...store, lines: periodLines }), [store, periodLines])
 
+  // Langkah 3a — baca & periksa file, BELUM disimpan. Hasilnya ditampilkan
+  // sebagai ringkasan; data baru masuk setelah tombol "Import" diklik.
   async function handleFiles(fileList) {
     const files = Array.from(fileList || [])
     if (!files.length) return
     // Platform & bulan WAJIB dipilih dulu.
     if (!importPlatform) { setError('Pilih platform dulu.'); return }
     if (!importMonth) { setError('Pilih bulan dulu sebelum upload file.'); return }
-    setBusy(true); setError(null); setWarning(null)
+    setBusy(true); setError(null); setWarning(null); setDone(null)
     try {
-      const wrongPlatform = []   // file tak cocok platform terpilih
-      const noMonth = []         // file tanpa data bulan terpilih
+      const checked = []
       for (const f of files) {
-        const res = await ingestFile(f)
-        // Validasi platform: file harus sesuai marketplace yang dipilih.
-        if (res.source !== importPlatform) { wrongPlatform.push(f.name); continue }
-        // Hanya baris pesanan di bulan terpilih yang diimpor.
-        const lines = res.lines.filter(l => monthKey(l.t) === importMonth)
-        if (!lines.length) { noMonth.push(f.name); continue }
-        const months = [...new Set(lines.map(l => monthKey(l.t)))]
-        // Simpan per file (upsert 1 baris) — nama file jadi kunci.
-        await saveFileBlob({ name: f.name, source: res.source, months, lines })
+        try {
+          const res = await ingestFile(f)
+          // Validasi platform: file harus sesuai marketplace yang dipilih.
+          if (res.source !== importPlatform) { checked.push({ name: f.name, status: 'platform', source: res.source }); continue }
+          // Hanya baris pesanan di bulan terpilih yang diimpor.
+          const lines = res.lines.filter(l => monthKey(l.t) === importMonth)
+          if (!lines.length) { checked.push({ name: f.name, status: 'nomonth', total: res.lines.length }); continue }
+          const months = [...new Set(lines.map(l => monthKey(l.t)))]
+          const replaces = store.files.some(x => x.name === f.name)
+          checked.push({ name: f.name, status: 'ok', source: res.source, months, lines, total: res.lines.length, replaces })
+        } catch (e) {
+          checked.push({ name: f.name, status: 'error', message: e.message || 'File tidak bisa dibaca.' })
+        }
       }
-      setStore(await loadStore())
-      const warns = []
-      if (wrongPlatform.length) warns.push(`Bukan file ${PLATFORM_LABEL[importPlatform]}: ${wrongPlatform.join(', ')} — dilewati.`)
-      if (noMonth.length) warns.push(`Tanpa data ${monthLabel(importMonth)}: ${noMonth.join(', ')} — dilewati.`)
-      if (warns.length) setWarning(warns.join(' '))
-    } catch (e) {
-      setError(e.message || 'Gagal memproses file.')
+      setPending({ platform: importPlatform, month: importMonth, files: checked })
     } finally {
       setBusy(false)
       if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  // Langkah 3b — simpan file yang lolos pemeriksaan.
+  async function confirmImport() {
+    const ok = (pending?.files || []).filter(f => f.status === 'ok')
+    if (!ok.length) return
+    setBusy(true); setError(null)
+    try {
+      for (const f of ok) {
+        // Simpan per file (upsert 1 baris) — nama file jadi kunci.
+        await saveFileBlob({ name: f.name, source: f.source, months: f.months, lines: f.lines })
+      }
+      setStore(await loadStore())
+      const skipped = pending.files.length - ok.length
+      setDone(`${ok.length} file diimport · ${fmtNum(ok.reduce((s, f) => s + f.lines.length, 0))} baris ${monthLabel(pending.month)}`
+        + (skipped ? ` · ${skipped} file dilewati` : ''))
+      setPending(null)
+    } catch (e) {
+      setError(e.message || 'Gagal menyimpan file.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -242,7 +265,7 @@ export default function StorePerformancePage() {
       {showImport && (
         <Modal title="Import Data Performa Toko"
           subtitle="Shopee / TikTok / Tokopedia · XLSX atau CSV · deteksi & analitik otomatis"
-          onClose={() => setShowImport(false)} maxWidth="max-w-xl">
+          onClose={() => { setShowImport(false); setPending(null); setDone(null) }} maxWidth="max-w-xl">
           <div className="p-5">
             {/* Import 3 langkah: (1) platform → (2) bulan → (3) upload. WAJIB
                 pilih platform & bulan; data yang masuk hanya baris pesanan di
@@ -257,7 +280,7 @@ export default function StorePerformancePage() {
             </div>
             <div className="flex gap-2 mb-4 ml-[34px]">
               {[{ id: 'shopee', label: 'Shopee', cls: 'bg-blue-600' }, { id: 'tiktok', label: 'TikTok / Tokopedia', cls: 'bg-gray-600' }].map(p => (
-                <button key={p.id} onClick={() => setImportPlatform(p.id)}
+                <button key={p.id} onClick={() => { setImportPlatform(p.id); setPending(null) }}
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
                     importPlatform === p.id ? `${p.cls} text-white border-transparent` : 'border-line/10 text-ink-muted hover:border-line/20'
                   }`}>
@@ -281,7 +304,7 @@ export default function StorePerformancePage() {
               <div className="w-44 flex-shrink-0">
                 <MonthPicker
                   value={{ mode: importMonth ? 'month' : null, month: importMonth }}
-                  onChange={v => setImportMonth(v.month)}
+                  onChange={v => { setImportMonth(v.month); setPending(null) }}
                   placeholder="Pilih bulan"
                   align="right" />
               </div>
@@ -304,7 +327,7 @@ export default function StorePerformancePage() {
               <div className="w-11 h-11 rounded-2xl bg-blue-600/10 flex items-center justify-center mx-auto mb-2">
                 <Upload className="w-5 h-5 text-blue-500" />
               </div>
-              <p className="text-sm font-medium text-ink-strong">{busy ? 'Memproses...' : 'Upload Laporan Pesanan Bulanan'}</p>
+              <p className="text-sm font-medium text-ink-strong">{busy ? 'Membaca file...' : 'Upload Laporan Pesanan Bulanan'}</p>
               <p className="text-xs text-ink-faint mt-1">
                 {importPlatform && importMonth
                   ? `${PLATFORM_LABEL[importPlatform]} · ${monthLabel(importMonth)} · tarik & lepas atau pilih manual`
@@ -315,6 +338,51 @@ export default function StorePerformancePage() {
                 Pilih File
               </button>
             </div>
+
+            {/* Ringkasan file terpilih — data BELUM masuk sampai tombol Import diklik */}
+            {pending && (
+              <div className="mt-3 rounded-2xl border border-blue-500/35 bg-blue-600/5 p-4">
+                <p className="text-sm font-semibold text-ink-strong">Periksa sebelum import</p>
+                <p className="text-[11px] text-ink-faint mt-0.5">{PLATFORM_LABEL[pending.platform]} · {monthLabel(pending.month)}</p>
+                <ul className="mt-3 flex flex-col gap-1.5">
+                  {pending.files.map(f => (
+                    <li key={f.name} className="flex items-start gap-2 text-xs">
+                      {f.status === 'ok'
+                        ? <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0 mt-0.5" />
+                        : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />}
+                      <span className="min-w-0">
+                        <span className="font-medium text-ink break-all">{f.name}</span>
+                        <span className={`block ${f.status === 'ok' ? 'text-ink-muted' : 'text-amber-300'}`}>
+                          {f.status === 'ok'
+                            ? `${fmtNum(f.lines.length)} baris ${monthLabel(pending.month)} akan diimport${f.total > f.lines.length ? ` (${fmtNum(f.total - f.lines.length)} baris bulan lain dilewati)` : ''}${f.replaces ? ' · menggantikan file bernama sama' : ''}`
+                            : f.status === 'platform'
+                              ? `Bukan file ${PLATFORM_LABEL[pending.platform]}${f.source ? ` (terbaca sebagai ${PLATFORM_LABEL[f.source] || f.source})` : ''} — dilewati`
+                              : f.status === 'nomonth'
+                                ? `Tidak ada pesanan di ${monthLabel(pending.month)} — dilewati`
+                                : `${f.message} — dilewati`}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center justify-end gap-2 mt-4">
+                  <button onClick={() => setPending(null)} disabled={busy}
+                    className="px-3 py-2 rounded-xl text-sm font-semibold border border-line/15 text-ink-muted hover:text-ink disabled:opacity-40">
+                    Batal
+                  </button>
+                  <button onClick={confirmImport} disabled={busy || !pending.files.some(f => f.status === 'ok')}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Upload className="w-4 h-4" />
+                    {busy ? 'Mengimport…' : `Import ${pending.files.filter(f => f.status === 'ok').length} file`}
+                  </button>
+                </div>
+              </div>
+            )}
+            {done && !pending && (
+              <div className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-500/10 border border-green-500/25 text-sm text-green-300">
+                <Check className="w-4 h-4 flex-shrink-0" />{done}
+              </div>
+            )}
 
             {error && (
               <div className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-sm text-red-300">
@@ -355,7 +423,7 @@ export default function StorePerformancePage() {
               </div>
             )}
 
-            <ExportGuide />
+            <ExportGuide key={importPlatform || 'none'} platform={importPlatform} />
           </div>
         </Modal>
       )}
@@ -372,24 +440,27 @@ const GUIDE = {
       'Buka Shopee Seller Center → menu Pesanan → Semua Pesanan.',
       '(Opsional) atur rentang tanggal / status pesanan.',
       'Klik Ekspor → Ekspor Data Pesanan, tunggu siap, lalu Download (.xlsx).',
-      'Upload file itu di form di atas.',
+      'Di form di atas: pilih Shopee + bulannya, klik Pilih File, cek ringkasannya, lalu klik Import.',
     ],
     cols: 'No. Pesanan · Waktu Pesanan Dibuat · Nama Produk · Nomor Referensi SKU · Jumlah · Harga Setelah Diskon · Provinsi · Kota/Kabupaten',
   },
   tiktok: {
     label: 'TikTok / Tokopedia',
     steps: [
-      'Buka TikTok Shop Seller Center → Pesanan → Kelola Pesanan (Manage Orders).',
-      '(Opsional) atur filter tanggal / status.',
-      'Klik Ekspor (Export), download file .xlsx / .csv.',
-      'Upload di form di atas — order Tokopedia ikut terpisah otomatis.',
+      'Buka TikTok Shop Seller Center → menu Pesanan → Kelola Pesanan (Manage Orders).',
+      'Pilih tab Semua, lalu atur filter tanggal pesanan dibuat ke bulan yang mau diimport (boleh lebih lebar; baris bulan lain otomatis dilewati).',
+      'Klik Ekspor (Export) → pilih format Excel/CSV → Ekspor. Satu file berisi pesanan TikTok Shop dan Tokopedia sekaligus.',
+      'Tunggu sampai file siap, lalu Download dari daftar/riwayat ekspor.',
+      'Di form di atas: pilih TikTok / Tokopedia + bulannya, klik Pilih File, cek ringkasannya, lalu klik Import. Order Tokopedia dipisah otomatis.',
     ],
     cols: 'Order ID · Created Time · Product Name · Seller SKU · SKU ID · Quantity · SKU Subtotal After Discount · Province · Product Category · Purchase Channel',
   },
 }
-function ExportGuide() {
-  const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState('shopee')
+// Tab panduan mengikuti platform yang dipilih di langkah 1 (dipasang ulang
+// lewat `key` saat platform berganti), dan langsung terbuka begitu dipilih.
+function ExportGuide({ platform }) {
+  const [open, setOpen] = useState(!!platform)
+  const [tab, setTab] = useState(platform && GUIDE[platform] ? platform : 'shopee')
   const g = GUIDE[tab]
   return (
     <div className="mt-4 rounded-2xl border border-line/10 bg-fill/5 overflow-hidden">
